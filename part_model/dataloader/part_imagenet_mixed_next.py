@@ -363,7 +363,7 @@ class PartImageNetMixedDataset(data.Dataset):
 
         images, labels = [], []
 
-        images = getListOfFiles(os.path.join(self.root, self.split))
+        images = getListOfFiles(os.path.join(self.root, 'spurious',self.split))
         for img in images:
             folderName = img.split("/")[-2]
             className = FOLDER_TO_CLASS[folderName]
