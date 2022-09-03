@@ -363,21 +363,12 @@ class PartImageNetMixedDataset(data.Dataset):
 
         images, labels = [], []
 
-        images = getListOfFiles(os.path.join(self.root, "JPEGImages1"))
+        images = getListOfFiles(os.path.join(self.root, self.split))
         for img in images:
             folderName = img.split("/")[-2]
             className = FOLDER_TO_CLASS[folderName]
             classInd = self.classes.index(className)
             labels.append(classInd)
-        # for l, label in enumerate(self.classes):
-        #     img_path = os.path.join(self.root, 'JPEGImages')
-        #     part_path = os.path.join(self.path, label)
-        #     # Read file names
-        #     with open(f'{self.path}/{label}.txt', 'r') as fns:
-        #         filenames = sorted([f.strip() for f in fns.readlines()])
-        #     images.extend([f'{img_path}/{f}.JPEG' for f in filenames])
-        #     masks.extend([f'{part_path}/{f.split("/")[1]}.tif' for f in filenames])
-        #     labels.extend([l] * len(filenames))
         labels = torch.tensor(labels, dtype=torch.long)
         return images, labels
 
@@ -471,12 +462,10 @@ def load_part_imagenet(args):
         ]
     )
 
+    val_loader, _ = get_loader_sampler(args, val_transforms, "val")
     test_loader, _ = get_loader_sampler(args, val_transforms, "test")
-    test_loader_nd, _ = get_loader_sampler(
-        args, val_transforms, "test", distributed_sampler=False
-    )
 
-    return None, None, None, test_loader, test_loader_nd
+    return None, None, val_loader, test_loader
 
 
 PART_IMAGENET_MIXED = {

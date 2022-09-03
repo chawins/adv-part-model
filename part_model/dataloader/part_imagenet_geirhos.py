@@ -222,11 +222,8 @@ def load_part_imagenet_geirhos(args):
     )
     val_loader, _ = get_loader_sampler(args, val_transforms, "val")
     test_loader, _ = get_loader_sampler(args, val_transforms, "test")
-    test_loader_nd, _ = get_loader_sampler(
-        args, val_transforms, "test", distributed_sampler=False
-    )
 
-    return train_loader, train_sampler, val_loader, test_loader, test_loader_nd
+    return train_loader, train_sampler, val_loader, test_loader
 
 
 PART_IMAGENET_GEIRHOS = {
