@@ -54,7 +54,6 @@ class BoundingBoxModel(nn.Module):
         logits_masks = self.segmenter(images)
         # masks: [B, num_segs (including background), H, W]
         masks = F.softmax(logits_masks, dim=1)
-        img_size = masks.shape[-1]
 
         # Remove background
         if self.no_bg:
@@ -68,12 +67,8 @@ class BoundingBoxModel(nn.Module):
         # Part centroid is standardized by object's centroid and sd
         centerX = (mask_sumsX * self.grid).sum(2) / mask_sums
         centerY = (mask_sumsY * self.grid).sum(2) / mask_sums
-        sdX = (mask_sumsX * (self.grid - centerX.unsqueeze(-1)) ** 2).sum(
-            2
-        ) / mask_sums
-        sdY = (mask_sumsY * (self.grid - centerY.unsqueeze(-1)) ** 2).sum(
-            2
-        ) / mask_sums
+        sdX = (mask_sumsX * (self.grid - centerX.unsqueeze(-1)) ** 2).sum(2) / mask_sums
+        sdY = (mask_sumsY * (self.grid - centerY.unsqueeze(-1)) ** 2).sum(2) / mask_sums
         sdX = sdX.sqrt()
         sdY = sdY.sqrt()
 
@@ -82,8 +77,7 @@ class BoundingBoxModel(nn.Module):
             # Get object mask from part mask
             # TODO: this assumes that bbox model is always used with part
             object_masks = (
-                masks.unsqueeze(2)
-                * self.part_to_class_mat[None, :, :, None, None]
+                masks.unsqueeze(2) * self.part_to_class_mat[None, :, :, None, None]
             )
             object_masks = object_masks.sum(1)
 
@@ -92,31 +86,21 @@ class BoundingBoxModel(nn.Module):
             object_mask_sumsX = torch.sum(object_masks, 2)
             object_mask_sumsY = torch.sum(object_masks, 3)
 
-            object_centerX = (object_mask_sumsX * self.grid).sum(
-                2
-            ) / object_mask_sums
-            object_centerY = (object_mask_sumsY * self.grid).sum(
-                2
-            ) / object_mask_sums
+            object_centerX = (object_mask_sumsX * self.grid).sum(2) / object_mask_sums
+            object_centerY = (object_mask_sumsY * self.grid).sum(2) / object_mask_sums
             object_sdX = (
-                object_mask_sumsX
-                * (self.grid - object_centerX.unsqueeze(-1)) ** 2
+                object_mask_sumsX * (self.grid - object_centerX.unsqueeze(-1)) ** 2
             ).sum(2) / object_mask_sums
             object_sdY = (
-                object_mask_sumsY
-                * (self.grid - object_centerY.unsqueeze(-1)) ** 2
+                object_mask_sumsY * (self.grid - object_centerY.unsqueeze(-1)) ** 2
             ).sum(2) / object_mask_sums
             # object_sdX.sqrt_()
             # object_sdY.sqrt_()
             object_sdX = object_sdX.sqrt()
             object_sdY = object_sdY.sqrt()
 
-            object_centerX = torch.matmul(
-                object_centerX, self.part_to_class_mat.T
-            )
-            object_centerY = torch.matmul(
-                object_centerY, self.part_to_class_mat.T
-            )
+            object_centerX = torch.matmul(object_centerX, self.part_to_class_mat.T)
+            object_centerY = torch.matmul(object_centerY, self.part_to_class_mat.T)
             object_sdX = torch.matmul(object_sdX, self.part_to_class_mat.T)
             object_sdY = torch.matmul(object_sdY, self.part_to_class_mat.T)
 

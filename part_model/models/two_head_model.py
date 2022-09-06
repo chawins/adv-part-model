@@ -6,9 +6,7 @@ class TwoHeadModel(nn.Module):
         super(TwoHeadModel, self).__init__()
         self.mode = mode
         if self.mode == "d":
-            segmentor[1].segmentation_head = Heads(
-                segmentor[1], args.num_classes
-            )
+            segmentor[1].segmentation_head = Heads(segmentor[1], args.num_classes)
         else:
             latent_dim = 2048  # TODO: depends on backbone
             pool_size = 4
@@ -57,7 +55,6 @@ class Heads(nn.Module):
                     nn.Linear(1690, 100),
                     nn.ReLU(),
                     nn.Linear(100, num_classes),
-                    # nn.Softmax()
                 ),
             ]
         )

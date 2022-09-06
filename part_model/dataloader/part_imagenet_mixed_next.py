@@ -363,7 +363,7 @@ class PartImageNetMixedDataset(data.Dataset):
 
         images, labels = [], []
 
-        images = getListOfFiles(os.path.join(self.root, 'spurious',self.split))
+        images = getListOfFiles(os.path.join(self.root, "spurious", self.split))
         for img in images:
             folderName = img.split("/")[-2]
             className = FOLDER_TO_CLASS[folderName]
@@ -429,13 +429,9 @@ def get_loader_sampler(args, transform, split, distributed_sampler=True):
     )
 
     # TODO: can we make this cleaner?
-    PART_IMAGENET_MIXED[
-        "part_to_class"
-    ] = part_imagenet_mixed_dataset.part_to_class
+    PART_IMAGENET_MIXED["part_to_class"] = part_imagenet_mixed_dataset.part_to_class
     PART_IMAGENET_MIXED["num_classes"] = part_imagenet_mixed_dataset.num_classes
-    PART_IMAGENET_MIXED[
-        "num_seg_labels"
-    ] = part_imagenet_mixed_dataset.num_seg_labels
+    PART_IMAGENET_MIXED["num_seg_labels"] = part_imagenet_mixed_dataset.num_seg_labels
 
     setattr(args, "num_classes", part_imagenet_mixed_dataset.num_classes)
     pto = part_imagenet_mixed_dataset.part_to_object
