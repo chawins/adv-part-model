@@ -36,7 +36,48 @@ def semi_seg_loss(seg_mask, seg_targets):
 
 def semi_keypoint_loss(seg_mask, seg_targets):
     print(seg_mask.shape, seg_targets.shape)
-    0 / 0
+    grid = torch.arange(seg_mask.shape[3])[None, None, :]
+    masks = F.softmax(seg_mask, dim=1)
+    # Remove background
+    masks = masks[:, 1:]
+
+    # Compute foreground/background mask (fg_score - bg_score)
+    fg_mask = seg_mask[:, 1:].sum(1, keepdim=True) - seg_mask[:, 0:1]
+    fg_mask = torch.sigmoid(fg_mask)
+    fg_mask = fg_mask / fg_mask.sum((2, 3), keepdim=True).clamp_min(1e-6)
+    # weighted_logits_masks = logits_masks[:, 1:] * fg_mask
+    # masks = F.softmax(weighted_logits_masks, dim=1)
+
+    # out: [batch_size, num_classes]
+    class_scores = (seg_mask[:, 1:] * fg_mask).sum((2, 3))
+
+    # Compute mean and sd for part mask
+    mask_sums = torch.sum(masks, [2, 3])
+    mask_sumsX = torch.sum(masks, 2)
+    mask_sumsY = torch.sum(masks, 3)
+
+    # Part centroid is standardized by object's centroid and sd
+    centerX = (mask_sumsX * grid).sum(2) / mask_sums
+    centerY = (mask_sumsY * grid).sum(2) / mask_sums
+
+    targets = []
+    for i in range(seg_mask.shape[1]):
+        targets.append(torch.where(seg_targets == i, 1.0, 0.0))
+    target_masks = torch.stack(targets).permute(1, 0, 2, 3)
+    target_masks = target_masks[:, 1:]
+    present_part = torch.where(torch.sum(target_masks, (2, 3)) > 0, 1.0, 0.0)
+
+    target_mask_sums = torch.sum(target_masks, [2, 3])
+    target_mask_sumsX = torch.sum(target_masks, 2)
+    target_mask_sumsY = torch.sum(target_masks, 3)
+
+    # Part centroid is standardized by object's centroid and sd
+    target_centerX = (target_mask_sumsX * grid).sum(2) / target_mask_sums
+    target_centerY = (target_mask_sumsY * grid).sum(2) / target_mask_sums
+
+    loss = torch.nn.BCEWithLogitsLoss()(class_scores, present_part)
+    loss += F.mse_loss(target_centerX, centerX) + F.mse_loss(target_centerY, centerY)
+    return loss
 
 
 class SemiKeypointLoss(nn.Module):
