@@ -82,7 +82,9 @@ def semi_keypoint_loss(seg_mask, seg_targets):
     target_centerY /= seg_mask.shape[3]
 
     # loss = torch.nn.BCEWithLogitsLoss()(class_scores, present_part)
-    loss = (F.mse_loss(torch.where(present_part>0,target_centerX,0.), torch.where(present_part>0,centerX,0.)) + F.mse_loss(torch.where(present_part>0,target_centerY,0.), torch.where(present_part>0,centerY,0.)))
+    loss = F.mse_loss(
+        target_centerX[present_part > 0], centerX[present_part > 0]
+    ) + F.mse_loss(target_centerY[present_part > 0], centerY[present_part > 0])
     return loss
 
 
