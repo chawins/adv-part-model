@@ -34,6 +34,40 @@ def semi_seg_loss(seg_mask, seg_targets):
     return seg_loss
 
 
+def semi_keypoint_loss(seg_mask, seg_targets):
+    print(seg_mask.shape, seg_targets.shape)
+    0 / 0
+
+
+class SemiKeypointLoss(nn.Module):
+    def __init__(self, seg_const: float = 0.5, reduction: str = "mean"):
+        super(SemiSumLoss, self).__init__()
+        assert 0 <= seg_const <= 1
+        self.seg_const = seg_const
+        self.reduction = reduction
+
+    def forward(
+        self,
+        logits: Union[list, tuple],
+        targets: torch.Tensor,
+        seg_targets: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+
+        logits, seg_mask = logits
+        loss = 0
+        if self.seg_const < 1:
+            clf_loss = F.cross_entropy(logits, targets, reduction="none")
+            loss += (1 - self.seg_const) * clf_loss
+        if self.seg_const > 0:
+            semi_mask = seg_targets[:, 0, 0] >= 0
+            seg_loss = torch.zeros_like(semi_mask, dtype=logits.dtype)
+            seg_loss[semi_mask] = semi_keypoint_loss(seg_mask, seg_targets)
+            loss += self.seg_const * seg_loss
+        if self.reduction == "mean":
+            return loss.mean()
+        return loss
+
+
 class PixelwiseCELoss(nn.Module):
     def __init__(self, reduction="mean"):
         super().__init__()
@@ -197,9 +231,7 @@ class SemiSegTRADESLoss(nn.Module):
         adv_lprobs = F.log_softmax(adv_logits, dim=1)
         adv_loss = F.kl_div(adv_lprobs, cl_probs, reduction="batchmean")
         loss = (
-            (1 - self.const) * clf_loss
-            + self.const * seg_loss
-            + self.beta * adv_loss
+            (1 - self.const) * clf_loss + self.const * seg_loss + self.beta * adv_loss
         )
         return loss
 
@@ -236,9 +268,7 @@ def get_train_criterion(args):
     train_criterion = criterion
     if args.adv_train == "trades":
         if "semi" in args.experiment:
-            train_criterion = SemiSegTRADESLoss(
-                args.seg_const_trn, args.adv_beta
-            )
+            train_criterion = SemiSegTRADESLoss(args.seg_const_trn, args.adv_beta)
         else:
             train_criterion = TRADESLoss(args.adv_beta)
     elif args.adv_train == "mat":
@@ -247,6 +277,9 @@ def get_train_criterion(args):
         else:
             train_criterion = MATLoss(args.adv_beta)
     elif "semi" in args.experiment:
-        train_criterion = SemiSumLoss(seg_const=args.seg_const_trn)
+        if "keypoint" in args.experiment:
+            train_criterion = SemiKeypointLoss(seg_const=args.seg_const_trn)
+        else:
+            train_criterion = SemiSumLoss(seg_const=args.seg_const_trn)
     train_criterion = train_criterion.cuda(args.gpu)
     return criterion, train_criterion
