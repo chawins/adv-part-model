@@ -36,7 +36,7 @@ def semi_seg_loss(seg_mask, seg_targets):
 
 def semi_keypoint_loss(seg_mask, seg_targets):
     print(seg_mask.shape, seg_targets.shape)
-    grid = torch.arange(seg_mask.shape[3])[None, None, :]
+    grid = torch.arange(seg_mask.shape[3])[None, None, :].cuda()
     masks = F.softmax(seg_mask, dim=1)
     # Remove background
     masks = masks[:, 1:]
@@ -50,7 +50,7 @@ def semi_keypoint_loss(seg_mask, seg_targets):
 
     # out: [batch_size, num_classes]
     class_scores = (seg_mask[:, 1:] * fg_mask).sum((2, 3))
-
+    print(class_scores)
     # Compute mean and sd for part mask
     mask_sums = torch.sum(masks, [2, 3])
     mask_sumsX = torch.sum(masks, 2)
@@ -59,6 +59,9 @@ def semi_keypoint_loss(seg_mask, seg_targets):
     # Part centroid is standardized by object's centroid and sd
     centerX = (mask_sumsX * grid).sum(2) / mask_sums
     centerY = (mask_sumsY * grid).sum(2) / mask_sums
+
+    centerX /= seg_mask.shape[3]
+    centerY /= seg_mask.shape[3]
 
     targets = []
     for i in range(seg_mask.shape[1]):
@@ -75,8 +78,11 @@ def semi_keypoint_loss(seg_mask, seg_targets):
     target_centerX = (target_mask_sumsX * grid).sum(2) / target_mask_sums
     target_centerY = (target_mask_sumsY * grid).sum(2) / target_mask_sums
 
-    loss = torch.nn.BCEWithLogitsLoss()(class_scores, present_part)
-    loss += F.mse_loss(target_centerX, centerX) + F.mse_loss(target_centerY, centerY)
+    target_centerX /= seg_mask.shape[3]
+    target_centerY /= seg_mask.shape[3]
+
+    # loss = torch.nn.BCEWithLogitsLoss()(class_scores, present_part)
+    loss = (F.mse_loss(torch.where(present_part>0,target_centerX,0.), torch.where(present_part>0,centerX,0.)) + F.mse_loss(torch.where(present_part>0,target_centerY,0.), torch.where(present_part>0,centerY,0.)))
     return loss
 
 
