@@ -82,7 +82,7 @@ def semi_keypoint_loss(seg_mask, seg_targets):
 
 class SemiKeypointLoss(nn.Module):
     def __init__(self, seg_const: float = 0.5, reduction: str = "mean"):
-        super(SemiSumLoss, self).__init__()
+        super(SemiKeypointLoss, self).__init__()
         assert 0 <= seg_const <= 1
         self.seg_const = seg_const
         self.reduction = reduction
