@@ -574,6 +574,8 @@ def validate(val_loader, model, criterion, attack, args):
                 loss = criterion(outputs, targets)
             else:
                 outputs, masks = model(images, return_mask=True)
+                if 'centroid' in args.experiment:
+                    masks, _, _, _ = masks 
                 pixel_acc = pixel_accuracy(masks, segs)
                 pacc.update(pixel_acc.item(), batch_size)
             loss = criterion(outputs, targets)
