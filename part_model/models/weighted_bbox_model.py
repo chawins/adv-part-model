@@ -19,7 +19,7 @@ class WeightedBBoxModel(nn.Module):
         self.return_centroid = "centroid" in args.experiment
         part_to_class = datasetDict["part_to_class"]
         part_to_class = torch.tensor(part_to_class, dtype=torch.float32)
-        bg_idx = 1 if self.no_bg else 0
+        bg_idx = 1
         self.register_buffer(
             "part_to_class_mat",
             part_to_class[bg_idx:, bg_idx:],
