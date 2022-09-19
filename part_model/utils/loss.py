@@ -50,10 +50,10 @@ def semi_keypoint_loss(centerX, centerY, object_masks_sums, seg_targets, label_t
     # Part centroid is standardized by object's centroid and sd
     target_centerX = (target_mask_sumsX * grid).sum(
         2
-    ) / target_mask_sums / seg_targets.shape[2] * 2 - 1
+    ) / target_mask_sums / seg_targets.shape[1] * 2 - 1
     target_centerY = (target_mask_sumsY * grid).sum(
         2
-    ) / target_mask_sums / seg_targets.shape[3] * 2 - 1
+    ) / target_mask_sums / seg_targets.shape[2] * 2 - 1
 
     loss = F.mse_loss(
         target_centerX[present_part > 0], centerX[present_part > 0]
@@ -203,7 +203,7 @@ class SemiSumLoss(nn.Module):
 
 class SemiKeypointLoss(nn.Module):
     def __init__(self, seg_const: float = 0.5, reduction: str = "mean"):
-        super(SemiSumLoss, self).__init__()
+        super(SemiKeypointLoss, self).__init__()
         assert 0 <= seg_const <= 1
         self.seg_const = seg_const
         self.reduction = reduction
@@ -216,7 +216,7 @@ class SemiKeypointLoss(nn.Module):
     ) -> torch.Tensor:
 
         logits, seg_mask = logits
-        logits, centerX, centerY, object_masks_sums = logits
+        seg_mask, centerX, centerY, object_masks_sums = seg_mask
         loss = 0
         if self.seg_const < 1:
             clf_loss = F.cross_entropy(logits, targets, reduction="none")
