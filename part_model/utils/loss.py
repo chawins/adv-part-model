@@ -34,6 +34,35 @@ def semi_seg_loss(seg_mask, seg_targets):
     return seg_loss
 
 
+def semi_keypoint_loss(centerX, centerY, object_masks_sums, seg_targets, label_targets):
+    grid = torch.arange(seg_targets.shape[2])[None, None, :].cuda()
+
+    targets = []
+    for i in range(centerX.shape[1] + 1):
+        targets.append(torch.where(seg_targets == i, 1.0, 0.0))
+    target_masks = torch.stack(targets).permute(1, 0, 2, 3)
+    target_masks = target_masks[:, 1:]
+    present_part = torch.where(torch.sum(target_masks, (2, 3)) > 0, 1.0, 0.0)
+    target_mask_sums = torch.sum(target_masks, [2, 3])
+    target_mask_sumsX = torch.sum(target_masks, 2)
+    target_mask_sumsY = torch.sum(target_masks, 3)
+
+    # Part centroid is standardized by object's centroid and sd
+    target_centerX = (target_mask_sumsX * grid).sum(
+        2
+    ) / target_mask_sums / seg_targets.shape[2] * 2 - 1
+    target_centerY = (target_mask_sumsY * grid).sum(
+        2
+    ) / target_mask_sums / seg_targets.shape[3] * 2 - 1
+
+    loss = F.mse_loss(
+        target_centerX[present_part > 0], centerX[present_part > 0]
+    ) + F.mse_loss(target_centerY[present_part > 0], centerY[present_part > 0])
+
+    loss += F.nll_loss(object_masks_sums, label_targets)
+    return loss
+
+
 class PixelwiseCELoss(nn.Module):
     def __init__(self, reduction="mean"):
         super().__init__()
@@ -172,6 +201,38 @@ class SemiSumLoss(nn.Module):
         return loss
 
 
+class SemiKeypointLoss(nn.Module):
+    def __init__(self, seg_const: float = 0.5, reduction: str = "mean"):
+        super(SemiSumLoss, self).__init__()
+        assert 0 <= seg_const <= 1
+        self.seg_const = seg_const
+        self.reduction = reduction
+
+    def forward(
+        self,
+        logits: Union[list, tuple],
+        targets: torch.Tensor,
+        seg_targets: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+
+        logits, seg_mask = logits
+        logits, centerX, centerY, object_masks_sums = logits
+        loss = 0
+        if self.seg_const < 1:
+            clf_loss = F.cross_entropy(logits, targets, reduction="none")
+            loss += (1 - self.seg_const) * clf_loss
+        if self.seg_const > 0:
+            semi_mask = seg_targets[:, 0, 0] >= 0
+            seg_loss = torch.zeros_like(semi_mask, dtype=logits.dtype)
+            seg_loss[semi_mask] = semi_keypoint_loss(
+                centerX, centerY, object_masks_sums, seg_targets, targets
+            )
+            loss += self.seg_const * seg_loss
+        if self.reduction == "mean":
+            return loss.mean()
+        return loss
+
+
 class SemiSegTRADESLoss(nn.Module):
     def __init__(self, const: float = 1.0, beta: float = 1.0):
         super(SemiSegTRADESLoss, self).__init__()
@@ -197,9 +258,7 @@ class SemiSegTRADESLoss(nn.Module):
         adv_lprobs = F.log_softmax(adv_logits, dim=1)
         adv_loss = F.kl_div(adv_lprobs, cl_probs, reduction="batchmean")
         loss = (
-            (1 - self.const) * clf_loss
-            + self.const * seg_loss
-            + self.beta * adv_loss
+            (1 - self.const) * clf_loss + self.const * seg_loss + self.beta * adv_loss
         )
         return loss
 
@@ -236,9 +295,7 @@ def get_train_criterion(args):
     train_criterion = criterion
     if args.adv_train == "trades":
         if "semi" in args.experiment:
-            train_criterion = SemiSegTRADESLoss(
-                args.seg_const_trn, args.adv_beta
-            )
+            train_criterion = SemiSegTRADESLoss(args.seg_const_trn, args.adv_beta)
         else:
             train_criterion = TRADESLoss(args.adv_beta)
     elif args.adv_train == "mat":
@@ -247,6 +304,9 @@ def get_train_criterion(args):
         else:
             train_criterion = MATLoss(args.adv_beta)
     elif "semi" in args.experiment:
-        train_criterion = SemiSumLoss(seg_const=args.seg_const_trn)
+        if "centroid" in args.experiment:
+            train_criterion = SemiKeypointLoss(seg_const=args.seg_const_trn)
+        else:
+            train_criterion = SemiSumLoss(seg_const=args.seg_const_trn)
     train_criterion = train_criterion.cuda(args.gpu)
     return criterion, train_criterion

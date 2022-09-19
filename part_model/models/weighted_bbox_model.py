@@ -16,6 +16,16 @@ class WeightedBBoxModel(nn.Module):
         input_dim = (args.seg_labels - 1) * dim_per_bbox
         datasetDict = DATASET_DICT[args.dataset]
 
+        self.return_centroid = "centroid" in args.experiment
+        part_to_class = datasetDict["part_to_class"]
+        part_to_class = torch.tensor(part_to_class, dtype=torch.float32)
+        bg_idx = 1 if self.no_bg else 0
+        self.register_buffer(
+            "part_to_class_mat",
+            part_to_class[bg_idx:, bg_idx:],
+            persistent=False,
+        )
+
         self.norm_by_img = "norm_img" in args.experiment
         _, height, width = datasetDict["input_dim"]
         self.height = height
@@ -85,5 +95,14 @@ class WeightedBBoxModel(nn.Module):
         out = self.core_model(segOut)
 
         if return_mask:
+            if self.return_centroid:
+                object_masks = (
+                    masks.unsqueeze(2) * self.part_to_class_mat[None, :, :, None, None]
+                )
+                object_masks = object_masks.sum(1)
+                object_masks_sums = torch.sum(object_masks, [2, 3]) / (
+                    self.height * self.width
+                )
+                logits_masks = (logits_masks, centerX, centerY, object_masks_sums)
             return out, logits_masks
         return out
