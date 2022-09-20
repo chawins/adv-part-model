@@ -52,7 +52,7 @@ def semi_keypoint_loss(centerX, centerY, object_masks_sums, seg_targets, label_t
     ) / target_mask_sums / seg_targets.shape[2] * 2 - 1
     loss = 0.95*torch.sqrt(F.mse_loss(
         target_centerX[present_part > 0], centerX[present_part > 0]
-    )) + 0.95*torch.sqrt(F.mse_loss(target_centerY[present_part > 0], centerY[present_part > 0]))
+    ) + F.mse_loss(target_centerY[present_part > 0], centerY[present_part > 0]))
     loss += 0.05*F.nll_loss(object_masks_sums, label_targets)
     return loss
 
