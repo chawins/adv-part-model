@@ -22,7 +22,7 @@ class WeightedBBoxModel(nn.Module):
         bg_idx = 1
         self.register_buffer(
             "part_to_class_mat",
-            part_to_class[bg_idx:, bg_idx:],
+            part_to_class[bg_idx:, bg_idx:][None, :, :, None, None],
             persistent=False,
         )
 
@@ -96,9 +96,7 @@ class WeightedBBoxModel(nn.Module):
 
         if return_mask:
             if self.return_centroid:
-                object_masks = (
-                    masks.unsqueeze(2) * self.part_to_class_mat[None, :, :, None, None]
-                )
+                object_masks = masks.unsqueeze(2) * self.part_to_class_mat
                 object_masks = object_masks.sum(1)
                 object_masks_sums = torch.sum(object_masks, [2, 3]) / (
                     self.height * self.width
