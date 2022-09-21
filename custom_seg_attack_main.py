@@ -3,16 +3,14 @@
 # The original version is from https://github.com/pytorch/examples/blob/master/imagenet/main.py
 import argparse
 import json
-import math
 import os
 import pickle
-import sys
 import time
 
 import numpy as np
 import torch
 import torch.backends.cudnn as cudnn
-import torch.cuda.amp as amp
+import torch.nn as nn
 import torch.nn.parallel
 import torch.optim
 import torch.utils.data
@@ -24,25 +22,19 @@ from torch.distributed.elastic.multiprocessing.errors import record
 from torchmetrics import JaccardIndex as IoU
 from torchvision.utils import save_image
 
-from part_model.attack import (
-    setup_eval_attacker,
-    setup_train_attacker,
-    setup_val_attacker,
-)
+from part_model.attack import setup_eval_attacker
 from part_model.attack.pgd import PGDAttackModule
 from part_model.dataloader import COLORMAP, load_dataset
 from part_model.models import build_model
 from part_model.utils import (
     AverageMeter,
     ProgressMeter,
-    adjust_learning_rate,
     dist_barrier,
     get_compute_acc,
     get_rank,
     init_distributed_mode,
     is_main_process,
     pixel_accuracy,
-    save_on_master,
 )
 from part_model.utils.loss import get_train_criterion
 
@@ -271,15 +263,30 @@ def main(args):
     # Data loading code
     print("=> creating dataset")
     loaders = load_dataset(args)
-    train_loader, train_sampler, val_loader, test_loader = loaders
+    _, _, _, test_loader = loaders
 
     # Create model
     print("=> creating model")
-    model, optimizer, scaler = build_model(args)
+    model, _, _ = build_model(args)
     cudnn.benchmark = True
 
     # Define loss function
-    criterion, train_criterion = get_train_criterion(args)
+    criterion, _ = get_train_criterion(args)
+
+    # Load model weights
+    if args.resume:
+        load_path = args.resume
+        print(f"=> loading resume checkpoint {load_path}")
+    else:
+        load_path = f"{args.output_dir}/checkpoint_best.pt"
+        print(f"=> loading best checkpoint {load_path}")
+    if args.gpu is None:
+        checkpoint = torch.load(load_path)
+    else:
+        # Map model to be loaded to specified single gpu.
+        loc = "cuda:{}".format(args.gpu)
+        checkpoint = torch.load(load_path, map_location=loc)
+    model.load_state_dict(checkpoint["state_dict"])
 
     # Logging
     if is_main_process():
@@ -294,110 +301,29 @@ def main(args):
             print("wandb step:", wandb.run.step)
 
     eval_attack = setup_eval_attacker(args, model)
-    no_attack = eval_attack[0][1]
-    train_attack = setup_train_attacker(args, model)
-    val_attack = setup_val_attacker(args, model)
-    save_metrics = {
-        "train": [],
-        "test": [],
+
+    mask_attack_loss = nn.CrossEntropyLoss(reduction="none")
+    mask_attack_params = {
+        "pgd_steps": 100,
+        "pgd_step_size": 0.02,
+        "num_restarts": 1,
     }
+    import pdb
+    pdb.set_trace()
+    mask_attack = PGDAttackModule(
+        mask_attack_params, model, mask_attack_loss, "Linf", 1e6
+    )
 
     print(args)
 
-    if args.evaluate:
-        load_path = args.resume
-        print(f"=> loading resume checkpoint {load_path}")
-    else:
-        print("=> beginning training")
-        val_stats = {}
-        for epoch in range(args.start_epoch, args.epochs):
-            is_best = False
-            if args.distributed:
-                train_sampler.set_epoch(epoch)
-            lr = adjust_learning_rate(optimizer, epoch, args)
-            print(f"=> lr @ epoch {epoch}: {lr:.2e}")
-
-            # Train for one epoch
-            train_stats = train(
-                train_loader,
-                model,
-                train_criterion,
-                train_attack,
-                optimizer,
-                scaler,
-                epoch,
-                args,
-            )
-
-            if (epoch + 1) % 2 == 0:
-                val_stats = validate(
-                    val_loader, model, criterion, no_attack, args
-                )
-                clean_acc1, acc1 = val_stats["acc1"], None
-                is_best = clean_acc1 > best_acc1
-                if args.adv_train != "none":
-                    val_stats = validate(
-                        val_loader, model, criterion, val_attack, args
-                    )
-                    acc1 = val_stats["acc1"]
-                    is_best = acc1 > best_acc1 and clean_acc1 >= acc1
-
-                save_dict = {
-                    "epoch": epoch + 1,
-                    "state_dict": model.state_dict(),
-                    "optimizer": optimizer.state_dict(),
-                    "scaler": scaler.state_dict(),
-                    "best_acc1": best_acc1,
-                    "args": args,
-                }
-
-                if is_best:
-                    print("=> Saving new best checkpoint")
-                    save_on_master(save_dict, args.output_dir, is_best=True)
-                    best_acc1 = (
-                        max(clean_acc1, best_acc1)
-                        if acc1 is None
-                        else max(acc1, best_acc1)
-                    )
-                save_epoch = epoch + 1 if args.save_all_epochs else None
-                save_on_master(
-                    save_dict, args.output_dir, is_best=False, epoch=save_epoch
-                )
-
-            log_stats = {
-                **{f"train_{k}": v for k, v in train_stats.items()},
-                **{f"test_{k}": v for k, v in val_stats.items()},
-                "epoch": epoch,
-            }
-
-            if is_main_process():
-                save_metrics["train"].append(log_stats)
-                if args.wandb:
-                    wandb.log(log_stats)
-                logfile.write(json.dumps(log_stats) + "\n")
-                logfile.flush()
-
-        # Compute stats of best model after training
-        dist_barrier()
-        load_path = f"{args.output_dir}/checkpoint_best.pt"
-        print(f"=> loading best checkpoint {load_path}")
-            
-    if args.gpu is None:
-        checkpoint = torch.load(load_path)
-    else:
-        # Map model to be loaded to specified single gpu.
-        loc = "cuda:{}".format(args.gpu)
-        checkpoint = torch.load(load_path, map_location=loc)
-    model.load_state_dict(checkpoint["state_dict"])
     for attack in eval_attack:
         # Use DataParallel (not distributed) model for AutoAttack.
         # Otherwise, DDP model can get timeout or c10d failure.
-        stats = validate(test_loader, model, criterion, attack[1], args)
+        stats = validate(test_loader, model, criterion, attack[1], mask_attack, args)
         print(f"=> {attack[0]}: {stats}")
         stats["attack"] = str(attack[0])
         dist_barrier()
         if is_main_process():
-            save_metrics["test"].append(stats)
             if args.wandb:
                 wandb.log(stats)
             logfile.write(json.dumps(stats) + "\n")
@@ -410,120 +336,10 @@ def main(args):
             metrics.append(save_metrics)
         else:
             pickle.dump([save_metrics], open(pkl_path, "wb"))
-
-        last_path = f"{args.output_dir}/checkpoint_last.pt"
-        if os.path.exists(last_path):
-            os.remove(last_path)
         logfile.close()
 
 
-def train(
-    train_loader, model, criterion, attack, optimizer, scaler, epoch, args
-):
-    batch_time = AverageMeter("Time", ":6.3f")
-    data_time = AverageMeter("Data", ":6.3f")
-    losses = AverageMeter("Loss", ":.4e")
-    top1 = AverageMeter("Acc@1", ":6.2f")
-    mem = AverageMeter("Mem (GB)", ":6.1f")
-    progress = ProgressMeter(
-        len(train_loader),
-        [batch_time, data_time, losses, top1, mem],
-        prefix="Epoch: [{}]".format(epoch),
-    )
-    compute_acc = get_compute_acc(args)
-    seg_only = "seg-only" in args.experiment
-
-    # Switch to train mode
-    model.train()
-
-    end = time.time()
-    for i, samples in enumerate(train_loader):
-        # Measure data loading time
-        data_time.update(time.time() - end)
-
-        if len(samples) == 2:
-            images, targets = samples
-            segs = None
-        elif seg_only:
-            # If training segmenter only, `targets` is segmentation mask
-            images, targets, _ = samples
-            segs = None
-        else:
-            images, segs, targets = samples
-            segs = segs.cuda(args.gpu, non_blocking=True)
-
-        images = images.cuda(args.gpu, non_blocking=True)
-        targets = targets.cuda(args.gpu, non_blocking=True)
-        batch_size = images.size(0)
-
-        # Compute output
-        with amp.autocast(enabled=not args.full_precision):
-            if attack.use_mask:
-                # Attack for part models where both class and segmentation
-                # labels are used
-                images = attack(images, targets, segs)
-                if attack.dual_losses:
-                    targets = torch.cat([targets, targets], axis=0)
-                    segs = torch.cat([segs, segs], axis=0)
-            else:
-                # Attack for either classifier or segmenter alone
-                images = attack(images, targets)
-
-            if segs is None or seg_only:
-                outputs = model(images)
-                loss = criterion(outputs, targets)
-            elif "groundtruth" in args.experiment:
-                outputs = model(images, segs=segs)
-                loss = criterion(outputs, targets)
-            else:
-                outputs = model(images, return_mask=True)
-                loss = criterion(outputs, targets, segs)
-                outputs = outputs[0]
-
-            if args.adv_train in ("trades", "mat"):
-                outputs = outputs[batch_size:]
-
-        if not math.isfinite(loss.item()):
-            print("Loss is {}, stopping training".format(loss.item()))
-            sys.exit(1)
-
-        # Measure accuracy and record loss
-        acc1 = compute_acc(outputs, targets)
-        losses.update(loss.item(), batch_size)
-        top1.update(acc1.item(), batch_size)
-
-        # Compute gradient and do SGD step
-        scaler.scale(loss).backward()
-        scaler.step(optimizer)
-        scaler.update()
-        optimizer.zero_grad()
-
-        # Measure elapsed time
-        batch_time.update(time.time() - end)
-        end = time.time()
-
-        mem.update(torch.cuda.max_memory_allocated() // 1e9)
-
-        if i % args.print_freq == 0:
-            if is_main_process() and args.wandb:
-                wandb.log(
-                    {
-                        "acc": acc1.item(),
-                        "loss": loss.item(),
-                        "scaler": scaler.get_scale(),
-                    }
-                )
-            progress.display(i)
-
-    progress.synchronize()
-    return {
-        "acc1": top1.avg,
-        "loss": losses.avg,
-        "lr": optimizer.param_groups[0]["lr"],
-    }
-
-
-def validate(val_loader, model, criterion, attack, args):
+def validate(val_loader, model, criterion, attack, mask_attack, args):
     seg_only = "seg-only" in args.experiment
     batch_time = AverageMeter("Time", ":6.3f")
     data_time = AverageMeter("Data", ":6.3f")
@@ -572,6 +388,13 @@ def validate(val_loader, model, criterion, attack, args):
 
         # compute output
         with torch.no_grad():
+            # Find attack masks to guide segmenter attack
+            # 1) PGD optimized worst-case mask for classifier
+            # 2) worst-case among all test masks
+            # 3) random from second-most likely class
+            mask_attack
+
+            # Run attack end-to-end using the obtained attack mask
             if attack.use_mask:
                 images = attack(images, targets, segs)
             else:
@@ -584,8 +407,7 @@ def validate(val_loader, model, criterion, attack, args):
                 targets = targets.repeat(
                     (ratio,) + (1,) * (len(targets.shape) - 1)
                 )
-                if segs:
-                    segs = segs.repeat((ratio,) + (1,) * (len(segs.shape) - 1))
+                segs = segs.repeat((ratio,) + (1,) * (len(segs.shape) - 1))
 
             if segs is None or "normal" in args.experiment or seg_only:
                 outputs = model(images)

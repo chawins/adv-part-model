@@ -25,7 +25,7 @@ CUDA_VISIBLE_DEVICES=$GPU python -u main.py \
     --seg-backbone resnet50 --seg-arch deeplabv3plus --full-precision --pretrained \
     --data $DATAPATH --seg-label-dir $SEGPATH --dataset $DATASET --batch-size $BS \
     --epsilon $EPS --atk-norm Linf --evaluate --debug --eval-attack pgd \
-    --output-dir results/2082 --experiment part-wbbox-norm_img-semi
+    --output-dir results/2082 --experiment object-wbbox-norm_img-semi
 
 # CUDA_VISIBLE_DEVICES=$GPU python -u main.py \
 #     --seg-backbone resnet50 --seg-arch deeplabv3plus --full-precision --pretrained \
