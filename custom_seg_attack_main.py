@@ -300,7 +300,9 @@ def main(args):
             )
             print("wandb step:", wandb.run.step)
 
-    eval_attack = setup_eval_attacker(args, model)
+    eval_attack = setup_eval_attacker(args, model)[1:]
+
+    classifier = model.get_mask_classifier()
 
     mask_attack_loss = nn.CrossEntropyLoss(reduction="none")
     mask_attack_params = {
@@ -308,10 +310,10 @@ def main(args):
         "pgd_step_size": 0.02,
         "num_restarts": 1,
     }
-    import pdb
-    pdb.set_trace()
+    classifier = nn.DataParallel(model.module.core_model)
+    # Set epsilon to 1 since mask score is between 0 and 1
     mask_attack = PGDAttackModule(
-        mask_attack_params, model, mask_attack_loss, "Linf", 1e6
+        mask_attack_params, classifier, mask_attack_loss, "Linf", 1
     )
 
     print(args)
@@ -319,7 +321,9 @@ def main(args):
     for attack in eval_attack:
         # Use DataParallel (not distributed) model for AutoAttack.
         # Otherwise, DDP model can get timeout or c10d failure.
-        stats = validate(test_loader, model, criterion, attack[1], mask_attack, args)
+        stats = validate(
+            test_loader, model, criterion, attack[1], mask_attack, args
+        )
         print(f"=> {attack[0]}: {stats}")
         stats["attack"] = str(attack[0])
         dist_barrier()
@@ -392,7 +396,16 @@ def validate(val_loader, model, criterion, attack, mask_attack, args):
             # 1) PGD optimized worst-case mask for classifier
             # 2) worst-case among all test masks
             # 3) random from second-most likely class
-            mask_attack
+            num_channels = args.seg_labels
+            if "nobg" in args.experiment:
+                # Subtract one for background channel
+                num_channels -= 1
+            input_mask = torch.rand(
+                (batch_size, num_channels) + images.shape[-2:],
+                dtype=torch.float32,
+                device="cuda",
+            )
+            adv_mask = mask_attack(input_mask, targets)
 
             # Run attack end-to-end using the obtained attack mask
             if attack.use_mask:

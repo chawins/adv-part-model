@@ -25,5 +25,5 @@ EPS=0.03137254901
 CUDA_VISIBLE_DEVICES=$GPU python -u custom_seg_attack_main.py \
     --seg-backbone resnet50 --seg-arch deeplabv3plus --full-precision --pretrained \
     --data $DATAPATH --seg-label-dir $SEGPATH --dataset $DATASET --batch-size $BS \
-    --epsilon $EPS --atk-norm Linf --evaluate --debug --eval-attack pgd \
-    --output-dir results/462 --experiment part-pooling-4-no_bg-semi
+    --epsilon $EPS --atk-norm Linf --evaluate --eval-attack pgd \
+    --output-dir results/462 --experiment part-pooling-4-no_bg-semi --debug
