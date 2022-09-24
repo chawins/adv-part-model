@@ -299,6 +299,7 @@ def main(args):
             )
             print("wandb step:", wandb.run.step)
 
+    model.eval()
     eval_attack = setup_eval_attacker(
         args, model, guide_dataloader=test_loader
     )
