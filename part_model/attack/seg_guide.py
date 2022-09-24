@@ -1,5 +1,6 @@
 from typing import Any, Optional, Tuple
 
+import numpy as np
 import part_model.utils.loss as loss_lib
 import torch
 import torch.nn.functional as F
@@ -46,7 +47,9 @@ class SegGuidedAttackModule(AttackModule):
         self.guide_selection = attack_config["guide_selection"]
         self.all_guide_selections = (
             "opt",
+            "random",
             "2nd_pred_by_scores",
+            "2nd_gt_random",
             "2nd_gt_by_sim",
         )
         if self.guide_selection not in self.all_guide_selections:
@@ -65,6 +68,7 @@ class SegGuidedAttackModule(AttackModule):
             seg_const=attack_config["seg_const"], reduction="none"
         )
         self.seg_loss_fn = loss_lib.SemiSumLoss(seg_const=1, reduction="none")
+        # Classification loss is used only for saving final best attack
         self.clf_loss_fn = loss_lib.SemiSumLoss(seg_const=0, reduction="none")
 
         if self.guide_selection != "opt":
@@ -113,47 +117,85 @@ class SegGuidedAttackModule(AttackModule):
             self.pred_idx_dict[i] = pred_idx[sort_idx]
             self._check_num_guides(self.label_idx_dict, i)
             self._check_num_guides(self.pred_idx_dict, i)
-            
 
         print("Finished loading guides.")
 
     def _check_num_guides(self, label_idx_dict, class_idx):
         num_guides = len(label_idx_dict[class_idx])
-        assert num_guides >= self.num_restarts, (
+        min_guides = 1
+        assert num_guides >= min_guides, (
             f"Not enough guides for class {class_idx}! There are {num_guides} "
-            f"guides, but num_restarts is {self.num_restarts}. Consider using "
+            f"guides, but need at least {min_guides}. Consider using "
             f"more guides in dataloader."
         )
 
-    def _select_opt(self):
+    def _select_opt(self, y_2nd: torch.Tensor) -> torch.Tensor:
+        raise NotImplementedError()
         return
+
+    def _select_random(self, y_sort: torch.Tensor) -> torch.Tensor:
+        guide_masks = []
+        for cur_y_sort in y_sort.cpu().numpy():
+            masks = []
+            for y in cur_y_sort[: self.num_restarts]:
+                # Pick a random mask
+                idx = np.random.choice(self.label_idx_dict[y])
+                mask = self.guide_masks[idx]
+                masks.append(mask.unsqueeze(0))
+            masks = torch.cat(masks, dim=0)
+            guide_masks.append(masks.unsqueeze(1))
+        guide_masks = torch.cat(guide_masks, dim=1)
+        return guide_masks
+
+    def _select_2nd_gt_random(self, y_2nd: torch.Tensor) -> torch.Tensor:
+        guide_masks = []
+        for cur_y_2nd in y_2nd.cpu().numpy():
+            all_idx = self.label_idx_dict[cur_y_2nd]
+            rand_idx = np.arange(len(all_idx))
+            np.random.shuffle(rand_idx)
+            idx = all_idx[rand_idx[: self.num_restarts]]
+            guide_masks.append(self.guide_masks[idx].unsqueeze(1))
+        guide_masks = torch.cat(guide_masks, dim=1)
+        return guide_masks
 
     def _select_2nd_pred_by_scores(self, y_2nd: torch.Tensor) -> torch.Tensor:
         guide_masks = []
         for cur_y_2nd in y_2nd.cpu().numpy():
-            idx = self.pred_idx_dict[cur_y_2nd][:self.num_restarts]
+            idx = self.pred_idx_dict[cur_y_2nd][: self.num_restarts]
             guide_masks.append(self.guide_masks[idx].unsqueeze(1))
-        guide_masks = torch.cat(guide_masks, axis=1)
+        guide_masks = torch.cat(guide_masks, dim=1)
         return guide_masks
 
-    def _select_guide(self, x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
+    def _select_guide(
+        self, x: torch.Tensor, y: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Returns:
             guide_masks: shape [num_restarts, B, H, W]
         """
         with torch.no_grad():
-            logits, pred_masks = self.core_model(x, return_mask=True)
+            logits, _ = self.core_model(x, return_mask=True)
 
         # Get 2nd-most confident class
         batch_size = logits.shape[0]
         copy_logits = logits.clone()
         copy_logits[torch.arange(batch_size), y] -= 1e9
-        y_2nd = copy_logits.argmax(-1)
+        y_2nd = copy_logits.argmax(-1).to(x.device)
+        y_guides = y_2nd.unsqueeze(0).expand(self.num_restarts, -1)
 
         # TODO
-        guide_masks = self._select_2nd_pred_by_scores(y_2nd)
+        if self.guide_selection == "2nd_pred_by_scores":
+            guide_masks = self._select_2nd_pred_by_scores(y_2nd)
+        elif self.guide_selection == "2nd_gt_random":
+            guide_masks = self._select_2nd_gt_random(y_2nd)
+        elif self.guide_selection == "opt":
+            guide_masks = self._select_opt(y_2nd)
+        elif self.guide_selection == "random":
+            y_sort = torch.argsort(copy_logits, dim=-1, descending=True)
+            guide_masks = self._select_random(y_sort)
+            y_guides = y_sort.permute(1, 0)[: self.num_restarts]
 
-        return guide_masks.to(x.device)
+        return guide_masks.to(x.device), y_guides.to(x.device)
 
     def _project_l2(self, x, eps):
         dims = [-1,] + [
@@ -214,20 +256,26 @@ class SegGuidedAttackModule(AttackModule):
         return x_adv_worst.detach()
 
     def _forward_linf(
-        self, x, y, guides: Optional[Tuple[torch.Tensor, torch.Tensor]] = None
+        self,
+        x: torch.Tensor,
+        y: torch.Tensor,
+        guides: Optional[
+            Tuple[torch.Tensor, torch.Tensor, torch.Tensor]
+        ] = None,
     ) -> torch.Tensor:
         mode = self.core_model.training
         self.core_model.eval()
+        targeted = True
 
         if guides is None:
-            guide_masks = self._select_guide(x, y)
+            guide_masks, guide_labels = self._select_guide(x, y)
             x_init = x
             loss_fn = self.seg_loss_fn if self.use_two_stages else self.loss_fn
             in_1st_stage = self.use_two_stages
         else:
             # If guides are given, we are in second stage
             assert self.use_two_stages
-            guide_masks, x_init = guides
+            guide_masks, guide_labels, x_init = guides
             loss_fn = self.loss_fn
             in_1st_stage = False
 
@@ -238,9 +286,12 @@ class SegGuidedAttackModule(AttackModule):
         # Repeat PGD for specified number of restarts
         for i in range(self.num_restarts):
 
-            x_adv = x_init if x_init.ndim == x.ndim else x_init[i]
+            num_guides = len(guide_masks)
+            x_adv = x_init if x_init.ndim == x.ndim else x_init[i % num_guides]
             x_adv = x_adv.clone().detach()
-            guide_mask = guide_masks[i]
+            guide_mask = guide_masks[i % num_guides]
+            if targeted:
+                y = guide_labels[i % num_guides]
 
             # Initialize adversarial inputs
             x_adv += torch.zeros_like(x_adv).uniform_(-self.eps, self.eps)
@@ -254,6 +305,8 @@ class SegGuidedAttackModule(AttackModule):
                 with torch.enable_grad():
                     logits = self.core_model(x_adv, return_mask=True)
                     loss = loss_fn(logits, y, guide_mask).mean()
+                    if targeted:
+                        loss *= -1
                     grads = torch.autograd.grad(loss, x_adv)[0].detach()
 
                 with torch.no_grad():
@@ -285,6 +338,8 @@ class SegGuidedAttackModule(AttackModule):
                 fin_losses = self.clf_loss_fn(
                     self.core_model(x_adv), y, None
                 ).reshape(worst_losses.shape)
+                if targeted:
+                    fin_losses *= -1
                 up_mask = (fin_losses >= worst_losses).float()
                 x_adv_worst = x_adv * up_mask + x_adv_worst * (1 - up_mask)
                 worst_losses = fin_losses * up_mask + worst_losses * (
@@ -310,7 +365,7 @@ class SegGuidedAttackModule(AttackModule):
         self.core_model.train(mode)
 
         if in_1st_stage:
-            return guide_masks, x_adv_worst.detach()
+            return guide_masks, guide_labels, x_adv_worst.detach()
         return x_adv_worst.detach()
 
     def _forward(self, *args, **kwargs):

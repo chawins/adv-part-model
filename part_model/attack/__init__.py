@@ -116,7 +116,7 @@ def setup_eval_attacker(args, model, num_classes=None, guide_dataloader=None):
                 {
                     "pgd_steps": num_steps,
                     "pgd_step_size": max(0.001, eps / 4 / (num_steps / 10)),
-                    "num_restarts": 1,
+                    "num_restarts": 5,
                     "guide_selection": guide_selection_method,
                     "seg_const": seg_const,
                     "use_two_stages": use_two_stages,

@@ -5,19 +5,29 @@ EPS = 1e-6
 
 
 class PGDAttackModule(AttackModule):
-
-    def __init__(self, attack_config, core_model, loss_fn, norm, eps,
-                 forward_args={}, **kwargs):
+    def __init__(
+        self,
+        attack_config,
+        core_model,
+        loss_fn,
+        norm,
+        eps,
+        forward_args={},
+        **kwargs
+    ):
         super(PGDAttackModule, self).__init__(
-            attack_config, core_model, loss_fn, norm, eps, **kwargs)
-        assert self.norm in ('L2', 'Linf')
-        self.num_steps = attack_config['pgd_steps']
-        self.step_size = attack_config['pgd_step_size']
-        self.num_restarts = attack_config['num_restarts']
+            attack_config, core_model, loss_fn, norm, eps, **kwargs
+        )
+        assert self.norm in ("L2", "Linf")
+        self.num_steps = attack_config["pgd_steps"]
+        self.step_size = attack_config["pgd_step_size"]
+        self.num_restarts = attack_config["num_restarts"]
         self.forward_args = forward_args
 
     def _project_l2(self, x, eps):
-        dims = [-1, ] + [1, ] * (x.ndim - 1)
+        dims = [-1,] + [
+            1,
+        ] * (x.ndim - 1)
         return x / (x.view(len(x), -1).norm(2, 1).view(dims) + EPS) * eps
 
     def _forward_l2(self, x, y):
@@ -44,7 +54,8 @@ class PGDAttackModule(AttackModule):
                 with torch.enable_grad():
                     logits = self.core_model(x_adv, **self.forward_args)
                     loss = self.loss_fn(logits, y).mean()
-                    grads = torch.autograd.grad(loss, x_adv, allow_unused=True)[0].detach()
+                    grads = torch.autograd.grad(loss, x_adv, allow_unused=True)
+                    grads = grads[0].detach()
 
                 with torch.no_grad():
                     # Perform gradient update, project to norm ball
@@ -57,10 +68,14 @@ class PGDAttackModule(AttackModule):
                 x_adv_worst = x_adv
             else:
                 # Update worst-case inputs with itemized final losses
-                fin_losses = self.loss_fn(self.core_model(x_adv), y).reshape(worst_losses.shape)
+                fin_losses = self.loss_fn(self.core_model(x_adv), y).reshape(
+                    worst_losses.shape
+                )
                 up_mask = (fin_losses >= worst_losses).float()
                 x_adv_worst = x_adv * up_mask + x_adv_worst * (1 - up_mask)
-                worst_losses = fin_losses * up_mask + worst_losses * (1 - up_mask)
+                worst_losses = fin_losses * up_mask + worst_losses * (
+                    1 - up_mask
+                )
 
         # Return worst-case perturbed input logits
         self.core_model.train(mode)
@@ -90,12 +105,15 @@ class PGDAttackModule(AttackModule):
                 with torch.enable_grad():
                     logits = self.core_model(x_adv, **self.forward_args)
                     loss = self.loss_fn(logits, y).mean()
-                    grads = torch.autograd.grad(loss, x_adv, allow_unused=True)[0].detach()
+                    grads = torch.autograd.grad(loss, x_adv, allow_unused=True)
+                    grads = grads[0].detach()
 
                 with torch.no_grad():
                     # Perform gradient update, project to norm ball
                     x_adv = x_adv.detach() + self.step_size * torch.sign(grads)
-                    x_adv = torch.min(torch.max(x_adv, x - self.eps), x + self.eps)
+                    x_adv = torch.min(
+                        torch.max(x_adv, x - self.eps), x + self.eps
+                    )
                     # Clip perturbed inputs to image domain
                     x_adv = torch.clamp(x_adv, 0, 1)
 
@@ -103,10 +121,14 @@ class PGDAttackModule(AttackModule):
                 x_adv_worst = x_adv
             else:
                 # Update worst-case inputs with itemized final losses
-                fin_losses = self.loss_fn(self.core_model(x_adv), y).reshape(worst_losses.shape)
+                fin_losses = self.loss_fn(self.core_model(x_adv), y).reshape(
+                    worst_losses.shape
+                )
                 up_mask = (fin_losses >= worst_losses).float()
                 x_adv_worst = x_adv * up_mask + x_adv_worst * (1 - up_mask)
-                worst_losses = fin_losses * up_mask + worst_losses * (1 - up_mask)
+                worst_losses = fin_losses * up_mask + worst_losses * (
+                    1 - up_mask
+                )
 
         # DEBUG
         # from torchvision.utils import save_image
@@ -126,6 +148,6 @@ class PGDAttackModule(AttackModule):
         return x_adv_worst.detach()
 
     def forward(self, *args):
-        if self.norm == 'L2':
+        if self.norm == "L2":
             return self._forward_l2(*args)
         return self._forward_linf(*args)
