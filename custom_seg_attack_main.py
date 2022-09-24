@@ -23,7 +23,6 @@ from torchmetrics import JaccardIndex as IoU
 from torchvision.utils import save_image
 
 from part_model.attack import setup_eval_attacker
-from part_model.attack.pgd import PGDAttackModule
 from part_model.dataloader import COLORMAP, load_dataset
 from part_model.models import build_model
 from part_model.utils import (
@@ -300,30 +299,28 @@ def main(args):
             )
             print("wandb step:", wandb.run.step)
 
-    eval_attack = setup_eval_attacker(args, model)[1:]
-
-    classifier = model.get_mask_classifier()
-
-    mask_attack_loss = nn.CrossEntropyLoss(reduction="none")
-    mask_attack_params = {
-        "pgd_steps": 100,
-        "pgd_step_size": 0.02,
-        "num_restarts": 1,
-    }
-    classifier = nn.DataParallel(model.module.core_model)
-    # Set epsilon to 1 since mask score is between 0 and 1
-    mask_attack = PGDAttackModule(
-        mask_attack_params, classifier, mask_attack_loss, "Linf", 1
+    eval_attack = setup_eval_attacker(
+        args, model, guide_dataloader=test_loader
     )
+
+    # mask_attack_loss = nn.CrossEntropyLoss(reduction="none")
+    # mask_attack_params = {
+    #     "pgd_steps": 100,
+    #     "pgd_step_size": 0.02,
+    #     "num_restarts": 1,
+    # }
+    # import pdb
+    # pdb.set_trace()
+    # mask_attack = PGDAttackModule(
+    #     mask_attack_params, model, mask_attack_loss, "Linf", 1e6
+    # )
 
     print(args)
 
-    for attack in eval_attack:
+    for attack in eval_attack[1:]:
         # Use DataParallel (not distributed) model for AutoAttack.
         # Otherwise, DDP model can get timeout or c10d failure.
-        stats = validate(
-            test_loader, model, criterion, attack[1], mask_attack, args
-        )
+        stats = validate(test_loader, model, criterion, attack[1], args)
         print(f"=> {attack[0]}: {stats}")
         stats["attack"] = str(attack[0])
         dist_barrier()
@@ -337,13 +334,13 @@ def main(args):
         pkl_path = os.path.join(args.output_dir, "metrics.pkl")
         if os.path.exists(pkl_path):
             metrics = pickle.load(open(pkl_path, "rb"))
-            metrics.append(save_metrics)
+            metrics.append(stats)
         else:
-            pickle.dump([save_metrics], open(pkl_path, "wb"))
+            pickle.dump([stats], open(pkl_path, "wb"))
         logfile.close()
 
 
-def validate(val_loader, model, criterion, attack, mask_attack, args):
+def validate(val_loader, model, criterion, attack, args):
     seg_only = "seg-only" in args.experiment
     batch_time = AverageMeter("Time", ":6.3f")
     data_time = AverageMeter("Data", ":6.3f")
@@ -392,21 +389,6 @@ def validate(val_loader, model, criterion, attack, mask_attack, args):
 
         # compute output
         with torch.no_grad():
-            # Find attack masks to guide segmenter attack
-            # 1) PGD optimized worst-case mask for classifier
-            # 2) worst-case among all test masks
-            # 3) random from second-most likely class
-            num_channels = args.seg_labels
-            if "nobg" in args.experiment:
-                # Subtract one for background channel
-                num_channels -= 1
-            input_mask = torch.rand(
-                (batch_size, num_channels) + images.shape[-2:],
-                dtype=torch.float32,
-                device="cuda",
-            )
-            adv_mask = mask_attack(input_mask, targets)
-
             # Run attack end-to-end using the obtained attack mask
             if attack.use_mask:
                 images = attack(images, targets, segs)
