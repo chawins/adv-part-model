@@ -10,24 +10,24 @@
 #SBATCH --cpus-per-task=2
 #Number of GPUs, this can be in the format of "gpu:[1-4]", or "gpu:K80:[1-4] with the type included
 #SBATCH --gres=gpu:GTX2080TI:1
-#SBATCH --time=1:00:00
-#SBATCH --output slurm-%j-exp-seg.out
+#SBATCH --time=10:00:00
+#SBATCH --output slurm-%j-exp462-2nd_pred_by_scores_0.0_ts.out
 ## Command(s) to run:
 source /global/home/users/$USER/.bash_profile
 module purge
 module load python
 source activate /global/scratch/users/$USER/pt
 
-bash scripts/run1-1.sh #
+# bash scripts/run1-1.sh #
 # bash scripts/run1-2.sh # box6
 # bash scripts/run1-3.sh # box8
 # bash scripts/run1-4.sh # box9
 # bash scripts/run2-1.sh # box10
 # bash scripts/run2-2.sh # box11
-# bash scripts/run2-3.sh # box12
-# bash scripts/run2-4.sh # box13
-# bash scripts/run3-1.sh # box14
-# bash scripts/run3-2.sh # box15
+# bash scripts/run2-3.sh # 2nd_gt_random
+# bash scripts/run2-4.sh # random
+bash scripts/run3-1.sh # 2nd_pred_by_scores
+# bash scripts/run3-2.sh # 2nd_pred_by_scores/0.1
 # bash scripts/run3-3.sh # box16
 # bash scripts/run3-4.sh # 2126
 

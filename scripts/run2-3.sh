@@ -4,12 +4,13 @@
 # export NCCL_P2P_DISABLE=1
 # export NCCL_DEBUG=INFO
 ID=7
-GPU=0,1
-NUM_GPU=2
+GPU=0
+NUM_GPU=1
 BS=32
-AA_BS=64
+AA_BS=32
 PORT=1005$ID
 BACKEND=nccl
+NUM_WORKERS=2
 # =============================== PASCAL-Part =============================== #
 # DATASET=pascal-part
 # DATAPATH=~/data/pascal_part/PartImages/aeroplane_bird_car_cat_dog/
@@ -44,8 +45,9 @@ EPS=0.03137254901
 # done
 
 python -u custom_seg_attack_main.py \
-    --seed 0 --seg-backbone resnet50 --seg-arch deeplabv3plus --full-precision \
+    --seed 0 --dist-url tcp://localhost:$PORT --full-precision \
+    --seg-backbone resnet50 --seg-arch deeplabv3plus \
     --pretrained --data $DATAPATH --seg-label-dir $SEGPATH --dataset $DATASET \
-    --print-freq 50 --batch-size $AA_BS --epsilon $EPS --atk-norm Linf \
-    --eval-attack seg-guide/2nd_gt_random/0.0/ts \
+    --print-freq 10 --batch-size $AA_BS --epsilon $EPS --atk-norm Linf \
+    --workers $((NUM_GPU * NUM_WORKERS)) --eval-attack seg-guide/2nd_gt_random/0.0/ts \
     --output-dir results/462 --experiment part-pooling-4-no_bg-semi --evaluate

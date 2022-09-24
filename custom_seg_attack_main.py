@@ -317,7 +317,7 @@ def main(args):
 
     print(args)
 
-    for attack in eval_attack[1:]:
+    for attack in eval_attack:
         # Use DataParallel (not distributed) model for AutoAttack.
         # Otherwise, DDP model can get timeout or c10d failure.
         stats = validate(test_loader, model, criterion, attack[1], args)
