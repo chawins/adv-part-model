@@ -130,6 +130,7 @@ class SegGuidedCELoss(nn.Module):
         guides: Optional[torch.Tensor] = None,
         guide_masks: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
+        raise NotImplementedError('DEPRECATED')
         loss = 0
         if guides is not None:
             seg_mask = logits[1]
@@ -163,6 +164,8 @@ class SemiSumLoss(nn.Module):
             clf_loss = F.cross_entropy(logits, targets, reduction="none")
             loss += (1 - self.seg_const) * clf_loss
         if self.seg_const > 0:
+            # Check whether target masks contain any negative number. We use
+            # -1 to specify masks that we want to drop when seg_frac < 1.
             semi_mask = seg_targets[:, 0, 0] >= 0
             seg_loss = torch.zeros_like(semi_mask, dtype=logits.dtype)
             seg_loss[semi_mask] = semi_seg_loss(seg_mask, seg_targets)
