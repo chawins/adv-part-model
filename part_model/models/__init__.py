@@ -23,6 +23,19 @@ from .two_head_model import TwoHeadModel
 from .weighted_bbox_model import WeightedBBoxModel
 
 
+def wrap_distributed(args, model):
+    if args.distributed:
+        model.cuda(args.gpu)
+        model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
+        model = torch.nn.parallel.DistributedDataParallel(
+            model, device_ids=[args.gpu]
+        )
+    else:
+        model.cuda()
+        model = torch.nn.parallel.DataParallel(model)
+    return model
+
+
 def build_classifier(args):
 
     assert args.dataset in DATASET_DICT
@@ -139,15 +152,7 @@ def build_classifier(args):
     n_model = sum(p.numel() for p in model.parameters()) / 1e6
     print(f"=> total params: {n_model:.2f}M")
 
-    if args.distributed:
-        model.cuda(args.gpu)
-        model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
-        model = torch.nn.parallel.DistributedDataParallel(
-            model, device_ids=[args.gpu]
-        )
-    else:
-        model.cuda()
-        model = torch.nn.parallel.DataParallel(model)
+    model = wrap_distributed(args, model)
 
     p_wd, p_non_wd = [], []
     for n, p in model.named_parameters():
@@ -230,12 +235,14 @@ def build_segmentation(args):
     if args.distributed:
         model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
 
-    model_without_ddp = model[1]
-    if args.distributed:
-        model = torch.nn.parallel.DistributedDataParallel(
-            model, device_ids=[args.gpu]
-        )
-        model_without_ddp = model.module[1]
+    # model_without_ddp = model[1]
+    # if args.distributed:
+    #     model = torch.nn.parallel.DistributedDataParallel(
+    #         model, device_ids=[args.gpu]
+    #     )
+    #     model_without_ddp = model.module[1]
+    model = wrap_distributed(args, model)
+    model_without_ddp = model.module[1]
 
     backbone_params = list(model_without_ddp.encoder.parameters())
     last_params = list(model_without_ddp.decoder.parameters())

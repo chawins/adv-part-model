@@ -1,14 +1,9 @@
-import glob
-import os
-from typing import Optional, Tuple
+from typing import Any, Optional, Tuple
 
-import numpy as np
+import part_model.utils.loss as loss_lib
 import torch
 import torch.nn.functional as F
 from torchvision.utils import save_image
-
-import part_model.utils.loss as loss_lib
-
 
 from .base import AttackModule
 
@@ -23,20 +18,20 @@ class SegGuidedAttackModule(AttackModule):
         loss_fn,
         norm,
         eps,
-        dataloader=None,
-        num_guides=1000,
-        input_dim=None,
-        classifier=None,
-        no_bg=False,
-        num_classes=10,
+        dataloader: Optional[Any] = None,
+        classifier: Optional[torch.nn.Module] = None,
+        no_bg: bool = False,
+        seg_labels: int = 40,
         **kwargs,
     ):
         super(SegGuidedAttackModule, self).__init__(
             attack_config, core_model, loss_fn, norm, eps, **kwargs
         )
         assert self.norm in ("L2", "Linf")
+        if classifier is None:
+            raise ValueError("classifier must be torch.Module and not None.")
         self.classifier = classifier
-        self.num_classes = num_classes
+        self.seg_labels = seg_labels
         self.num_steps = attack_config["pgd_steps"]
         self.step_size = attack_config["pgd_step_size"]
         self.num_restarts = attack_config["num_restarts"]
@@ -59,6 +54,11 @@ class SegGuidedAttackModule(AttackModule):
                 f"guide_selection {self.guide_selection} not implemented! "
                 f"(options: {self.all_guide_selections})"
             )
+        if self.guide_selection != "opt" and dataloader is None:
+            raise ValueError(
+                "dataloader cannot be None for guide_selection "
+                f"{self.guide_selection}."
+            )
 
         self.use_two_stages = attack_config["use_two_stages"]
         self.loss_fn = loss_lib.SemiSumLoss(
@@ -68,25 +68,33 @@ class SegGuidedAttackModule(AttackModule):
         self.clf_loss_fn = loss_lib.SemiSumLoss(seg_const=0, reduction="none")
 
         if self.guide_selection != "opt":
-            self._load_guides(dataloader)
+            with torch.no_grad():
+                self._load_guides(dataloader)
 
     def _load_guides(self, dataloader):
         """Load guide masks, computes predicted scores, and store indices."""
         guide_masks = []
         labels = []
         pred_scores = []
+        scale_const = 1e3
 
-        for _, segs, targets in dataloader:
+        for i, (_, segs, targets) in enumerate(dataloader):
             # Get classifier's score on gt masks
-            onehot_segs = F.one_hot(segs, num_classes=self.num_classes).cuda()
+            onehot_segs = F.one_hot(segs, num_classes=self.seg_labels).cuda()
+            onehot_segs = onehot_segs.permute(0, 3, 1, 2)
             # classifier takes logit masks but gt mask is categorical so we
             # scale it with a large constant (like temperature).
-            logits = self.classifier(onehot_segs * 1e3)
-            pred_scores = F.softmax(logits, dim=-1).cpu()
+            logits = (
+                self.classifier(onehot_segs * scale_const) - scale_const / 2
+            )
+            num_classes = logits.shape[-1]
+            scores = F.softmax(logits, dim=-1).cpu()
 
             guide_masks.append(segs)
             labels.append(targets)
-            pred_scores.append(pred_scores)
+            pred_scores.append(scores)
+            # if i == 50:
+            #     break  # DEBUG
 
         self.guide_masks = torch.cat(guide_masks, dim=0)
         self.guide_labels = torch.cat(labels, dim=0)
@@ -95,27 +103,35 @@ class SegGuidedAttackModule(AttackModule):
         # Cache index of guides by gt and predicted labels
         self.label_idx_dict = {}
         self.pred_idx_dict = {}
-        for i in self.num_classes:
-            self.label_idx_dict[i] == torch.where(self.guide_labels == i)[0]
+        for i in range(num_classes):
+            self.label_idx_dict[i] = torch.where(self.guide_labels == i)[0]
             pred_idx = torch.where(self.guide_scores.argmax(dim=-1) == i)[0]
             # Sort by scores
             sort_idx = torch.argsort(
                 self.guide_scores[pred_idx, i], descending=True
             )
             self.pred_idx_dict[i] = pred_idx[sort_idx]
+            self._check_num_guides(self.label_idx_dict, i)
+            self._check_num_guides(self.pred_idx_dict, i)
+            
 
-        import pdb
-
-        pdb.set_trace()
         print("Finished loading guides.")
+
+    def _check_num_guides(self, label_idx_dict, class_idx):
+        num_guides = len(label_idx_dict[class_idx])
+        assert num_guides >= self.num_restarts, (
+            f"Not enough guides for class {class_idx}! There are {num_guides} "
+            f"guides, but num_restarts is {self.num_restarts}. Consider using "
+            f"more guides in dataloader."
+        )
 
     def _select_opt(self):
         return
 
     def _select_2nd_pred_by_scores(self, y_2nd: torch.Tensor) -> torch.Tensor:
         guide_masks = []
-        for cur_y_2nd in y_2nd:
-            idx = self.pred_idx_dict[cur_y_2nd][: self.num_restarts]
+        for cur_y_2nd in y_2nd.cpu().numpy():
+            idx = self.pred_idx_dict[cur_y_2nd][:self.num_restarts]
             guide_masks.append(self.guide_masks[idx].unsqueeze(1))
         guide_masks = torch.cat(guide_masks, axis=1)
         return guide_masks
@@ -134,6 +150,7 @@ class SegGuidedAttackModule(AttackModule):
         copy_logits[torch.arange(batch_size), y] -= 1e9
         y_2nd = copy_logits.argmax(-1)
 
+        # TODO
         guide_masks = self._select_2nd_pred_by_scores(y_2nd)
 
         return guide_masks.to(x.device)
@@ -221,7 +238,7 @@ class SegGuidedAttackModule(AttackModule):
         # Repeat PGD for specified number of restarts
         for i in range(self.num_restarts):
 
-            x_adv = x_init if x_init.ndim == x_adv.ndim else x_init[i]
+            x_adv = x_init if x_init.ndim == x.ndim else x_init[i]
             x_adv = x_adv.clone().detach()
             guide_mask = guide_masks[i]
 
@@ -292,7 +309,7 @@ class SegGuidedAttackModule(AttackModule):
         # Return worst-case perturbed input logits
         self.core_model.train(mode)
 
-        if guides is None:
+        if in_1st_stage:
             return guide_masks, x_adv_worst.detach()
         return x_adv_worst.detach()
 
@@ -306,5 +323,5 @@ class SegGuidedAttackModule(AttackModule):
             return self._forward(*args)
 
         # Two-staged attack
-        x_init = self._forward(*args)
-        return self._forward(*args, x_init=x_init)
+        guides = self._forward(*args)
+        return self._forward(*args, guides=guides)
