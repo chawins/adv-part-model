@@ -55,14 +55,23 @@ def semi_keypoint_loss(
         2
     ) / target_mask_sums / seg_targets.shape[2] * 2 - 1
     # TODO: This probably doesn't need sqrt?
-    loss = torch.sqrt(
-        F.mse_loss(target_centerX[present_part > 0], centerX[present_part > 0])
-        + F.mse_loss(
-            target_centerY[present_part > 0], centerY[present_part > 0]
-        )
+    # loss = torch.sqrt(
+    #     F.mse_loss(target_centerX[present_part > 0], centerX[present_part > 0])
+    #     + F.mse_loss(
+    #         target_centerY[present_part > 0], centerY[present_part > 0]
+    #     )
+    # )
+    # loss += F.nll_loss(object_masks_sums, label_targets)
+    keypoint_loss_x = F.mse_loss(
+        target_centerX[present_part > 0], centerX[present_part > 0]
     )
-    loss += F.nll_loss(object_masks_sums, label_targets)
-    return loss
+    keypoint_loss_y = F.mse_loss(
+        target_centerY[present_part > 0], centerY[present_part > 0]
+    )
+    keypoint_loss = keypoint_loss_x + keypoint_loss_y
+    # TODO: This loss probably drives all pixels to one part/class 
+    cls_loss = F.cross_entropy(object_masks_sums, label_targets)
+    return cls_loss + keypoint_loss
 
 
 class PixelwiseCELoss(nn.Module):
