@@ -4,6 +4,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+_EPS = 1e-6
+
 
 def trades_loss(cl_logits, adv_logits, targets, beta):
     cl_loss = F.cross_entropy(cl_logits, targets, reduction="mean")
@@ -34,15 +36,17 @@ def semi_seg_loss(seg_mask, seg_targets):
     return seg_loss
 
 
-def semi_keypoint_loss(centerX, centerY, object_masks_sums, seg_targets, label_targets):
+def semi_keypoint_loss(
+    centerX, centerY, object_masks_sums, seg_targets, label_targets
+):
     grid = torch.arange(seg_targets.shape[2])[None, None, :].cuda()
     targets = F.one_hot(seg_targets, num_classes=centerX.shape[1] + 1)
     target_masks = targets.permute(0, 3, 2, 1)
     target_masks = target_masks[:, 1:]
     present_part = torch.where(torch.sum(target_masks, (2, 3)) > 0, 1.0, 0.0)
-    target_mask_sums = torch.sum(target_masks, [2, 3])
-    target_mask_sumsX = torch.sum(target_masks, 2)
-    target_mask_sumsY = torch.sum(target_masks, 3)
+    target_mask_sums = torch.sum(target_masks, [2, 3]) + _EPS
+    target_mask_sumsX = torch.sum(target_masks, 2) + _EPS
+    target_mask_sumsY = torch.sum(target_masks, 3) + _EPS
     # Part centroid is standardized by object's centroid and sd
     target_centerX = (target_mask_sumsX * grid).sum(
         2
@@ -50,9 +54,12 @@ def semi_keypoint_loss(centerX, centerY, object_masks_sums, seg_targets, label_t
     target_centerY = (target_mask_sumsY * grid).sum(
         2
     ) / target_mask_sums / seg_targets.shape[2] * 2 - 1
+    # TODO: This probably doesn't need sqrt?
     loss = torch.sqrt(
         F.mse_loss(target_centerX[present_part > 0], centerX[present_part > 0])
-        + F.mse_loss(target_centerY[present_part > 0], centerY[present_part > 0])
+        + F.mse_loss(
+            target_centerY[present_part > 0], centerY[present_part > 0]
+        )
     )
     loss += F.nll_loss(object_masks_sums, label_targets)
     return loss
@@ -253,7 +260,9 @@ class SemiSegTRADESLoss(nn.Module):
         adv_lprobs = F.log_softmax(adv_logits, dim=1)
         adv_loss = F.kl_div(adv_lprobs, cl_probs, reduction="batchmean")
         loss = (
-            (1 - self.const) * clf_loss + self.const * seg_loss + self.beta * adv_loss
+            (1 - self.const) * clf_loss
+            + self.const * seg_loss
+            + self.beta * adv_loss
         )
         return loss
 
@@ -290,7 +299,9 @@ def get_train_criterion(args):
     train_criterion = criterion
     if args.adv_train == "trades":
         if "semi" in args.experiment:
-            train_criterion = SemiSegTRADESLoss(args.seg_const_trn, args.adv_beta)
+            train_criterion = SemiSegTRADESLoss(
+                args.seg_const_trn, args.adv_beta
+            )
         else:
             train_criterion = TRADESLoss(args.adv_beta)
     elif args.adv_train == "mat":

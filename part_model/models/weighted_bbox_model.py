@@ -55,7 +55,9 @@ class WeightedBBoxModel(nn.Module):
         masks = masks[:, 1:]
 
         # Compute foreground/background mask (fg_score - bg_score)
-        fg_mask = logits_masks[:, 1:].sum(1, keepdim=True) - logits_masks[:, 0:1]
+        fg_mask = (
+            logits_masks[:, 1:].sum(1, keepdim=True) - logits_masks[:, 0:1]
+        )
         fg_mask = torch.sigmoid(fg_mask)
         fg_mask = fg_mask / fg_mask.sum((2, 3), keepdim=True).clamp_min(1e-6)
         # weighted_logits_masks = logits_masks[:, 1:] * fg_mask
@@ -72,8 +74,12 @@ class WeightedBBoxModel(nn.Module):
         # Part centroid is standardized by object's centroid and sd
         centerX = (mask_sumsX * self.grid).sum(2) / mask_sums
         centerY = (mask_sumsY * self.grid).sum(2) / mask_sums
-        sdX = (mask_sumsX * (self.grid - centerX.unsqueeze(-1)) ** 2).sum(2) / mask_sums
-        sdY = (mask_sumsY * (self.grid - centerY.unsqueeze(-1)) ** 2).sum(2) / mask_sums
+        sdX = (mask_sumsX * (self.grid - centerX.unsqueeze(-1)) ** 2).sum(
+            2
+        ) / mask_sums
+        sdY = (mask_sumsY * (self.grid - centerY.unsqueeze(-1)) ** 2).sum(
+            2
+        ) / mask_sums
         sdX = sdX.sqrt()
         sdY = sdY.sqrt()
 
@@ -101,6 +107,11 @@ class WeightedBBoxModel(nn.Module):
                 object_masks_sums = torch.sum(object_masks, [2, 3]) / (
                     self.height * self.width
                 )
-                logits_masks = (logits_masks, centerX, centerY, object_masks_sums)
+                logits_masks = (
+                    logits_masks,
+                    centerX,
+                    centerY,
+                    object_masks_sums,
+                )
             return out, logits_masks
         return out
