@@ -43,7 +43,6 @@ def semi_keypoint_loss(
     targets = F.one_hot(seg_targets, num_classes=centerX.shape[1] + 1)
     target_masks = targets.permute(0, 3, 2, 1)
     target_masks = target_masks[:, 1:]
-    present_part = torch.where(torch.sum(target_masks, (2, 3)) > 0, 1.0, 0.0)
     target_mask_sums = torch.sum(target_masks, [2, 3]) + _EPS
     target_mask_sumsX = torch.sum(target_masks, 2) + _EPS
     target_mask_sumsY = torch.sum(target_masks, 3) + _EPS
@@ -62,11 +61,13 @@ def semi_keypoint_loss(
     #     )
     # )
     # loss += F.nll_loss(object_masks_sums, label_targets)
+    # Only penalize parts that exist in seg_targets
+    present_part = torch.sum(target_masks, (2, 3)) > 0
     keypoint_loss_x = F.mse_loss(
-        target_centerX[present_part > 0], centerX[present_part > 0]
+        target_centerX[present_part], centerX[present_part]
     )
     keypoint_loss_y = F.mse_loss(
-        target_centerY[present_part > 0], centerY[present_part > 0]
+        target_centerY[present_part], centerY[present_part]
     )
     keypoint_loss = keypoint_loss_x + keypoint_loss_y
     # TODO: This loss probably drives all pixels to one part/class 
