@@ -265,6 +265,7 @@ class SegGuidedAttackModule(AttackModule):
         mode = self.core_model.training
         self.core_model.eval()
         targeted = True
+        y_orig = y.clone()
 
         if guides is None:
             guide_masks, guide_labels = self._select_guide(x, y)
@@ -335,10 +336,8 @@ class SegGuidedAttackModule(AttackModule):
                 # Update worst-case inputs with itemized final losses only in
                 # 2nd stage.
                 fin_losses = self.clf_loss_fn(
-                    self.core_model(x_adv, return_mask=True), y, None
+                    self.core_model(x_adv, return_mask=True), y_orig, None
                 ).reshape(worst_losses.shape)
-                if targeted:
-                    fin_losses *= -1
                 up_mask = (fin_losses >= worst_losses).float()
                 x_adv_worst = x_adv * up_mask + x_adv_worst * (1 - up_mask)
                 worst_losses = fin_losses * up_mask + worst_losses * (
