@@ -2,7 +2,7 @@
 ID=9
 GPU=1
 NUM_GPU=1
-BS=4
+BS=32
 PORT=1000$ID
 BACKEND=nccl
 # =============================== PASCAL-Part =============================== #
@@ -25,7 +25,7 @@ CUDA_VISIBLE_DEVICES=$GPU python -u custom_seg_attack_main.py \
     --seg-backbone resnet50 --seg-arch deeplabv3plus --full-precision --pretrained \
     --data $DATAPATH --seg-label-dir $SEGPATH --dataset $DATASET --batch-size $BS \
     --epsilon $EPS --atk-norm Linf --evaluate --eval-attack seg-guide/2nd_pred_by_scores/0.5/ts \
-    --output-dir results/462 --experiment part-pooling-4-no_bg-semi --debug
+    --output-dir results/462 --experiment part-pooling-4-no_bg-semi
 
 # CUDA_VISIBLE_DEVICES=$GPU python -u main.py \
 #     --seg-backbone resnet50 --seg-arch deeplabv3plus --full-precision --pretrained \
