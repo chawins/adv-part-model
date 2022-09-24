@@ -4,11 +4,11 @@
 # export NCCL_P2P_DISABLE=1
 # export NCCL_DEBUG=INFO
 ID=9
-GPU=0,1,2,3
-NUM_GPU=4
+GPU=0,1
+NUM_GPU=2
 BS=32
-AA_BS=32
-PORT=1000$ID
+AA_BS=64
+PORT=1005$ID
 BACKEND=nccl
 # =============================== PASCAL-Part =============================== #
 # DATASET=pascal-part
@@ -21,30 +21,31 @@ BACKEND=nccl
 # ============================== Part-ImageNet ============================== #
 DATASET=part-imagenet
 DATAPATH=~/data/PartImageNet/
-# SEGPATH=$DATAPATH/PartSegmentations/All/
-SEGPATH=$DATAPATH/BoxSegmentations/All/
+SEGPATH=$DATAPATH/PartSegmentations/All/
+# SEGPATH=$DATAPATH/BoxSegmentations/All/
 
 # 0.0156862745, 0.03137254901, 0.06274509803
 EPS=0.03137254901
 
-for i in {1..5}; do
-    torchrun \
-        --rdzv_backend=c10d --rdzv_endpoint=127.0.0.1:2940$ID --rdzv_id=$ID \
-        --standalone --nnodes=1 --max_restarts 0 --nproc_per_node=$NUM_GPU \
-        main.py \
-        --dist-url tcp://localhost:$PORT --seed 0 --dist-backend $BACKEND \
-        --seg-backbone resnet50 --seg-arch deeplabv3plus --full-precision --pretrained \
-        --data $DATAPATH --seg-label-dir $SEGPATH --dataset $DATASET \
-        --print-freq 50 --epochs 50 --batch-size $BS --lr 1e-1 --wd 5e-4 \
-        --adv-train pgd --epsilon $EPS --atk-norm Linf --adv-beta 0.8 --eval-attack pgd \
-        --seg-const-trn 0.7 --semi-label 1 \
-        --resume results/box1/checkpoint_best.pt --load-weight-only --resume-if-exist \
-        --output-dir results/box14 --experiment part-pooling-4-semi && break
-    sleep 30
-done
+# for i in {1..5}; do
+#     torchrun \
+#         --rdzv_backend=c10d --rdzv_endpoint=127.0.0.1:2940$ID --rdzv_id=$ID \
+#         --standalone --nnodes=1 --max_restarts 0 --nproc_per_node=$NUM_GPU \
+#         main.py \
+#         --dist-url tcp://localhost:$PORT --seed 0 --dist-backend $BACKEND \
+#         --seg-backbone resnet50 --seg-arch deeplabv3plus --full-precision --pretrained \
+#         --data $DATAPATH --seg-label-dir $SEGPATH --dataset $DATASET \
+#         --print-freq 50 --epochs 50 --batch-size $BS --lr 1e-1 --wd 5e-4 \
+#         --adv-train pgd --epsilon $EPS --atk-norm Linf --adv-beta 0.8 --eval-attack pgd \
+#         --seg-const-trn 0.4 --semi-label 1 \
+#         --resume results/box1/checkpoint_best.pt --load-weight-only --resume-if-exist \
+#         --output-dir results/box12 --experiment part-pooling-4-semi && break
+#     sleep 30
+# done
 
-python -u main.py \
-    --seed 0 --seg-backbone resnet50 --seg-arch deeplabv3plus --full-precision --pretrained \
-    --data $DATAPATH --seg-label-dir $SEGPATH --dataset $DATASET \
-    --print-freq 50 --batch-size $AA_BS --epsilon $EPS --atk-norm Linf --eval-attack aa \
-    --output-dir results/box14 --experiment part-pooling-4-semi --evaluate
+python -u custom_seg_attack_main.py \
+    --seed 0 --seg-backbone resnet50 --seg-arch deeplabv3plus --full-precision \
+    --pretrained --data $DATAPATH --seg-label-dir $SEGPATH --dataset $DATASET \
+    --print-freq 50 --batch-size $AA_BS --epsilon $EPS --atk-norm Linf \
+    --eval-attack seg-guide/2nd_pred_by_scores/0.0/ts \
+    --output-dir results/462 --experiment part-pooling-4-no_bg-semi --evaluate
