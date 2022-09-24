@@ -98,8 +98,6 @@ class SegGuidedAttackModule(AttackModule):
             guide_masks.append(segs)
             labels.append(targets)
             pred_scores.append(scores)
-            # if i == 50:
-            #     break  # DEBUG
 
         self.guide_masks = torch.cat(guide_masks, dim=0)
         self.guide_labels = torch.cat(labels, dim=0)
@@ -337,7 +335,7 @@ class SegGuidedAttackModule(AttackModule):
                 # Update worst-case inputs with itemized final losses only in
                 # 2nd stage.
                 fin_losses = self.clf_loss_fn(
-                    self.core_model(x_adv), y, None
+                    self.core_model(x_adv, return_mask=True), y, None
                 ).reshape(worst_losses.shape)
                 if targeted:
                     fin_losses *= -1
