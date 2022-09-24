@@ -22,11 +22,13 @@ SEGPATH=$DATAPATH/PartSegmentations/All/
 # 0.0156862745, 0.03137254901, 0.06274509803
 EPS=0.03137254901
 
+# seg-guide/2nd_gt_random/0.0/ts
 CUDA_VISIBLE_DEVICES=$GPU python -u custom_seg_attack_main.py \
     --seed 0 --seg-backbone resnet50 --seg-arch deeplabv3plus --full-precision \
     --pretrained --data $DATAPATH --seg-label-dir $SEGPATH --dataset $DATASET \
     --print-freq 50 --batch-size $AA_BS --epsilon $EPS --atk-norm Linf \
-    --eval-attack seg-guide/2nd_gt_random/0.0/ts \
+    --eval-attack pgd \
+    --resume results/462/checkpoint_best.pt \
     --output-dir results/462 --experiment part-pooling-4-no_bg-semi --evaluate
 
 # CUDA_VISIBLE_DEVICES=$GPU python -u main.py \

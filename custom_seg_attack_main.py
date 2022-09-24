@@ -303,21 +303,7 @@ def main(args):
         args, model, guide_dataloader=test_loader
     )
 
-    # mask_attack_loss = nn.CrossEntropyLoss(reduction="none")
-    # mask_attack_params = {
-    #     "pgd_steps": 100,
-    #     "pgd_step_size": 0.02,
-    #     "num_restarts": 1,
-    # }
-    # import pdb
-    # pdb.set_trace()
-    # mask_attack = PGDAttackModule(
-    #     mask_attack_params, model, mask_attack_loss, "Linf", 1e6
-    # )
-
-    print(args)
-
-    for attack in eval_attack[1:]:
+    for attack in eval_attack:
         # Use DataParallel (not distributed) model for AutoAttack.
         # Otherwise, DDP model can get timeout or c10d failure.
         stats = validate(test_loader, model, criterion, attack[1], args)
