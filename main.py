@@ -647,4 +647,5 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
     os.makedirs(args.output_dir, exist_ok=True)
-    main(args)
+    with torch.autograd.set_detect_anomaly(True):
+        main(args)
