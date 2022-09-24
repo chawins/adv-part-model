@@ -4,6 +4,7 @@ import os
 import numpy as np
 import torch
 from torchvision.utils import save_image
+import torch.nn.functional as F
 
 from .base import AttackModule
 
@@ -11,62 +12,114 @@ EPS = 1e-6
 
 
 class SegGuidedAttackModule(AttackModule):
-
-    def __init__(self, attack_config, core_model, loss_fn, norm, eps,
-                 guide_path='~/data/', num_guides=1000, input_dim=None, **kwargs):
+    def __init__(
+        self,
+        attack_config,
+        core_model,
+        loss_fn,
+        norm,
+        eps,
+        dataloader=None,
+        num_guides=1000,
+        input_dim=None,
+        classifier=None,
+        no_bg=False,
+        num_classes=10,
+        **kwargs
+    ):
         super(SegGuidedAttackModule, self).__init__(
-            attack_config, core_model, loss_fn, norm, eps, **kwargs)
-        assert self.norm in ('L2', 'Linf')
-        self.num_steps = attack_config['pgd_steps']
-        self.step_size = attack_config['pgd_step_size']
-        self.num_restarts = attack_config['num_restarts']
-        self._load_guides(guide_path, num_guides, input_dim)
+            attack_config, core_model, loss_fn, norm, eps, **kwargs
+        )
+        assert self.norm in ("L2", "Linf")
+        self.classifier = classifier
+        self.num_classes = num_classes
+        self.num_steps = attack_config["pgd_steps"]
+        self.step_size = attack_config["pgd_step_size"]
+        self.num_restarts = attack_config["num_restarts"]
+        self._load_guides(dataloader, num_guides, input_dim)
 
-    def _load_guides(self, guide_path, num_guides, input_dim):
+    def _load_guides(self, dataloader, num_guides, input_dim):
         """Load guide masks into memory"""
         # TODO: apply to general dataset
-        from part_model.dataloader.cityscapes import seg_file_to_mask
+        # from part_model.dataloader.cityscapes import seg_file_to_mask
 
-        dirs = os.listdir(guide_path)
-        classes = sorted([d for d in dirs if os.path.isdir(os.path.join(guide_path, d))])
-        size = input_dim[1:]
-        shape = (len(classes), num_guides, ) + size
-        self.guides = torch.zeros(shape, dtype=torch.long)
-        self.guide_masks = torch.zeros(shape, dtype=torch.float32)
-        for j, c in enumerate(classes):
-            search_files = os.path.join(guide_path, c, '*.tif')
-            filenames = sorted(glob.glob(search_files))
-            np.random.seed(0)
-            np.random.shuffle(filenames)
-            for i, filename in enumerate(filenames[:num_guides]):
-                guide, mask = seg_file_to_mask(filename)
-                self.guides[j][i] = guide
-                self.guide_masks[j][i] = mask[:, :, j]
+        # dirs = os.listdir(guide_path)
+        # classes = sorted(
+        #     [d for d in dirs if os.path.isdir(os.path.join(guide_path, d))]
+        # )
+        # size = input_dim[1:]
+        # shape = (
+        #     len(classes),
+        #     num_guides,
+        # ) + size
+        # self.guides = torch.zeros(shape, dtype=torch.long)
+        # self.guide_masks = torch.zeros(shape, dtype=torch.float32)
+        guide_masks = []
+        labels = []
+        pred_scores = []
+        
+        # for j, c in enumerate(classes):
+        for _, segs, targets in dataloader:
+            # search_files = os.path.join(guide_path, c, "*.tif")
+            # filenames = sorted(glob.glob(search_files))
+            # np.random.seed(0)
+            # np.random.shuffle(filenames)
+            # for i, filename in enumerate(filenames[:num_guides]):
+            #     guide, mask = seg_file_to_mask(filename)
+            #     self.guides[j][i] = guide
+            #     self.guide_masks[j][i] = mask[:, :, j]
+
+            # Get classifier's score on gt masks
+            onehot_segs = F.one_hot(segs, num_classes=self.num_classes)
+            # classifier takes logit masks but gt mask is categorical so we
+            # scale it with a large constant (like temperature).
+            logits = self.classifier(onehot_segs * 1e3)
+            pred_scores = F.softmax(logits, dim=-1)
+
+            guide_masks.append(segs)
+            labels.append(targets)
+            pred_scores.append(pred_scores)
+
+        # Sort scores by class
+
+        self.guide_masks = torch.cat(guide_masks, dim=0)
+        self.guide_labels = torch.cat(labels, dim=0)
+        self.guide_scores = torch.cat(pred_scores, dim=0)
+            
 
     def _select_guide(self, x, y):
         """
-        Select `n` guide masks with the highest similarity to the predicted 
+        Select `n` guide masks with the highest similarity to the predicted
         mask for `x` where `n` is `num_restarts`.
         """
         with torch.no_grad():
-            masks = self.core_model(x, return_mask=True)[1].detach()
-            masks = masks.argmax(1).cpu()
+            masks = self.core_model(x, return_mask=True)[1].detach().cpu()
+            # masks = masks.argmax(1).cpu()
 
-        guides = torch.zeros((self.num_restarts, ) + masks.shape,
-                             device=x.device, dtype=self.guides.dtype)
-        guide_masks = torch.zeros((self.num_restarts, ) + masks.shape,
-                                  device=x.device, dtype=x.dtype)
+        guides = torch.zeros(
+            (self.num_restarts,) + masks.shape,
+            device=x.device,
+            dtype=self.guides.dtype,
+        )
+        guide_masks = torch.zeros(
+            (self.num_restarts,) + masks.shape, device=x.device, dtype=x.dtype
+        )
         for i, (mask, label) in enumerate(zip(masks, y)):
             # TODO: handle multi-class and move to targeted attack
             tgt_label = 1 - label
-            scores = (mask[None, :, :] == self.guides[tgt_label]).float().sum((1, 2))
-            idx = scores.topk(self.num_restarts)[1]
+            # match_scores = mask[None, :, :] == self.guides[tgt_label]
+            match_scores = ((mask.unsqueeze(0) - self.guides[tgt_label]) ** 2).sum((2, 3))
+            match_scores = match_scores.float().sum((1, 2))
+            idx = match_scores.topk(self.num_restarts)[1]
             guides[:, i] = self.guides[tgt_label][idx]
             guide_masks[:, i] = self.guide_masks[tgt_label][idx]
+            
         return guides.to(x.device), guide_masks.to(x.device)
 
     def _project_l2(self, x, eps):
-        dims = [-1, ] + [1, ] * (x.ndim - 1)
+        dims = [-1,] + [
+            1,
+        ] * (x.ndim - 1)
         return x / (x.view(len(x), -1).norm(2, 1).view(dims) + EPS) * eps
 
     def _forward_l2(self, x, y):
@@ -107,10 +160,14 @@ class SegGuidedAttackModule(AttackModule):
                 x_adv_worst = x_adv
             else:
                 # Update worst-case inputs with itemized final losses
-                fin_losses = self.loss_fn(self.core_model(x_adv), y).reshape(worst_losses.shape)
+                fin_losses = self.loss_fn(self.core_model(x_adv), y).reshape(
+                    worst_losses.shape
+                )
                 up_mask = (fin_losses >= worst_losses).float()
                 x_adv_worst = x_adv * up_mask + x_adv_worst * (1 - up_mask)
-                worst_losses = fin_losses * up_mask + worst_losses * (1 - up_mask)
+                worst_losses = fin_losses * up_mask + worst_losses * (
+                    1 - up_mask
+                )
 
         # Return worst-case perturbed input logits
         self.core_model.train(mode)
@@ -147,7 +204,9 @@ class SegGuidedAttackModule(AttackModule):
                 with torch.no_grad():
                     # Perform gradient update, project to norm ball
                     x_adv = x_adv.detach() + self.step_size * torch.sign(grads)
-                    x_adv = torch.min(torch.max(x_adv, x - self.eps), x + self.eps)
+                    x_adv = torch.min(
+                        torch.max(x_adv, x - self.eps), x + self.eps
+                    )
                     # Clip perturbed inputs to image domain
                     x_adv = torch.clamp(x_adv, 0, 1)
 
@@ -164,10 +223,14 @@ class SegGuidedAttackModule(AttackModule):
                 x_adv_worst = x_adv
             else:
                 # Update worst-case inputs with itemized final losses
-                fin_losses = self.loss_fn(self.core_model(x_adv), y).reshape(worst_losses.shape)
+                fin_losses = self.loss_fn(self.core_model(x_adv), y).reshape(
+                    worst_losses.shape
+                )
                 up_mask = (fin_losses >= worst_losses).float()
                 x_adv_worst = x_adv * up_mask + x_adv_worst * (1 - up_mask)
-                worst_losses = fin_losses * up_mask + worst_losses * (1 - up_mask)
+                worst_losses = fin_losses * up_mask + worst_losses * (
+                    1 - up_mask
+                )
 
         # DEBUG
         # print(y)
@@ -186,6 +249,6 @@ class SegGuidedAttackModule(AttackModule):
         return x_adv_worst.detach()
 
     def forward(self, *args):
-        if self.norm == 'L2':
+        if self.norm == "L2":
             return self._forward_l2(*args)
         return self._forward_linf(*args)
