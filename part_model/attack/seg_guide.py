@@ -160,7 +160,10 @@ class SegGuidedAttackModule(AttackModule):
     def _select_2nd_pred_by_scores(self, y_2nd: torch.Tensor) -> torch.Tensor:
         guide_masks = []
         for cur_y_2nd in y_2nd.cpu().numpy():
-            idx = self.pred_idx_dict[cur_y_2nd][: self.num_restarts]
+            idx = self.pred_idx_dict[cur_y_2nd]
+            if self.num_restarts > len(idx):
+                idx = idx.repeat(self.num_restarts // len(idx) + 1)
+            idx = idx[: self.num_restarts]
             guide_masks.append(self.guide_masks[idx].unsqueeze(1))
         guide_masks = torch.cat(guide_masks, dim=1)
         return guide_masks
