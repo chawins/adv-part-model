@@ -57,7 +57,7 @@ class SegGuidedAttackModule(AttackModule):
         if self.guide_selection not in self.all_guide_selections:
             raise NotImplementedError(
                 f"guide_selection {self.guide_selection} not implemented! "
-                f"(Options: {self.all_guide_selections})"
+                f"(options: {self.all_guide_selections})"
             )
 
         self.use_two_stages = attack_config["use_two_stages"]
