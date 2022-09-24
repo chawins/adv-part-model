@@ -4,6 +4,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+_EPS = 1e-6
+
 
 def trades_loss(cl_logits, adv_logits, targets, beta):
     cl_loss = F.cross_entropy(cl_logits, targets, reduction="mean")
@@ -32,6 +34,45 @@ def semi_seg_loss(seg_mask, seg_targets):
         )
         return seg_loss.mean((1, 2))
     return seg_loss
+
+
+def semi_keypoint_loss(
+    centerX, centerY, object_masks_sums, seg_targets, label_targets
+):
+    grid = torch.arange(seg_targets.shape[2])[None, None, :].cuda()
+    targets = F.one_hot(seg_targets, num_classes=centerX.shape[1] + 1)
+    target_masks = targets.permute(0, 3, 2, 1)
+    target_masks = target_masks[:, 1:]
+    target_mask_sums = torch.sum(target_masks, [2, 3]) + _EPS
+    target_mask_sumsX = torch.sum(target_masks, 2) + _EPS
+    target_mask_sumsY = torch.sum(target_masks, 3) + _EPS
+    # Part centroid is standardized by object's centroid and sd
+    target_centerX = (target_mask_sumsX * grid).sum(
+        2
+    ) / target_mask_sums / seg_targets.shape[1] * 2 - 1
+    target_centerY = (target_mask_sumsY * grid).sum(
+        2
+    ) / target_mask_sums / seg_targets.shape[2] * 2 - 1
+    # TODO: This probably doesn't need sqrt?
+    # loss = torch.sqrt(
+    #     F.mse_loss(target_centerX[present_part > 0], centerX[present_part > 0])
+    #     + F.mse_loss(
+    #         target_centerY[present_part > 0], centerY[present_part > 0]
+    #     )
+    # )
+    # loss += F.nll_loss(object_masks_sums, label_targets)
+    # Only penalize parts that exist in seg_targets
+    present_part = torch.sum(target_masks, (2, 3)) > 0
+    keypoint_loss_x = F.mse_loss(
+        target_centerX[present_part], centerX[present_part]
+    )
+    keypoint_loss_y = F.mse_loss(
+        target_centerY[present_part], centerY[present_part]
+    )
+    keypoint_loss = keypoint_loss_x + keypoint_loss_y
+    # TODO: This loss probably drives all pixels to one part/class 
+    cls_loss = F.cross_entropy(object_masks_sums, label_targets)
+    return cls_loss + keypoint_loss
 
 
 class PixelwiseCELoss(nn.Module):
@@ -172,6 +213,38 @@ class SemiSumLoss(nn.Module):
         return loss
 
 
+class SemiKeypointLoss(nn.Module):
+    def __init__(self, seg_const: float = 0.5, reduction: str = "mean"):
+        super(SemiKeypointLoss, self).__init__()
+        assert 0 <= seg_const <= 1
+        self.seg_const = seg_const
+        self.reduction = reduction
+
+    def forward(
+        self,
+        logits: Union[list, tuple],
+        targets: torch.Tensor,
+        seg_targets: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+
+        logits, seg_mask = logits
+        seg_mask, centerX, centerY, object_masks_sums = seg_mask
+        loss = 0
+        if self.seg_const < 1:
+            clf_loss = F.cross_entropy(logits, targets, reduction="none")
+            loss += (1 - self.seg_const) * clf_loss
+        if self.seg_const > 0:
+            semi_mask = seg_targets[:, 0, 0] >= 0
+            seg_loss = torch.zeros_like(semi_mask, dtype=logits.dtype)
+            seg_loss[semi_mask] = semi_keypoint_loss(
+                centerX, centerY, object_masks_sums, seg_targets, targets
+            )
+            loss += self.seg_const * seg_loss
+        if self.reduction == "mean":
+            return loss.mean()
+        return loss
+
+
 class SemiSegTRADESLoss(nn.Module):
     def __init__(self, const: float = 1.0, beta: float = 1.0):
         super(SemiSegTRADESLoss, self).__init__()
@@ -247,6 +320,9 @@ def get_train_criterion(args):
         else:
             train_criterion = MATLoss(args.adv_beta)
     elif "semi" in args.experiment:
-        train_criterion = SemiSumLoss(seg_const=args.seg_const_trn)
+        if "centroid" in args.experiment:
+            train_criterion = SemiKeypointLoss(seg_const=args.seg_const_trn)
+        else:
+            train_criterion = SemiSumLoss(seg_const=args.seg_const_trn)
     train_criterion = train_criterion.cuda(args.gpu)
     return criterion, train_criterion
