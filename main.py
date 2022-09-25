@@ -115,6 +115,9 @@ def get_args_parser():
         type=str,
         help="url used to set up distributed training",
     )
+    parser.add_argument(
+        "--no-distributed", action="store_true", help="Disable distributed mode"
+    )
     parser.add_argument("--dist-backend", default="nccl", type=str)
     parser.add_argument("--seed", default=0, type=int)
     parser.add_argument("--gpu", default=None, type=int, help="GPU id to use.")

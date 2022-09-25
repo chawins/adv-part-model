@@ -28,7 +28,7 @@ CUDA_VISIBLE_DEVICES=$GPU python -u custom_seg_attack_main.py \
     --pretrained --data $DATAPATH --seg-label-dir $SEGPATH --dataset $DATASET \
     --print-freq 50 --batch-size $AA_BS --epsilon $EPS --atk-norm Linf \
     --eval-attack seg-guide/untargeted/0.0/ts \
-    --output-dir results/1074 --experiment part-wbbox-norm_img-semi --evaluate
+    --output-dir results/468 --experiment part-wbbox-norm_img-semi --evaluate
 
 #     --resume results/462/checkpoint_best.pt \
 #     --output-dir results/462 --experiment part-pooling-4-no_bg-semi --evaluate
