@@ -11,6 +11,7 @@ from shutil import copyfile
 
 import numpy as np
 import PIL
+from PIL import Image
 import scipy.io
 from tqdm import tqdm
 
@@ -117,6 +118,17 @@ LABELS = list(PARTS.keys())
 LABEL_TO_IDX = {label: i for i, label in enumerate(PARTS.keys())}
 
 
+def _get_box_from_bin_mask(bin_mask):
+    box_mask = np.zeros_like(bin_mask)
+    if bin_mask.sum() == 0:
+        return box_mask
+    y, x = np.where(bin_mask)
+    ymin, ymax = y.min(), y.max()
+    xmin, xmax = x.min(), x.max()
+    box_mask[ymin : ymax + 1, xmin : xmax + 1] = 1
+    return box_mask
+
+
 def load_annotations(path):
 
     # Get annotations from the file and relative objects:
@@ -151,9 +163,7 @@ def load_annotations(path):
             parts_list.append({"part_name": part_name, "mask": part_mask})
 
         # Add info to objects_list:
-        objects_list.append(
-            {"class": classname, "mask": mask, "parts": parts_list}
-        )
+        objects_list.append({"class": classname, "mask": mask, "parts": parts_list})
 
     return {"objects": objects_list}
 
@@ -165,7 +175,7 @@ def get_part_label_offset(label_idx):
     return offset
 
 
-def relabel_parts(part_label, obj):
+def relabel_parts(part_label, obj, use_box_seg):
     """Label `part_label` with parts of `obj`"""
     label = obj["class"]
     if label not in LABELS:
@@ -180,8 +190,13 @@ def relabel_parts(part_label, obj):
             if any([p in subpart for p in PARTS[label][part]]):
                 part_mask += obj["parts"][i]["mask"]
         # Get remaining pixels that still don't have part assigned to
-        mask_bg = part_label == 0
-        part_label += mask_bg * (part_mask > 0) * (label_offset + part_idx + 1)
+        if use_box_seg:
+            part_label[_get_box_from_bin_mask((part_mask > 0))] = (
+                label_offset + part_idx + 1
+            )
+        else:
+            mask_bg = part_label == 0
+            part_label += mask_bg * (part_mask > 0) * (label_offset + part_idx + 1)
 
 
 def collect_parts(args):
@@ -232,13 +247,13 @@ def collect_parts(args):
         part_label = np.zeros_like(mask)
 
         # Relabel the main object first
-        relabel_parts(part_label, obj)
+        relabel_parts(part_label, obj, args.use_box_seg)
 
         # Relabel the rest of the objects in the image in order
         for obj_idx, o in enumerate(annotations["objects"]):
             if obj_idx == main_obj_idx:
                 continue
-            relabel_parts(part_label, o)
+            relabel_parts(part_label, o, args.use_box_seg)
 
         gt_list.append(part_label)
 
@@ -256,15 +271,18 @@ def collect_parts(args):
 
 def save_pil_image(img, path):
     image_path = os.path.join(path)
-    pil_img = PIL.Image.fromarray(img)
+    pil_img = Image.fromarray(img)
     pil_img.save(image_path)
 
 
 def save_images_partition(partition, data_dict, idx, image_path):
     # Copy images to new directory
-    path = os.path.join(
-        args.data_dir, "PartImages", args.name, "images", partition
-    )
+    if args.use_box_seg:
+        path = os.path.join(
+            args.data_dir, "BoxSegmentations", args.name, "images", partition
+        )
+    else:
+        path = os.path.join(args.data_dir, "PartImages", args.name, "images", partition)
     for label in LABELS:
         os.makedirs(os.path.join(path, label), exist_ok=True)
 
@@ -278,17 +296,20 @@ def save_images_partition(partition, data_dict, idx, image_path):
 
     # Save segmentation labels
     key = "panoptic-parts"
-    path = os.path.join(
-        args.data_dir, "PartImages", args.name, "panoptic-parts", partition
-    )
+    if args.use_box_seg:
+        path = os.path.join(
+            args.data_dir, "BoxSegmentations", args.name, "panoptic-parts", partition
+        )
+    else:
+        path = os.path.join(
+            args.data_dir, "PartImages", args.name, "panoptic-parts", partition
+        )
     for label in LABELS:
         os.makedirs(os.path.join(path, label), exist_ok=True)
     for i in idx:
         label = data_dict["labels"][i]
         filename = data_dict["images"][i].split(".")[0]
-        save_pil_image(
-            data_dict[key][i], os.path.join(path, label, f"{filename}.tif")
-        )
+        save_pil_image(data_dict[key][i], os.path.join(path, label, f"{filename}.tif"))
 
 
 # Load annotations from the annotation folder of PASCAL-Part dataset:
@@ -316,6 +337,7 @@ if __name__ == "__main__":
         type=float,
         help="Min area of object to consider (relative to image size)",
     )
+    parser.add_argument("--use-box-seg", action="store_true")
     args = parser.parse_args()
 
     random.seed(args.seed)

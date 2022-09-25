@@ -23,12 +23,13 @@
 #     --rand-pad \
 #     --allow-missing-parts
 
-# python prepare_pascal_part.py \
-#     --data-dir ~/data/pascal_part/ \
-#     --name aeroplane_bird_car_cat_dog_new \
-#     --min-area 0.
+python prepare_pascal_part.py \
+    --data-dir /data/kornrapatp/pascal_part/ \
+    --name aeroplane_bird_car_cat_dog_new \
+    --min-area 0. \
+    --use-box-seg
 
-python -u prepare_part_imagenet.py \
-    --data-dir ~/data/PartImageNet/ \
-    --name All
+# python -u prepare_part_imagenet.py \
+#     --data-dir ~/data/PartImageNet/ \
+#     --name All
 # --use-box-seg
