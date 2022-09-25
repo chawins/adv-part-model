@@ -250,7 +250,9 @@ best_acc1 = 0
 
 @record
 def main(args):
-    init_distributed_mode(args)
+    # init_distributed_mode(args)
+    print("Not using distributed mode")
+    args.distributed = False
 
     global best_acc1
 

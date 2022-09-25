@@ -37,6 +37,7 @@ class SegGuidedAttackModule(AttackModule):
         self.num_steps = attack_config["pgd_steps"]
         self.step_size = attack_config["pgd_step_size"]
         self.num_restarts = attack_config["num_restarts"]
+        self.use_mask = True
 
         # "opt": optimizes for worst-case mask.
         # "random": random guide from any of incorrect class.
@@ -52,17 +53,22 @@ class SegGuidedAttackModule(AttackModule):
             "2nd_pred_by_scores",
             "2nd_gt_random",
             "2nd_gt_by_sim",
+            "untargeted",
         )
         if self.guide_selection not in self.all_guide_selections:
             raise NotImplementedError(
                 f"guide_selection {self.guide_selection} not implemented! "
                 f"(options: {self.all_guide_selections})"
             )
-        if self.guide_selection != "opt" and dataloader is None:
+        if (
+            self.guide_selection not in ("opt", "untargeted")
+            and dataloader is None
+        ):
             raise ValueError(
                 "dataloader cannot be None for guide_selection "
                 f"{self.guide_selection}."
             )
+        self.targeted = self.guide_selection != "untargeted"
 
         self.use_two_stages = attack_config["use_two_stages"]
         self.loss_fn = loss_lib.SemiSumLoss(
@@ -72,7 +78,7 @@ class SegGuidedAttackModule(AttackModule):
         # Classification loss is used only for saving final best attack
         self.clf_loss_fn = loss_lib.SemiSumLoss(seg_const=0, reduction="none")
 
-        if self.guide_selection != "opt":
+        if self.guide_selection not in ("opt", "untargeted"):
             with torch.no_grad():
                 self._load_guides(dataloader)
 
@@ -169,12 +175,22 @@ class SegGuidedAttackModule(AttackModule):
         return guide_masks
 
     def _select_guide(
-        self, x: torch.Tensor, y: torch.Tensor
+        self,
+        x: torch.Tensor,
+        y: torch.Tensor,
+        y_seg: torch.Tensor,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Returns:
             guide_masks: shape [num_restarts, B, H, W]
         """
+        if self.guide_selection == "untargeted":
+            guide_masks = y_seg.unsqueeze(0).expand(
+                self.num_restarts, -1, -1, -1
+            )
+            y_guides = y.unsqueeze(0).expand(self.num_restarts, -1)
+            return guide_masks.to(x.device), y_guides.to(x.device)
+
         with torch.no_grad():
             logits, _ = self.core_model(x, return_mask=True)
 
@@ -261,17 +277,17 @@ class SegGuidedAttackModule(AttackModule):
         self,
         x: torch.Tensor,
         y: torch.Tensor,
+        y_seg: torch.Tensor,
         guides: Optional[
             Tuple[torch.Tensor, torch.Tensor, torch.Tensor]
         ] = None,
     ) -> torch.Tensor:
         mode = self.core_model.training
         self.core_model.eval()
-        targeted = True
         y_orig = y.clone()
 
         if guides is None:
-            guide_masks, guide_labels = self._select_guide(x, y)
+            guide_masks, guide_labels = self._select_guide(x, y, y_seg)
             x_init = x
             loss_fn = self.seg_loss_fn if self.use_two_stages else self.loss_fn
             in_1st_stage = self.use_two_stages
@@ -281,6 +297,7 @@ class SegGuidedAttackModule(AttackModule):
             guide_masks, guide_labels, x_init = guides
             loss_fn = self.loss_fn
             in_1st_stage = False
+        num_guides = len(guide_masks) if self.targeted else 1
 
         # Initialize worst-case inputs
         x_adv_worst = [] if in_1st_stage else x.clone().detach()
@@ -289,16 +306,15 @@ class SegGuidedAttackModule(AttackModule):
         # Repeat PGD for specified number of restarts
         for i in range(self.num_restarts):
 
-            num_guides = len(guide_masks)
-            x_adv = x_init if x_init.ndim == x.ndim else x_init[i % num_guides]
-            x_adv = x_adv.clone().detach()
-            guide_mask = guide_masks[i % num_guides]
-            if targeted:
-                y = guide_labels[i % num_guides]
+            if x_init.ndim == x.ndim:
+                # Randomly initialize adversarial inputs
+                x_adv = x + torch.zeros_like(x).uniform_(-self.eps, self.eps)
+                x_adv = torch.clamp(x_adv, 0, 1)
+            else:
+                x_adv = x_init[i % num_guides].clone().detach()
 
-            # Initialize adversarial inputs
-            x_adv += torch.zeros_like(x_adv).uniform_(-self.eps, self.eps)
-            x_adv = torch.clamp(x_adv, 0, 1)
+            guide_mask = guide_masks[i % num_guides]
+            y = guide_labels[i % num_guides]
 
             # Run PGD on inputs for specified number of steps
             for j in range(self.num_steps):
@@ -308,7 +324,7 @@ class SegGuidedAttackModule(AttackModule):
                 with torch.enable_grad():
                     logits = self.core_model(x_adv, return_mask=True)
                     loss = loss_fn(logits, y, guide_mask).mean()
-                    if targeted:
+                    if self.targeted:
                         loss *= -1
                     grads = torch.autograd.grad(loss, x_adv)[0].detach()
 
@@ -374,10 +390,11 @@ class SegGuidedAttackModule(AttackModule):
             return self._forward_l2(*args, **kwargs)
         return self._forward_linf(*args, **kwargs)
 
-    def forward(self, *args):
+    def forward(self, *args, **kwargs):
         if not self.use_two_stages:
-            return self._forward(*args)
+            return self._forward(*args, **kwargs)
 
-        # Two-staged attack
-        guides = self._forward(*args)
-        return self._forward(*args, guides=guides)
+        # Two-staged attack: first stage
+        guides = self._forward(*args, **kwargs)
+        # Second stage
+        return self._forward(*args, **kwargs, guides=guides)
