@@ -11,7 +11,7 @@
 #Number of GPUs, this can be in the format of "gpu:[1-4]", or "gpu:K80:[1-4] with the type included
 #SBATCH --gres=gpu:GTX2080TI:1
 #SBATCH --time=10:00:00
-#SBATCH --output slurm-%j-exp462-2nd_pred_by_scores_0.0_ts.out
+#SBATCH --output slurm-%j-exp462-untargeted-0.0-ts.out
 ## Command(s) to run:
 source /global/home/users/$USER/.bash_profile
 module purge
@@ -24,11 +24,11 @@ source activate /global/scratch/users/$USER/pt
 # bash scripts/run1-4.sh # box9
 # bash scripts/run2-1.sh # box10
 # bash scripts/run2-2.sh # box11
-# bash scripts/run2-3.sh # 2nd_gt_random
-# bash scripts/run2-4.sh # random
-bash scripts/run3-1.sh # 2nd_pred_by_scores
+# bash scripts/run2-3.sh # 2nd_gt_random/0.0/ts
+# bash scripts/run2-4.sh # random/0.0/ts
+# bash scripts/run3-1.sh # 2nd_pred_by_scores/0.0/ts
 # bash scripts/run3-2.sh # 2nd_pred_by_scores/0.1
-# bash scripts/run3-3.sh # box16
+bash scripts/run3-3.sh # untargeted/0.0/ts
 # bash scripts/run3-4.sh # 2126
 
 # bash scripts/run4.sh # 2020-2021
