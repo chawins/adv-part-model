@@ -115,13 +115,12 @@ class SegGuidedAttackModule(AttackModule):
         for i in range(num_classes):
             self.label_idx_dict[i] = torch.where(self.guide_labels == i)[0]
             pred_idx = torch.where(self.guide_scores.argmax(dim=-1) == i)[0]
-            # Sort by scores
-            sort_idx = torch.argsort(
-                self.guide_scores[pred_idx, i], descending=True
-            )
-            self.pred_idx_dict[i] = pred_idx[sort_idx]
-            self._check_num_guides(self.label_idx_dict, i)
-            self._check_num_guides(self.pred_idx_dict, i)
+            if len(pred_idx) > 0:
+                # Sort by scores
+                sort_idx = torch.argsort(
+                    self.guide_scores[pred_idx, i], descending=True
+                )
+                self.pred_idx_dict[i] = pred_idx[sort_idx]
 
         print("Finished loading guides.")
 
@@ -163,16 +162,27 @@ class SegGuidedAttackModule(AttackModule):
         guide_masks = torch.cat(guide_masks, dim=1)
         return guide_masks
 
-    def _select_2nd_pred_by_scores(self, y_2nd: torch.Tensor) -> torch.Tensor:
+    def _select_2nd_pred_by_scores(
+        self, y_sort: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         guide_masks = []
-        for cur_y_2nd in y_2nd.cpu().numpy():
-            idx = self.pred_idx_dict[cur_y_2nd]
+        idx_y = np.zeros(len(y_sort), dtype=np.int64)
+        for i, cur_y_sort in enumerate(y_sort.cpu().numpy()):
+            j = 0
+            while cur_y_sort[j] not in self.pred_idx_dict:
+                j += 1
+            idx_y[i] = j
+            idx = self.pred_idx_dict[cur_y_sort[j]]
             if self.num_restarts > len(idx):
                 idx = idx.repeat(self.num_restarts // len(idx) + 1)
             idx = idx[: self.num_restarts]
             guide_masks.append(self.guide_masks[idx].unsqueeze(1))
         guide_masks = torch.cat(guide_masks, dim=1)
-        return guide_masks
+        guide_labels = y_sort[
+            torch.arange(len(y_sort)), torch.from_numpy(idx_y).to(y_sort.device)
+        ]
+        guide_labels = guide_labels.unsqueeze(0).expand(self.num_restarts, -1)
+        return guide_masks, guide_labels
 
     def _select_guide(
         self,
@@ -199,17 +209,17 @@ class SegGuidedAttackModule(AttackModule):
         copy_logits = logits.clone()
         copy_logits[torch.arange(batch_size), y] -= 1e9
         y_2nd = copy_logits.argmax(-1).to(x.device)
+        y_sort = torch.argsort(copy_logits, dim=-1, descending=True)
         y_guides = y_2nd.unsqueeze(0).expand(self.num_restarts, -1)
 
         # TODO
         if self.guide_selection == "2nd_pred_by_scores":
-            guide_masks = self._select_2nd_pred_by_scores(y_2nd)
+            guide_masks, y_guides = self._select_2nd_pred_by_scores(y_sort)
         elif self.guide_selection == "2nd_gt_random":
             guide_masks = self._select_2nd_gt_random(y_2nd)
         elif self.guide_selection == "opt":
             guide_masks = self._select_opt(y_2nd)
         elif self.guide_selection == "random":
-            y_sort = torch.argsort(copy_logits, dim=-1, descending=True)
             guide_masks = self._select_random(y_sort)
             y_guides = y_sort.permute(1, 0)[: self.num_restarts]
 
