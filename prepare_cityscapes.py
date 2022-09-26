@@ -24,7 +24,8 @@ from part_model.utils import (
 
 LABELS = ["human", "vehicle"]
 LABEL_TO_SIDS = [[24, 25], [26, 27, 28]]  # human, vehicle
-# ['head', 'torso', 'arms', 'legs'], ['windows', 'wheels', 'lights', 'license_plate', 'chassis']
+# ['head', 'torso', 'arms', 'legs']
+# ['windows', 'wheels', 'lights', 'license_plate', 'chassis']
 LABEL_TO_PARTS = [[1, 2, 3, 4], [1, 2, 3, 4, 5]]
 
 ALL_SIDS = []
@@ -35,6 +36,29 @@ SID_TO_LABEL = {}
 for i, sids in enumerate(LABEL_TO_SIDS):
     for sid in sids:
         SID_TO_LABEL[sid] = i
+
+
+def _get_box_from_bin_mask(bin_mask):
+    box_mask = np.zeros_like(bin_mask)
+    if bin_mask.sum() == 0:
+        return box_mask
+    y, x = np.where(bin_mask)
+    ymin, ymax = y.min(), y.max()
+    xmin, xmax = x.min(), x.max()
+    box_mask[ymin : ymax + 1, xmin : xmax + 1] = 1
+    return box_mask
+
+
+def _pixelwise_to_box(mask):
+    uids = np.unique(mask)
+    box_mask = np.zeros_like(mask)
+    for y in uids:
+        # TODO: Background has "small" uid. This can be made cleaner.
+        if y < 2e6:
+            continue
+        bin_mask = _get_box_from_bin_mask(mask == y)
+        box_mask += (box_mask == 0) * bin_mask * y
+    return box_mask
 
 
 def create_parts_hdf5(args, partition, data_dict=None):
@@ -101,6 +125,9 @@ def create_parts_hdf5(args, partition, data_dict=None):
                 else:
                     obj_patch = crop(img, instance_mask, pad)
                     gt_patch = crop(gt, instance_mask, pad)
+
+                if args.use_box_seg:
+                    gt_patch = _pixelwise_to_box(gt_patch)
 
                 # Filter out image that is occluded by objects of the other class
                 gt_temp = crop(gt, instance_mask, 0)
@@ -291,6 +318,7 @@ if __name__ == "__main__":
         action="store_true",
         help="Include samples with missing parts",
     )
+    parser.add_argument("--use-box-seg", action="store_true")
     args = parser.parse_args()
 
     random.seed(args.seed)

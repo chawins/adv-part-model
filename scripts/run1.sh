@@ -4,9 +4,9 @@
 # export NCCL_P2P_DISABLE=1
 # export NCCL_DEBUG=INFO
 ID=6
-GPU=4,5,6,7
-NUM_GPU=4
-BS=512
+GPU=0
+NUM_GPU=1
+BS=32
 PORT=1100$ID
 BACKEND=nccl
 # =============================== PASCAL-Part =============================== #
@@ -14,13 +14,13 @@ BACKEND=nccl
 # DATAPATH=~/data/pascal_part/PartImages/aeroplane_bird_car_cat_dog_new/
 # SEGPATH=$DATAPATH/panoptic-parts/train
 # =============================== Cityscapes ================================ #
-# DATASET=cityscapes
-# DATAPATH=~/data/cityscapes/PartImages/square_rand_pad0.2/
-# SEGPATH=$DATAPATH
+DATASET=cityscapes
+DATAPATH=~/data/cityscapes/PartImages/bbox_square_rand_pad0.2/
+SEGPATH=$DATAPATH
 # ============================== Part-ImageNet ============================== #
-DATASET=part-imagenet
-DATAPATH=~/data/PartImageNet/
-SEGPATH=$DATAPATH/PartSegmentations/All/
+# DATASET=part-imagenet
+# DATAPATH=~/data/PartImageNet/
+# SEGPATH=$DATAPATH/PartSegmentations/All/
 
 # 0.0156862745, 0.03137254901, 0.06274509803
 EPS=0.03137254901
@@ -28,8 +28,9 @@ EPS=0.03137254901
 CUDA_VISIBLE_DEVICES=$GPU python -u main.py \
     --seed 0 --seg-backbone resnet50 --seg-arch deeplabv3plus --full-precision --pretrained \
     --data $DATAPATH --seg-label-dir $SEGPATH --dataset $DATASET \
-    --print-freq 50 --batch-size $BS --epsilon $EPS --atk-norm Linf --eval-attack rays \
-    --output-dir results/462 --experiment part-pooling-4-semi --evaluate
+    --print-freq 50 --batch-size $BS --epsilon $EPS --atk-norm Linf --eval-attack pgd \
+    --resume results/65/checkpoint_best.pt \
+    --output-dir results/65 --experiment part-pooling-4-semi --evaluate --debug
 
 # for i in {1..5}; do
 #     CUDA_VISIBLE_DEVICES=$GPU torchrun \
