@@ -308,8 +308,10 @@ def main(args):
     print(args)
 
     if args.evaluate:
-        load_path = args.resume
-        print(f"=> loading resume checkpoint {load_path}")
+        if args.resume:
+            load_path = args.resume
+        else:
+            load_path = f"{args.output_dir}/checkpoint_best.pt"
     else:
         print("=> beginning training")
         val_stats = {}
@@ -383,8 +385,8 @@ def main(args):
         # Compute stats of best model after training
         dist_barrier()
         load_path = f"{args.output_dir}/checkpoint_best.pt"
-        print(f"=> loading best checkpoint {load_path}")
             
+    print(f"=> loading checkpoint from {load_path}...")
     if args.gpu is None:
         checkpoint = torch.load(load_path)
     else:
@@ -392,6 +394,8 @@ def main(args):
         loc = "cuda:{}".format(args.gpu)
         checkpoint = torch.load(load_path, map_location=loc)
     model.load_state_dict(checkpoint["state_dict"])
+
+    # Running evaluation
     for attack in eval_attack:
         # Use DataParallel (not distributed) model for AutoAttack.
         # Otherwise, DDP model can get timeout or c10d failure.
