@@ -15,6 +15,7 @@ Our experiments indicate that these models also reduce texture bias and yield be
 
 ### Dependency Installation
 
+- Tested environment can be installed with either `environment.yml` (for `conda`) or `requirements.txt` (for `pip`).
 - `python 3.8`
 - [`timm`](https://github.com/rwightman/pytorch-image-models)
 - [`segmentation-models-pytorch`](https://github.com/qubvel/segmentation_models.pytorch)
@@ -23,7 +24,14 @@ Our experiments indicate that these models also reduce texture bias and yield be
 - `torchmetrics` for computing IoU
 - `kornia` for custom transformations
 
-```bash
+```[bash]
+# Install dependencies with pip
+pip install -r requirements.txt
+
+# OR install dependencies with conda
+conda env create -f environment.yml
+
+# OR install dependencies manually with latest packages
 # Install pytorch 1.10 (or the latest)
 conda install -y pytorch torchvision torchaudio cudatoolkit=11.3 -c pytorch
 conda install -y h5py 
@@ -34,7 +42,7 @@ pip install -U kornia wandb segmentation-models-pytorch imagecorruptions foolbox
 
 ### Prepare Part-ImageNet Dataset
 
-```bash
+```[bash]
 pip install git+https://github.com/philferriere/cocoapi.git#subdirectory=PythonAPI
 
 # Download data from https://github.com/tacju/partimagenet manually or via gdown
@@ -161,7 +169,6 @@ Validation and Test set generation in Shape-vs-Texture and Common Corruptions be
 
 ## TODOs
 
-- Add `pip` or `conda` package files.
 - Upload model weights on a permanent link.
 - Improve `argparse` help message and documentation.
 - Add result highlight and figures to `README`.

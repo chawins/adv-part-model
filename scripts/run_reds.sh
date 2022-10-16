@@ -7,17 +7,17 @@ AA_BS=32
 PORT=1000$ID
 BACKEND=nccl
 # =============================== PASCAL-Part =============================== #
-# DATASET=pascal-part
-# DATAPATH=~/data/pascal_part/PartImages/aeroplane_bird_car_cat_dog/
-# SEGPATH=$DATAPATH/panoptic-parts/train
+DATASET=pascal-part
+DATAPATH=~/data/pascal_part/PartImages/aeroplane_bird_car_cat_dog/
+SEGPATH=$DATAPATH/panoptic-parts/train
 # =============================== Cityscapes ================================ #
 # DATASET=cityscapes
 # DATAPATH=~/data/cityscapes/PartImages/square_rand_pad0.2/
 # SEGPATH=$DATAPATH
 # ============================== Part-ImageNet ============================== #
-DATASET=part-imagenet
-DATAPATH=~/data/PartImageNet/
-SEGPATH=$DATAPATH/PartSegmentations/All/
+# DATASET=part-imagenet
+# DATAPATH=~/data/PartImageNet/
+# SEGPATH=$DATAPATH/PartSegmentations/All/
 
 # 0.0156862745, 0.03137254901, 0.06274509803
 EPS=0.03137254901
@@ -37,12 +37,12 @@ EPS=0.03137254901
 #     --eval-attack seg-guide/2nd_gt_random/0.0/ts \
 #     --output-dir results/468 --experiment part-wbbox-norm_img-semi --evaluate
 
-CUDA_VISIBLE_DEVICES=$GPU python -u custom_seg_attack_main.py \
-    --seed 0 --seg-backbone resnet50 --seg-arch deeplabv3plus --full-precision \
-    --pretrained --data $DATAPATH --seg-label-dir $SEGPATH --dataset $DATASET \
-    --print-freq 50 --batch-size $AA_BS --epsilon $EPS --atk-norm Linf \
-    --eval-attack seg-guide/2nd_pred_by_scores/0.0/ts \
-    --output-dir results/468 --experiment part-wbbox-norm_img-semi --evaluate
+# CUDA_VISIBLE_DEVICES=$GPU python -u custom_seg_attack_main.py \
+#     --seed 0 --seg-backbone resnet50 --seg-arch deeplabv3plus --full-precision \
+#     --pretrained --data $DATAPATH --seg-label-dir $SEGPATH --dataset $DATASET \
+#     --print-freq 50 --batch-size $AA_BS --epsilon $EPS --atk-norm Linf \
+#     --eval-attack seg-guide/2nd_pred_by_scores/0.0/ts \
+#     --output-dir results/468 --experiment part-wbbox-norm_img-semi --evaluate
 
 # CUDA_VISIBLE_DEVICES=$GPU python -u custom_seg_attack_main.py \
 #     --seed 0 --seg-backbone resnet50 --seg-arch deeplabv3plus --full-precision \
@@ -62,6 +62,15 @@ CUDA_VISIBLE_DEVICES=$GPU python -u custom_seg_attack_main.py \
 #     --data $DATAPATH --seg-label-dir $SEGPATH --dataset $DATASET --batch-size $BS \
 #     --epsilon $EPS --atk-norm Linf --evaluate \
 #     --output-dir results/2065 --experiment part-pooling-4-no_bg-semi
+
+CUDA_VISIBLE_DEVICES=$GPU python main.py \
+        --dist-url tcp://localhost:$PORT --seed 0 --dist-backend $BACKEND \
+        --seg-backbone resnet50 --seg-arch deeplabv3plus --full-precision --pretrained \
+        --data $DATAPATH --seg-label-dir $SEGPATH --dataset $DATASET \
+        --print-freq 50 --epochs 50 --batch-size $BS --lr 1e-1 --wd 5e-4 \
+        --adv-train none --epsilon $EPS --atk-norm Linf --adv-beta 0.8 --eval-attack pgd \
+        --seg-const-trn 0.5 --semi-label 1 \
+        --output-dir results/temp --experiment part-pooling-4-no_bg-semi
 
 # for i in {1..5}; do
 #     CUDA_VISIBLE_DEVICES=$GPU torchrun \
