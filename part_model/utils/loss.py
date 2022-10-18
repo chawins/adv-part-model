@@ -75,15 +75,10 @@ class PixelwiseCELoss(nn.Module):
         self.reduction = reduction
 
     def forward(self, logits, targets):
-        semi_mask = targets[:, 0, 0] >= 0
-        seg_loss = torch.zeros_like(semi_mask, dtype=logits.dtype)
-        seg_loss[semi_mask] = semi_seg_loss(logits, targets)
-        loss = seg_loss
-        return loss.mean()
-        # if self.reduction == "pixelmean":
-        #     loss = F.cross_entropy(logits, targets, reduction="none")
-        #     return loss.mean((1, 2))
-        # return F.cross_entropy(logits, targets, reduction=self.reduction)
+        if self.reduction == "pixelmean":
+            loss = F.cross_entropy(logits, targets, reduction="none")
+            return loss.mean((1, 2))
+        return F.cross_entropy(logits, targets, reduction=self.reduction)
 
 
 class TRADESLoss(nn.Module):
