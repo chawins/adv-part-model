@@ -7,7 +7,6 @@
 *.pth
 **/__pycache__/**
 .ipynb_checkpoints/
-datasets/data/
 experiment-*
 *.tmp
 *.pkl
