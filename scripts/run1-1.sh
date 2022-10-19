@@ -4,8 +4,8 @@
 # export NCCL_P2P_DISABLE=1
 # export NCCL_DEBUG=INFO
 ID=8
-GPU=0,1
-NUM_GPU=2
+GPU=1
+NUM_GPU=1
 BS=32
 AA_BS=32
 PORT=1000$ID
@@ -22,13 +22,13 @@ NUM_WORKERS=2
 # ============================== Part-ImageNet ============================== #
 DATASET=part-imagenet
 DATAPATH=/data/kornrapatp/PartImageNet/
-SEGPATH=$DATAPATH/PartSegmentations/All/
+SEGPATH=$DATAPATH/PartSegmentations/All-pseudo/
 # SEGPATH=$DATAPATH/BoxSegmentations/All/
 
 # 0.0156862745, 0.03137254901, 0.06274509803
 EPS=0.03137254901
 
-torchrun \
+CUDA_VISIBLE_DEVICES=$GPU torchrun \
     --rdzv_backend=c10d --rdzv_endpoint=127.0.0.1:2940$ID --rdzv_id=$ID \
     --standalone --nnodes=1 --max_restarts 0 --nproc_per_node=$NUM_GPU \
     main.py \
@@ -36,9 +36,9 @@ torchrun \
     --seg-backbone resnet50 --seg-arch deeplabv3plus --full-precision --pretrained \
     --data $DATAPATH --seg-label-dir $SEGPATH --dataset $DATASET --workers $NUM_WORKERS \
     --print-freq 50 --epochs 50 --batch-size $BS --lr 1e-1 --wd 5e-4 \
-    --adv-train none --epsilon $EPS --atk-norm Linf --adv-beta 0.8 \
-    --semi-label 1 \
-    --output-dir /data/kornrapatp/results/seg1 --experiment part-seg-only
+    --adv-train none --epsilon $EPS --atk-norm Linf --adv-beta 0.8 --eval-attack pgd \
+    --seg-const-trn 0.5 --semi-label 1 \
+    --output-dir /data/kornrapatp/results/seg0.1 --experiment part-wbbox-norm_img-centroid-semi
 sleep 30
 
 # for i in {1..5}; do
