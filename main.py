@@ -1,6 +1,9 @@
-#!/usr/bin/env python
-# The template of this code is generously provided by Norman Mu (@normster)
-# The original version is from https://github.com/pytorch/examples/blob/master/imagenet/main.py
+"""Main script for both training and evaluation.
+
+The template of this code is generously provided by Norman Mu (@normster).
+The original version is from https://github.com/pytorch/examples/blob/master/imagenet/main.py
+"""
+
 import argparse
 import json
 import math
@@ -46,11 +49,8 @@ from part_model.utils import (
 )
 from part_model.utils.loss import get_train_criterion
 
-# Ignore warning from pytorch 1.9
-# warnings.filterwarnings('ignore')
 
-
-def get_args_parser():
+def _get_args_parser():
     parser = argparse.ArgumentParser(
         description="Part classification", add_help=False
     )
@@ -262,6 +262,7 @@ best_acc1 = 0
 
 @record
 def main(args):
+    """Main function."""
     init_distributed_mode(args)
 
     global best_acc1
@@ -308,8 +309,10 @@ def main(args):
     print(args)
 
     if args.evaluate:
-        load_path = args.resume
-        print(f"=> loading resume checkpoint {load_path}")
+        if args.resume:
+            load_path = args.resume
+        else:
+            load_path = f"{args.output_dir}/checkpoint_best.pt"
     else:
         print("=> beginning training")
         val_stats = {}
@@ -321,7 +324,7 @@ def main(args):
             print(f"=> lr @ epoch {epoch}: {lr:.2e}")
 
             # Train for one epoch
-            train_stats = train(
+            train_stats = _train(
                 train_loader,
                 model,
                 train_criterion,
@@ -333,13 +336,13 @@ def main(args):
             )
 
             if (epoch + 1) % 2 == 0:
-                val_stats = validate(
+                val_stats = _validate(
                     val_loader, model, criterion, no_attack, args
                 )
                 clean_acc1, acc1 = val_stats["acc1"], None
                 is_best = clean_acc1 > best_acc1
                 if args.adv_train != "none":
-                    val_stats = validate(
+                    val_stats = _validate(
                         val_loader, model, criterion, val_attack, args
                     )
                     acc1 = val_stats["acc1"]
@@ -383,8 +386,8 @@ def main(args):
         # Compute stats of best model after training
         dist_barrier()
         load_path = f"{args.output_dir}/checkpoint_best.pt"
-        print(f"=> loading best checkpoint {load_path}")
-            
+
+    print(f"=> loading checkpoint from {load_path}...")
     if args.gpu is None:
         checkpoint = torch.load(load_path)
     else:
@@ -392,10 +395,12 @@ def main(args):
         loc = "cuda:{}".format(args.gpu)
         checkpoint = torch.load(load_path, map_location=loc)
     model.load_state_dict(checkpoint["state_dict"])
+
+    # Running evaluation
     for attack in eval_attack:
         # Use DataParallel (not distributed) model for AutoAttack.
         # Otherwise, DDP model can get timeout or c10d failure.
-        stats = validate(test_loader, model, criterion, attack[1], args)
+        stats = _validate(test_loader, model, criterion, attack[1], args)
         print(f"=> {attack[0]}: {stats}")
         stats["attack"] = str(attack[0])
         dist_barrier()
@@ -420,7 +425,7 @@ def main(args):
         logfile.close()
 
 
-def train(
+def _train(
     train_loader, model, criterion, attack, optimizer, scaler, epoch, args
 ):
     batch_time = AverageMeter("Time", ":6.3f")
@@ -526,7 +531,7 @@ def train(
     }
 
 
-def validate(val_loader, model, criterion, attack, args):
+def _validate(val_loader, model, criterion, attack, args):
     seg_only = "seg-only" in args.experiment
     batch_time = AverageMeter("Time", ":6.3f")
     data_time = AverageMeter("Data", ":6.3f")
@@ -646,7 +651,7 @@ def validate(val_loader, model, criterion, attack, args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        "Part Classification", parents=[get_args_parser()]
+        "Part Classification", parents=[_get_args_parser()]
     )
     args = parser.parse_args()
     os.makedirs(args.output_dir, exist_ok=True)
