@@ -22,7 +22,7 @@ NUM_WORKERS=2
 # ============================== Part-ImageNet ============================== #
 DATASET=part-imagenet-pseudo
 DATAPATH=/data/kornrapatp/PartImageNet/
-SEGPATH=$DATAPATH/PartSegmentations/All-pseudo/
+SEGPATH=$DATAPATH/PartSegmentations/All-test/
 # SEGPATH=$DATAPATH/BoxSegmentations/All/
 
 # 0.0156862745, 0.03137254901, 0.06274509803
@@ -31,35 +31,35 @@ EPS=0.03137254901
 CUDA_VISIBLE_DEVICES=$GPU torchrun \
     --rdzv_backend=c10d --rdzv_endpoint=127.0.0.1:2940$ID --rdzv_id=$ID \
     --standalone --nnodes=1 --max_restarts 0 --nproc_per_node=$NUM_GPU \
-    main.py \
+    main_pseudo.py \
     --dist-url tcp://localhost:$PORT --seed 0 --dist-backend $BACKEND \
     --seg-backbone resnet101 --seg-arch deeplabv3plus --full-precision --pretrained \
     --data $DATAPATH --seg-label-dir $SEGPATH --dataset $DATASET --workers $NUM_WORKERS \
     --print-freq 50 --epochs 150 --batch-size $BS --lr 1e-1 --wd 5e-4 \
     --adv-train none --epsilon $EPS --atk-norm Linf --adv-beta 0.8 \
     --seg-const-trn 0.5 --semi-label 1 \
-    --output-dir /data/kornrapatp/results/PRandNoCrop --experiment part-seg-only
+    --output-dir /data/kornrapatp/results/PRandNoCrop --experiment part-seg-only --evaluate
 sleep 30
 
 
-SEGPATH=$DATAPATH/PartSegmentations/All-pseudo-class/
+# SEGPATH=$DATAPATH/PartSegmentations/All-pseudo-class/
 # SEGPATH=$DATAPATH/BoxSegmentations/All/
 
 # 0.0156862745, 0.03137254901, 0.06274509803
-EPS=0.03137254901
+# EPS=0.03137254901
 
-CUDA_VISIBLE_DEVICES=$GPU torchrun \
-    --rdzv_backend=c10d --rdzv_endpoint=127.0.0.1:2940$ID --rdzv_id=$ID \
-    --standalone --nnodes=1 --max_restarts 0 --nproc_per_node=$NUM_GPU \
-    main.py \
-    --dist-url tcp://localhost:$PORT --seed 0 --dist-backend $BACKEND \
-    --seg-backbone resnet101 --seg-arch deeplabv3plus --full-precision --pretrained \
-    --data $DATAPATH --seg-label-dir $SEGPATH --dataset $DATASET --workers $NUM_WORKERS \
-    --print-freq 50 --epochs 150 --batch-size $BS --lr 1e-1 --wd 5e-4 \
-    --adv-train none --epsilon $EPS --atk-norm Linf --adv-beta 0.8 \
-    --seg-const-trn 0.5 --semi-label 1 \
-    --output-dir /data/kornrapatp/results/PClassNoCrop --experiment part-seg-only
-sleep 30
+# CUDA_VISIBLE_DEVICES=$GPU torchrun \
+#     --rdzv_backend=c10d --rdzv_endpoint=127.0.0.1:2940$ID --rdzv_id=$ID \
+#     --standalone --nnodes=1 --max_restarts 0 --nproc_per_node=$NUM_GPU \
+#     main_pseudo.py \
+#     --dist-url tcp://localhost:$PORT --seed 0 --dist-backend $BACKEND \
+#     --seg-backbone resnet101 --seg-arch deeplabv3plus --full-precision --pretrained \
+#     --data $DATAPATH --seg-label-dir $SEGPATH --dataset $DATASET --workers $NUM_WORKERS \
+#     --print-freq 50 --epochs 150 --batch-size $BS --lr 1e-1 --wd 5e-4 \
+#     --adv-train none --epsilon $EPS --atk-norm Linf --adv-beta 0.8 \
+#     --seg-const-trn 0.5 --semi-label 1 \
+#     --output-dir /data/kornrapatp/results/PClassNoCrop --experiment part-seg-only --evaluate
+# sleep 30
 # for i in {1..5}; do
 #     torchrun \
 #         --rdzv_backend=c10d --rdzv_endpoint=127.0.0.1:2940$ID --rdzv_id=$ID \

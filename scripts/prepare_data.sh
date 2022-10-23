@@ -31,5 +31,5 @@
 
 python -u prepare_part_imagenet_pseudo.py \
     --data-dir /data/kornrapatp/PartImageNet/ \
-    --name All-pseudo
+    --name test
 # --use-box-seg

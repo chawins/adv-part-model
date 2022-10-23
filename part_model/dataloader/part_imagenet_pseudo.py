@@ -70,7 +70,7 @@ class PartImageNetSegDataset(data.Dataset):
         self.num_classes = len(self.classes)
         self.num_seg_labels = sum([CLASSES[c] for c in self.classes])
 
-        self.images, self.labels, self.masks = self._get_data()
+        self.images, self.labels, self.masks, self.filenames = self._get_data()
         idx = np.arange(len(self.images))
         with np_temp_seed(seed):
             np.random.shuffle(idx)
@@ -90,6 +90,7 @@ class PartImageNetSegDataset(data.Dataset):
     def __getitem__(self, index):
         _img = Image.open(self.images[index]).convert("RGB")
         _target = Image.open(self.masks[index])
+        _filename = self.filenames[index]
 
         if self.transform is not None:
             _img, _target = self.transform(_img, _target)
@@ -107,16 +108,16 @@ class PartImageNetSegDataset(data.Dataset):
 
             if self.use_label:
                 _label = self.labels[index]
-                return _img, _target, _label
-            return _img, _target
+                return _img, _target, _label, _filename
+            return _img, _target, _filename
 
         if self.use_label:
             _label = self.labels[index]
-            return _img, _label
-        return _img
+            return _img, _label, _filename
+        return _img, _filename
 
     def _get_data(self):
-        images, labels, masks = [], [], []
+        images, labels, masks, files = [], [], [], []
         for l, label in enumerate(self.classes):
             img_path = os.path.join(self.root, "JPEGImages")
             part_path = os.path.join(self.path, label)
@@ -126,8 +127,9 @@ class PartImageNetSegDataset(data.Dataset):
             images.extend([f"{img_path}/{f}.JPEG" for f in filenames])
             masks.extend([f'{part_path}/{f.split("/")[1]}.tif' for f in filenames])
             labels.extend([l] * len(filenames))
+            files.extend(filenames)
         labels = torch.tensor(labels, dtype=torch.long)
-        return images, labels, masks
+        return images, labels, masks, files
 
     def _list_classes(self):
         dirs = os.listdir(self.path)
