@@ -613,9 +613,10 @@ def _validate(val_loader, model, criterion, attack, args):
 
                     name = f'{filenames[j].split("/")[1]}.tif'
                     save_pil_image(
-                        pseudo_mask.detach().cpu().numpy(),
-                        os.path.join("/data/kornrapat/rand101NoCrop", name),
+                        pseudo_mask.detach().cpu().numpy().astype(np.int16),
+                        os.path.join("/data/kornrapatp/class101NoCrop", name),
                     )
+                    continue
 
             elif "groundtruth" in args.experiment:
                 outputs = model(images, segs=segs)
