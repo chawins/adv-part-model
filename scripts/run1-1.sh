@@ -4,8 +4,8 @@
 # export NCCL_P2P_DISABLE=1
 # export NCCL_DEBUG=INFO
 ID=8
-GPU=1
-NUM_GPU=1
+GPU=0,1
+NUM_GPU=2
 BS=32
 AA_BS=32
 PORT=1000$ID
@@ -20,7 +20,7 @@ NUM_WORKERS=2
 # DATAPATH=~/data/cityscapes/PartImages/square_rand_pad0.2/
 # SEGPATH=$DATAPATH
 # ============================== Part-ImageNet ============================== #
-DATASET=part-imagenet
+DATASET=part-imagenet-pseudo
 DATAPATH=/data/kornrapatp/PartImageNet/
 SEGPATH=$DATAPATH/PartSegmentations/All-pseudo/
 # SEGPATH=$DATAPATH/BoxSegmentations/All/
@@ -33,14 +33,33 @@ CUDA_VISIBLE_DEVICES=$GPU torchrun \
     --standalone --nnodes=1 --max_restarts 0 --nproc_per_node=$NUM_GPU \
     main.py \
     --dist-url tcp://localhost:$PORT --seed 0 --dist-backend $BACKEND \
-    --seg-backbone resnet50 --seg-arch deeplabv3plus --full-precision --pretrained \
+    --seg-backbone resnet101 --seg-arch deeplabv3plus --full-precision --pretrained \
     --data $DATAPATH --seg-label-dir $SEGPATH --dataset $DATASET --workers $NUM_WORKERS \
-    --print-freq 50 --epochs 50 --batch-size $BS --lr 1e-1 --wd 5e-4 \
-    --adv-train none --epsilon $EPS --atk-norm Linf --adv-beta 0.8 --eval-attack pgd \
+    --print-freq 50 --epochs 150 --batch-size $BS --lr 1e-1 --wd 5e-4 \
+    --adv-train none --epsilon $EPS --atk-norm Linf --adv-beta 0.8 \
     --seg-const-trn 0.5 --semi-label 1 \
-    --output-dir /data/kornrapatp/results/seg0.1 --experiment part-wbbox-norm_img-centroid-semi
+    --output-dir /data/kornrapatp/results/PRandNoCrop --experiment part-seg-only
 sleep 30
 
+
+SEGPATH=$DATAPATH/PartSegmentations/All-pseudo-class/
+# SEGPATH=$DATAPATH/BoxSegmentations/All/
+
+# 0.0156862745, 0.03137254901, 0.06274509803
+EPS=0.03137254901
+
+CUDA_VISIBLE_DEVICES=$GPU torchrun \
+    --rdzv_backend=c10d --rdzv_endpoint=127.0.0.1:2940$ID --rdzv_id=$ID \
+    --standalone --nnodes=1 --max_restarts 0 --nproc_per_node=$NUM_GPU \
+    main.py \
+    --dist-url tcp://localhost:$PORT --seed 0 --dist-backend $BACKEND \
+    --seg-backbone resnet101 --seg-arch deeplabv3plus --full-precision --pretrained \
+    --data $DATAPATH --seg-label-dir $SEGPATH --dataset $DATASET --workers $NUM_WORKERS \
+    --print-freq 50 --epochs 150 --batch-size $BS --lr 1e-1 --wd 5e-4 \
+    --adv-train none --epsilon $EPS --atk-norm Linf --adv-beta 0.8 \
+    --seg-const-trn 0.5 --semi-label 1 \
+    --output-dir /data/kornrapatp/results/PClassNoCrop --experiment part-seg-only
+sleep 30
 # for i in {1..5}; do
 #     torchrun \
 #         --rdzv_backend=c10d --rdzv_endpoint=127.0.0.1:2940$ID --rdzv_id=$ID \
