@@ -9,6 +9,7 @@ import torchvision
 from ..dataloader import DATASET_DICT
 from ..utils.image import get_seg_type
 from .bbox_model import BoundingBoxModel
+from .dino_bbox_model import DinoBoundingBoxModel
 from .clean_mask_model import CleanMaskModel
 from .common import Normalize
 from .groundtruth_mask_model import GroundtruthMaskModel
@@ -21,7 +22,6 @@ from .pooling_model import PoolingModel
 from .segmentation_model import SEGM_BUILDER
 from .two_head_model import TwoHeadModel
 from .weighted_bbox_model import WeightedBBoxModel
-
 
 def wrap_distributed(args, model):
     if args.distributed:
@@ -61,6 +61,19 @@ def build_classifier(args):
         tokens = args.experiment.split("-")
         model_token = tokens[1]
         exp_tokens = tokens[2:]
+
+        if model_token == "dino":
+            # this is wrong
+            # need to create a wrapper to predict classes from bounding boxes
+            # not just predict bouding boxes
+            # actually dino can be used to predict segmentation too
+            # TODO: need to try segmentation too
+            # model, criterion, postprocessors = build_model_main(args)
+            # pass dino_args instead of args?
+            model = DinoBoundingBoxModel(args)
+            
+
+
         print("=> building segmentation model...")
         segmenter = SEGM_BUILDER[args.seg_arch](args)
 
@@ -143,7 +156,7 @@ def build_classifier(args):
             sum(p.numel() for p in segmenter.parameters() if p.requires_grad)
             / 1e6
         )
-        print(f"=> segmenter params (train/total): {nt_seg:.2f}M/{n_seg:.2f}M")
+        print(f"=> segmenter params (train/total): {nt_seg:.2f}M/{n_seg:.2f}M")    
     else:
         print("=> building a normal classifier (no segmentation)")
         model.fc = nn.Linear(rep_dim, args.num_classes)

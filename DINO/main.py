@@ -10,25 +10,25 @@ import time
 from pathlib import Path
 import os, sys
 from typing import Optional
-from util.get_param_dicts import get_param_dict
+from DINO.util.get_param_dicts import get_param_dict
 
 
 
 
-from util.logger import setup_logger
+from DINO.util.logger import setup_logger
 
 import numpy as np
 import torch
 from torch.utils.data import DataLoader, DistributedSampler
 import torch.distributed as dist
 
-import datasets
-import util.misc as utils
-from datasets import build_dataset, get_coco_api_from_dataset
-from engine import evaluate, train_one_epoch, test
-import models
-from util.slconfig import DictAction, SLConfig
-from util.utils import ModelEma, BestMetricHolder
+import DINO.datasets
+import DINO.util.misc as utils
+from DINO.datasets import build_dataset, get_coco_api_from_dataset
+from DINO.engine import evaluate, train_one_epoch, test
+import DINO.models
+from DINO.util.slconfig import DictAction, SLConfig
+from DINO.util.utils import ModelEma, BestMetricHolder
 
 
 def get_args_parser():
@@ -86,7 +86,7 @@ def get_args_parser():
 
 def build_model_main(args):
     # we use register to maintain models from catdet6 on.
-    from models.registry import MODULE_BUILD_FUNCS
+    from DINO.models.registry import MODULE_BUILD_FUNCS
     assert args.modelname in MODULE_BUILD_FUNCS._module_dict
     build_func = MODULE_BUILD_FUNCS.get(args.modelname)
     model, criterion, postprocessors = build_func(args)

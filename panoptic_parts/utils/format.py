@@ -13,6 +13,11 @@ from panoptic_parts.utils.utils import \
     _sparse_ids_mapping_to_dense_ids_mapping as ndarray_from_dict
 from panoptic_parts.utils.utils import compare_pixelwise
 
+# from panoptic_parts.specs.dataset_spec import DatasetSpec
+# from panoptic_parts.utils.utils import \
+#     _sparse_ids_mapping_to_dense_ids_mapping as ndarray_from_dict
+# from panoptic_parts.utils.utils import compare_pixelwise
+
 TENSORFLOW_IMPORTED = False
 try:
     import tensorflow as tf  # pylint: disable=import-error
