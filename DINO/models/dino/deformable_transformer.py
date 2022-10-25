@@ -15,7 +15,7 @@ import math, random
 import copy
 from typing import Optional
 
-from util.misc import inverse_sigmoid
+from DINO.util.misc import inverse_sigmoid
 
 import torch
 from torch import nn, Tensor

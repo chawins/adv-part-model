@@ -19,9 +19,9 @@ import torch.utils.data
 import torchvision
 from pycocotools import mask as coco_mask
 
-from datasets.data_util import preparing_dataset
-import datasets.transforms as T
-from util.box_ops import box_cxcywh_to_xyxy, box_iou
+from DINO.datasets.data_util import preparing_dataset
+import DINO.datasets.transforms as T
+from DINO.util.box_ops import box_cxcywh_to_xyxy, box_iou
 
 __all__ = ['build']
 
@@ -390,14 +390,33 @@ class CocoDetection(torchvision.datasets.CocoDetection):
         image_id = self.ids[idx]
         target = {'image_id': image_id, 'annotations': target}
         img, target = self.prepare(img, target)
+        # print()
+        # print()
+        # print(type(img))
+        # print()
+        # print()
         
         if self._transforms is not None:
             img, target = self._transforms(img, target)
+
+        # print()
+        # print()
+        # print('type', type(img))
+        # print()
+        # print()
+        # qq
 
         # convert to needed format
         if self.aux_target_hacks is not None:
             for hack_runner in self.aux_target_hacks:
                 target, img = hack_runner(target, img=img)
+
+        # print()
+        # print()
+        # print(type(img))
+        # print()
+        # print()
+        # qqq
 
         return img, target
 
@@ -434,6 +453,7 @@ class ConvertCocoPolysToMask(object):
         anno = [obj for obj in anno if 'iscrowd' not in obj or obj['iscrowd'] == 0]
 
         boxes = [obj["bbox"] for obj in anno]
+
         # guard against no boxes via resizing
         boxes = torch.as_tensor(boxes, dtype=torch.float32).reshape(-1, 4)
         boxes[:, 2:] += boxes[:, :2]

@@ -21,8 +21,8 @@ import torch.nn.functional as F
 from torch import nn
 from torchvision.ops.boxes import nms
 
-from util import box_ops
-from util.misc import (NestedTensor, nested_tensor_from_tensor_list,
+from DINO.util import box_ops
+from DINO.util.misc import (NestedTensor, nested_tensor_from_tensor_list,
                        accuracy, get_world_size, interpolate,
                        is_dist_avail_and_initialized, inverse_sigmoid)
 

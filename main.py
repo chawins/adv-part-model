@@ -254,6 +254,60 @@ def _get_args_parser():
         help="Softmax temperature for part-seg model",
     )
     parser.add_argument("--save-all-epochs", action="store_true")
+
+
+
+
+    ### DINO args
+    # TODO: clean
+    from DINO.util.slconfig import DictAction
+    # parser.add_argument('--config_file', '-c', type=str, required=True)
+    parser.add_argument('--options',
+        nargs='+',
+        action=DictAction,
+        help='override some settings in the used config, the key-value pair '
+        'in xxx=yyy format will be merged into config file.')
+
+    # dataset parameters
+    parser.add_argument('--dataset_file', default='coco')
+    parser.add_argument('--coco_path', type=str, default='/comp_robot/cv_public_dataset/COCO2017/')
+    parser.add_argument('--coco_panoptic_path', type=str)
+    parser.add_argument('--remove_difficult', action='store_true')
+    parser.add_argument('--fix_size', action='store_true')
+
+
+    # training parameters
+    parser.add_argument('--output_dir', default='',
+                        help='path where to save, empty for no saving')
+    parser.add_argument('--note', default='',
+                        help='add some notes to the experiment')
+    parser.add_argument('--device', default='cuda',
+                        help='device to use for training / testing')
+    parser.add_argument('--pretrain_model_path', help='load from other checkpoint')
+    parser.add_argument('--finetune_ignore', type=str, nargs='+')
+    parser.add_argument('--start_epoch', default=0, type=int, metavar='N',
+                        help='start epoch')
+    parser.add_argument('--eval', action='store_true')
+    parser.add_argument('--num_workers', default=10, type=int)
+    parser.add_argument('--test', action='store_true')
+    parser.add_argument('--find_unused_params', action='store_true')
+    
+
+    parser.add_argument('--save_results', action='store_true')
+    parser.add_argument('--save_log', action='store_true')
+
+    # distributed training parameters
+    parser.add_argument('--world_size', default=1, type=int,
+                        help='number of distributed processes')
+    parser.add_argument('--dist_url', default='env://', help='url used to set up distributed training')
+
+    parser.add_argument("--local_rank", type=int, help='local rank for DistributedDataParallel')
+    parser.add_argument('--amp', action='store_true',
+                        help="Train with mixed precision")
+    
+
+
+
     return parser
 
 
@@ -277,8 +331,78 @@ def main(args):
     loaders = load_dataset(args)
     train_loader, train_sampler, val_loader, test_loader = loaders
 
+    debug = False
+    if debug:
+        # DEBUGGING DATALOADER
+        for i, samples in enumerate(train_loader):
+            
+            import torchvision
+
+            images, target_bbox, targets = samples
+            
+            # TODO: what is second return here?
+            images, _ = images.decompose()
+            
+            debug_index = 1
+            # shape = images[debug_index].shape
+            torchvision.utils.save_image(images[debug_index], 'debug.png')
+            img_uint8 = torchvision.io.read_image('debug.png')
+            shape = target_bbox[debug_index]['size']
+            print(target_bbox[debug_index])
+
+            # xc, xy, w, h convert to xmin, ymin, xmax, ymax
+            boxes = target_bbox[debug_index]['boxes']
+            boxes[:, ::2] = boxes[:, ::2] * shape[1]
+            boxes[:, 1::2] = boxes[:, 1::2] * shape[0]
+
+            box_width = boxes[:, 2]
+            box_height = boxes[:, 3]
+
+            boxes[:, 0] = boxes[:, 0] - box_width/2
+            boxes[:, 2] = boxes[:, 0] + box_width
+            boxes[:, 1] = boxes[:, 1] - box_height/2
+            boxes[:, 3] = boxes[:, 1] + box_height
+            
+            boxes = torch.tensor(boxes, dtype=torch.int)
+            img_with_boxes = torchvision.utils.draw_bounding_boxes(img_uint8, boxes=boxes, colors='red')
+            torchvision.utils.save_image(img_with_boxes/255, 'debug_mask.png')
+            import pdb
+            pdb.set_trace()
+
     # Create model
     print("=> creating model")
+
+
+    if 'dino' in args.experiment:
+        from DINO.util.slconfig import SLConfig
+        # TODO: do not hardcode
+        args.config_file = 'DINO/config/DINO/DINO_4scale_modified.py'
+        # duplicate keys that exist are [num_classes, lr]
+        args.options = {'dn_scalar': 100}
+
+        # TODO: add as args. this was in the original script by dino, DINO_eval.sh
+        # args.embed_init_tgt = True 
+        args.dn_label_coef=1.0 
+        args.dn_bbox_coef=1.0
+        # args.use_ema=False
+        # args.dn_box_noise_scale=1.0
+
+        # load cfg file and update the args
+        print("Loading config file from {}".format(args.config_file))
+        cfg = SLConfig.fromfile(args.config_file)
+        if args.options is not None:
+            cfg.merge_from_dict(args.options)
+
+        cfg_dict = cfg._cfg_dict.to_dict()
+        args_vars = vars(args)
+        for k,v in cfg_dict.items():
+            if k not in args_vars:
+                setattr(args, k, v)
+            else:
+                raise ValueError("Key {} can used by args only".format(k))
+
+
+
     model, optimizer, scaler = build_model(args)
     cudnn.benchmark = True
 
@@ -457,39 +581,86 @@ def _train(
             images, targets, _ = samples
             segs = None
         else:
-            images, segs, targets = samples
-            segs = segs.cuda(args.gpu, non_blocking=True)
+            if 'dino' in args.experiment:
+                try:
+                    need_tgt_for_training = args.use_dn
+                except:
+                    need_tgt_for_training = False
 
-        images = images.cuda(args.gpu, non_blocking=True)
-        targets = targets.cuda(args.gpu, non_blocking=True)
-        batch_size = images.size(0)
+                images, target_bbox, targets = samples
+                targets = torch.Tensor(targets)
+                
+    
+            else:
+                images, segs, targets = samples
+                segs = segs.cuda(args.gpu, non_blocking=True)
+
+
+        if 'dino' in args.experiment:
+            from DINO.util.utils import to_device
+            device = 'cuda'
+            images = images.to(device)
+            target_bbox = [{k: to_device(v, device) for k, v in t.items()} for t in target_bbox]
+            # images = images.cuda(args.gpu, non_blocking=True)
+            # target_bbox = [{k: v.cuda(args.gpu, non_blocking=True) for k, v in t.items()} for t in target_bbox]
+            targets = targets.cuda(args.gpu, non_blocking=True)
+            batch_size = targets.size(0)
+            # batch_size = images.size(0)
+        else:
+            images = images.cuda(args.gpu, non_blocking=True)
+            targets = targets.cuda(args.gpu, non_blocking=True)
+            batch_size = images.size(0)
 
         # Compute output
         with amp.autocast(enabled=not args.full_precision):
-            if attack.use_mask:
-                # Attack for part models where both class and segmentation
-                # labels are used
-                images = attack(images, targets, segs)
-                if attack.dual_losses:
-                    targets = torch.cat([targets, targets], axis=0)
-                    segs = torch.cat([segs, segs], axis=0)
-            else:
-                # Attack for either classifier or segmenter alone
-                images = attack(images, targets)
+            if 'dino' in args.experiment:
+                if need_tgt_for_training:
+                    outputs, dino_outputs = model(images, return_mask=need_tgt_for_training)
+                else:
+                    outputs = model(images)
+            
+                loss_dict = criterion(outputs, dino_outputs, target_bbox, targets)
 
-            if segs is None or seg_only:
-                outputs = model(images)
-                loss = criterion(outputs, targets)
-            elif "groundtruth" in args.experiment:
-                outputs = model(images, segs=segs)
-                loss = criterion(outputs, targets)
-            else:
-                outputs = model(images, return_mask=True)
-                loss = criterion(outputs, targets, segs)
-                outputs = outputs[0]
+                # def forward(
+                # self, 
+                # logits: Union[list, tuple], 
+                # dino_outputs: dict,
+                # dino_targets: list,
+                # targets: torch.Tensor, 
+                # return_indices=False):
 
-            if args.adv_train in ("trades", "mat"):
-                outputs = outputs[batch_size:]
+
+                weight_dict = criterion.weight_dict
+                # import ipdb; ipdb.set_trace()
+                loss = criterion()
+                loss = sum(loss_dict[k] * weight_dict[k] for k in loss_dict.keys() if k in weight_dict)
+
+            else:
+                pass
+                # if attack.use_mask:
+                #     # Attack for part models where both class and segmentation
+                #     # labels are used
+                #     images = attack(images, targets, segs)
+                #     if attack.dual_losses:
+                #         targets = torch.cat([targets, targets], axis=0)
+                #         segs = torch.cat([segs, segs], axis=0)
+                # else:
+                #     # Attack for either classifier or segmenter alone
+                #     images = attack(images, targets)
+
+                # if segs is None or seg_only:
+                #     outputs = model(images)
+                #     loss = criterion(outputs, targets)
+                # elif "groundtruth" in args.experiment:
+                #     outputs = model(images, segs=segs)
+                #     loss = criterion(outputs, targets)
+                # else:
+                #     outputs = model(images, return_mask=True)
+                #     loss = criterion(outputs, targets, segs)
+                #     outputs = outputs[0]
+
+                # if args.adv_train in ("trades", "mat"):
+                #     outputs = outputs[batch_size:]
 
         if not math.isfinite(loss.item()):
             print("Loss is {}, stopping training".format(loss.item()))
@@ -562,17 +733,40 @@ def _validate(val_loader, model, criterion, attack, args):
             images, targets, _ = samples
             segs = None
         else:
-            images, segs, targets = samples
-            segs = segs.cuda(args.gpu, non_blocking=True)
+            if 'dino' in args.experiment:
+                try:
+                    need_tgt_for_training = args.use_dn
+                except:
+                    need_tgt_for_training = False
+
+                images, target_bbox, targets = samples
+                targets = torch.Tensor(targets)
+                
+    
+            else:
+                images, segs, targets = samples
+                segs = segs.cuda(args.gpu, non_blocking=True)
+
 
         # DEBUG
         if args.debug:
             save_image(COLORMAP[segs].permute(0, 3, 1, 2), "gt.png")
             save_image(images, "test.png")
 
-        images = images.cuda(args.gpu, non_blocking=True)
-        targets = targets.cuda(args.gpu, non_blocking=True)
-        batch_size = images.size(0)
+        if 'dino' in args.experiment:
+            from DINO.util.utils import to_device
+            device = 'cuda'
+            images = images.to(device)
+            target_bbox = [{k: to_device(v, device) for k, v in t.items()} for t in target_bbox]
+            # images = images.cuda(args.gpu, non_blocking=True)
+            # target_bbox = [{k: v.cuda(args.gpu, non_blocking=True) for k, v in t.items()} for t in target_bbox]
+            targets = targets.cuda(args.gpu, non_blocking=True)
+            batch_size = targets.size(0)
+            # batch_size = images.size(0)
+        else:
+            images = images.cuda(args.gpu, non_blocking=True)
+            targets = targets.cuda(args.gpu, non_blocking=True)
+            batch_size = images.size(0)
 
         # DEBUG: fixed clean segmentation masks
         if "clean" in args.experiment:
@@ -580,33 +774,47 @@ def _validate(val_loader, model, criterion, attack, args):
 
         # compute output
         with torch.no_grad():
-            if attack.use_mask:
-                images = attack(images, targets, segs)
+            if 'dino' in args.experiment:
+                # TODO: need to attack images
+                if need_tgt_for_training:
+                    outputs, dino_outputs = model(images, return_mask=need_tgt_for_training)
+                else:
+                    outputs = model(images)
+            
+                loss_dict = criterion(outputs, dino_outputs, target_bbox, targets)
+
+                weight_dict = criterion.weight_dict
+                # import ipdb; ipdb.set_trace()
+                loss = criterion()
+                loss = sum(loss_dict[k] * weight_dict[k] for k in loss_dict.keys() if k in weight_dict)
             else:
-                images = attack(images, targets)
+                if attack.use_mask:
+                    images = attack(images, targets, segs)
+                else:
+                    images = attack(images, targets)
 
-            # Need to duplicate segs and targets to match images expanded by
-            # image corruption attack
-            if images.shape[0] != targets.shape[0]:
-                ratio = images.shape[0] // targets.shape[0]
-                targets = targets.repeat(
-                    (ratio,) + (1,) * (len(targets.shape) - 1)
-                )
-                if segs:
-                    segs = segs.repeat((ratio,) + (1,) * (len(segs.shape) - 1))
+                # Need to duplicate segs and targets to match images expanded by
+                # image corruption attack
+                if images.shape[0] != targets.shape[0]:
+                    ratio = images.shape[0] // targets.shape[0]
+                    targets = targets.repeat(
+                        (ratio,) + (1,) * (len(targets.shape) - 1)
+                    )
+                    if segs:
+                        segs = segs.repeat((ratio,) + (1,) * (len(segs.shape) - 1))
 
-            if segs is None or "normal" in args.experiment or seg_only:
-                outputs = model(images)
-            elif "groundtruth" in args.experiment:
-                outputs = model(images, segs=segs)
+                if segs is None or "normal" in args.experiment or seg_only:
+                    outputs = model(images)
+                elif "groundtruth" in args.experiment:
+                    outputs = model(images, segs=segs)
+                    loss = criterion(outputs, targets)
+                else:
+                    outputs, masks = model(images, return_mask=True)
+                    if "centroid" in args.experiment:
+                        masks, _, _, _ = masks
+                    pixel_acc = pixel_accuracy(masks, segs)
+                    pacc.update(pixel_acc.item(), batch_size)
                 loss = criterion(outputs, targets)
-            else:
-                outputs, masks = model(images, return_mask=True)
-                if "centroid" in args.experiment:
-                    masks, _, _, _ = masks
-                pixel_acc = pixel_accuracy(masks, segs)
-                pacc.update(pixel_acc.item(), batch_size)
-            loss = criterion(outputs, targets)
 
         # DEBUG
         # if args.debug and isinstance(attack, PGDAttackModule):
