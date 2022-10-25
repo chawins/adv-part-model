@@ -11,6 +11,7 @@ from shutil import copyfile
 
 import numpy as np
 import PIL
+from PIL import Image
 import scipy.io
 from tqdm import tqdm
 
