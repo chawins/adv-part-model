@@ -319,6 +319,10 @@ def main(args):
     """Main function."""
     init_distributed_mode(args)
 
+    # TODO: clean. need to add in args
+    # should it be 41 or 40?
+    setattr(args, 'seg_labels', 41)
+
     global best_acc1
 
     # Fix the seed for reproducibility
@@ -344,9 +348,8 @@ def main(args):
             images, _ = images.decompose()
             
             debug_index = 1
-            # shape = images[debug_index].shape
             torchvision.utils.save_image(images[debug_index], 'debug.png')
-            img_uint8 = torchvision.io.read_image('debug.png')
+            img_uint8 = torchvision.io.read_image(f'example_images/img_{debug_index}.png')
             shape = target_bbox[debug_index]['size']
             print(target_bbox[debug_index])
 
@@ -365,7 +368,7 @@ def main(args):
             
             boxes = torch.tensor(boxes, dtype=torch.int)
             img_with_boxes = torchvision.utils.draw_bounding_boxes(img_uint8, boxes=boxes, colors='red')
-            torchvision.utils.save_image(img_with_boxes/255, 'debug_mask.png')
+            torchvision.utils.save_image(img_with_boxes/255, f'example_images/img_{debug_index}_with_bbox.png')
             import pdb
             pdb.set_trace()
 
@@ -588,7 +591,7 @@ def _train(
                     need_tgt_for_training = False
 
                 images, target_bbox, targets = samples
-                targets = torch.Tensor(targets)
+                targets = torch.LongTensor(targets)
                 
     
             else:
@@ -614,12 +617,8 @@ def _train(
         # Compute output
         with amp.autocast(enabled=not args.full_precision):
             if 'dino' in args.experiment:
-                if need_tgt_for_training:
-                    outputs, dino_outputs = model(images, return_mask=need_tgt_for_training)
-                else:
-                    outputs = model(images)
-            
-                loss_dict = criterion(outputs, dino_outputs, target_bbox, targets)
+                outputs, dino_outputs = model(images, target_bbox, need_tgt_for_training, return_mask=need_tgt_for_training)
+                loss = criterion(outputs, dino_outputs, target_bbox, targets)
 
                 # def forward(
                 # self, 
@@ -630,10 +629,10 @@ def _train(
                 # return_indices=False):
 
 
-                weight_dict = criterion.weight_dict
+                # weight_dict = criterion.weight_dict
                 # import ipdb; ipdb.set_trace()
-                loss = criterion()
-                loss = sum(loss_dict[k] * weight_dict[k] for k in loss_dict.keys() if k in weight_dict)
+                # loss = criterion()
+                # loss = sum(loss_dict[k] * weight_dict[k] for k in loss_dict.keys() if k in weight_dict)
 
             else:
                 pass

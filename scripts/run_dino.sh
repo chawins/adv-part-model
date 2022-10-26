@@ -1,8 +1,8 @@
 #!/bin/bash
 ID=9
-GPU=1
-NUM_GPU=0
-BS=32
+GPU=0
+NUM_GPU=1
+BS=2
 AA_BS=32
 PORT=1000$ID
 BACKEND=nccl
@@ -69,6 +69,17 @@ CUDA_VISIBLE_DEVICES=$GPU python -u main.py \
     --epsilon $EPS --atk-norm Linf --debug \
     --resume-if-exist \
     --output-dir results/2082 --experiment part-dino-norm_img-semi
+
+
+# torchrun \
+#     --standalone --nnodes=1 --max_restarts 0 --nproc_per_node=$NUM_GPU \
+#     main.py --dist-url tcp://localhost:$PORT \
+#     --seg-backbone resnet50 --seg-arch deeplabv3plus --full-precision --pretrained \
+#     --data $DATAPATH --seg-label-dir $SEGPATH --dataset $DATASET --batch-size $BS \
+#     --adv-train none \
+#     --epsilon $EPS --atk-norm Linf --debug \
+#     --resume-if-exist \
+#     --output-dir results/2082 --experiment part-dino-norm_img-semi
 
 # --evaluate
 
