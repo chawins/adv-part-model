@@ -356,7 +356,8 @@ def get_loader_sampler_bbox(args, transforms, split):
     is_train = split == "train"
 
     # TODO: add as arg
-    root = Path('/data/shared/PartImageNet/PartBoxSegmentations')
+    # root = Path('/data/shared/PartImageNet/PartBoxSegmentations')
+    root = Path('/global/scratch/users/nabeel126/PartImageNet/PartBoxSegmentations')
 
     PATHS = {
         "train": (root / "train", root / "image_labels" / 'train.json', root / "annotations" / 'train.json'),
