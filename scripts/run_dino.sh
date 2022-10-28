@@ -59,16 +59,89 @@ EPS=0.03137254901
 #     --resume-if-exist \
 #     --output-dir results/2082 --experiment part-wbbox-norm_img-semi
 
+
+
 # DATASET=part-imagenet
+# BS=32
+
+# CUDA_VISIBLE_DEVICES=$GPU python -u main.py \
+#     --seg-backbone resnet50 --seg-arch deeplabv3plus --full-precision --pretrained \
+#     --data $DATAPATH --seg-label-dir $SEGPATH --dataset $DATASET --batch-size $BS \
+#     --adv-train none \
+#     --epsilon $EPS --atk-norm Linf --debug \
+#     --resume-if-exist \
+#     --output-dir results/2082 --experiment part-bbox-norm_img-semi
+
 DATASET=part-imagenet-bbox
+GPU=0
+NUM_GPU=1
+# TODO: check pretrained and use it for dino
+# TODO: does pretrained in this context mean pretrained resnet (backbone) only or does it mean whole dino model?
+# TODO: should seg_labels be 41 or 40?
 
 CUDA_VISIBLE_DEVICES=$GPU python -u main.py \
-    --seg-backbone resnet50 --seg-arch deeplabv3plus --full-precision --pretrained \
+    --seg-backbone resnet50 --obj-det-arch dino --full-precision --pretrained \
     --data $DATAPATH --seg-label-dir $SEGPATH --dataset $DATASET --batch-size $BS \
     --adv-train none \
     --epsilon $EPS --atk-norm Linf --debug \
     --resume-if-exist \
-    --output-dir results/2082 --experiment part-dino-norm_img-semi
+    --output-dir results/2082 --experiment part-bbox-norm_img-semi \
+    --seg-labels 41 \
+    --config_file DINO/config/DINO/DINO_4scale_modified.py \
+    --options dn_scalar=100 dn_label_coef=1.0 dn_bbox_coef=1.0 # all of these are for options
+
+
+# python -m torch.distributed.launch --nproc_per_node=2 \
+#     main.py \
+#     --seg-backbone resnet50 --obj-det-arch dino --full-precision --pretrained \
+#     --data $DATAPATH --seg-label-dir $SEGPATH --dataset $DATASET --batch-size $BS \
+#     --adv-train none \
+#     --epsilon $EPS --atk-norm Linf --debug \
+#     --resume-if-exist \
+#     --output-dir results/2082 --experiment part-bbox-norm_img-semi \
+#     --seg-labels 41 \
+#     --config_file DINO/config/DINO/DINO_4scale_modified.py \
+#     --options dn_scalar=100 dn_label_coef=1.0 dn_bbox_coef=1.0 # all of these are for options
+
+
+
+# python -m torch.distributed.launch --nproc_per_node=8 main.py \
+# 	--output_dir logs/DINO/R50-MS4 -c config/DINO/DINO_4scale.py --coco_path $coco_path \
+# 	--options dn_scalar=100 embed_init_tgt=TRUE \
+# 	dn_label_coef=1.0 dn_bbox_coef=1.0 use_ema=False \
+# 	dn_box_noise_scale=1.0
+
+
+#TODO: reduce number of queries via options arg
+
+# --dn_box_noise_scale=1.0 in scripts but 0.4 in config file
+
+# # TODO: do not hardcode
+# args.config_file = 'DINO/config/DINO/DINO_4scale_modified.py'
+# # duplicate keys that exist are [num_classes, lr]
+# args.options = {'dn_scalar': 100}
+
+# # TODO: add as args. this was in the original script by dino, DINO_eval.sh
+# # args.embed_init_tgt = True 
+# args.dn_label_coef=1.0 
+# args.dn_bbox_coef=1.0
+# # args.use_ema=False
+# args.dn_box_noise_scale=1.0
+
+
+# coco_path=$1
+# python -m torch.distributed.launch --nproc_per_node=8 main.py \
+# 	--output_dir logs/DINO/R50-MS4 -c config/DINO/DINO_4scale.py --coco_path $coco_path \
+# 	--options dn_scalar=100 embed_init_tgt=TRUE \
+# 	dn_label_coef=1.0 dn_bbox_coef=1.0 use_ema=False \
+# 	dn_box_noise_scale=1.0
+
+
+
+
+
+
+
 
 
 # torchrun \

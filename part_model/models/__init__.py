@@ -62,20 +62,12 @@ def build_classifier(args):
         model_token = tokens[1]
         exp_tokens = tokens[2:]
 
-        if model_token == "dino":
-            # this is wrong
-            # need to create a wrapper to predict classes from bounding boxes
-            # not just predict bouding boxes
-            # actually dino can be used to predict segmentation too
-            # TODO: need to try segmentation too
-            # model, criterion, postprocessors = build_model_main(args)
-            # pass dino_args instead of args?
-            model = DinoBoundingBoxModel(args)
-            
-
-
-        print("=> building segmentation model...")
-        segmenter = SEGM_BUILDER[args.seg_arch](args)
+        if args.seg_arch is not None:
+            print("=> building segmentation model...")
+            segmenter = SEGM_BUILDER[args.seg_arch](args)
+        elif args.obj_det_arch is not None:
+            print("=> building object detection model...")
+            pass 
 
         if args.freeze_seg:
             # Froze all weights of the part segmentation model
@@ -143,7 +135,29 @@ def build_classifier(args):
         elif model_token == "pixel":
             model = PixelCountModel(args, segmenter, None)
         elif model_token == "bbox":
-            model = BoundingBoxModel(args, segmenter)
+            # two options, either bbox model from object detection or bbox from segmentation model 
+            if args.obj_det_arch == "dino":            
+                # handling dino args                    
+                from DINO.util.slconfig import SLConfig
+                # load cfg file and update the args
+                print("Loading config file from {}".format(args.config_file))
+                cfg = SLConfig.fromfile(args.config_file)
+                if args.options is not None:
+                    cfg.merge_from_dict(args.options)
+
+                cfg_dict = cfg._cfg_dict.to_dict()
+                args_vars = vars(args)
+                for k,v in cfg_dict.items():
+                    if k not in args_vars:
+                        setattr(args, k, v)
+                    else:
+                        raise ValueError("Key {} can used by args only".format(k))
+
+                model = DinoBoundingBoxModel(args)
+                
+            else:
+                model = BoundingBoxModel(args, segmenter)
+
         elif model_token == "wbbox":
             model = WeightedBBoxModel(args, segmenter)
         elif model_token == "fc":
@@ -151,12 +165,19 @@ def build_classifier(args):
         elif model_token == "pooling":
             model = PoolingModel(args, segmenter)
 
-        n_seg = sum(p.numel() for p in segmenter.parameters()) / 1e6
+        n_seg = sum(p.numel() for p in model.parameters()) / 1e6
         nt_seg = (
-            sum(p.numel() for p in segmenter.parameters() if p.requires_grad)
+            sum(p.numel() for p in model.parameters() if p.requires_grad)
             / 1e6
         )
-        print(f"=> segmenter params (train/total): {nt_seg:.2f}M/{n_seg:.2f}M")    
+        print(f"=> model params (train/total): {nt_seg:.2f}M/{n_seg:.2f}M")
+
+        # n_seg = sum(p.numel() for p in segmenter.parameters()) / 1e6
+        # nt_seg = (
+        #     sum(p.numel() for p in segmenter.parameters() if p.requires_grad)
+        #     / 1e6
+        # )
+        # print(f"=> segmenter params (train/total): {nt_seg:.2f}M/{n_seg:.2f}M")    
     else:
         print("=> building a normal classifier (no segmentation)")
         model.fc = nn.Linear(rep_dim, args.num_classes)

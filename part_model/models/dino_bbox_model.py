@@ -14,16 +14,21 @@ class DinoBoundingBoxModel(nn.Module):
         tmp_num_classes = args.num_classes
         
         setattr(args, 'num_classes', args.seg_labels)
-        # setattr(args, args.num_classes, args.seg_labels)
         self.object_detector, self.criterion, self.postprocessors = build_model_main(args)        
-        # setattr(args, args.seg_labels, tmp_num_classes)
+        
+        # TODO: remove from here. only for debugging
+        n_seg = sum(p.numel() for p in self.object_detector.parameters()) / 1e6
+        nt_seg = (
+            sum(p.numel() for p in self.object_detector.parameters() if p.requires_grad)
+            / 1e6
+        )
+        print(f"=> object detector params (train/total): {nt_seg:.2f}M/{n_seg:.2f}M")
+        
         setattr(args, 'num_classes', tmp_num_classes)
-        # 91 for number of part labels and 4 for bounding box coords
-        # TODO: don't hard code
+        # logits for part labels and 4 for bounding box coords
         input_dim = args.num_queries * (args.seg_labels+4)
         print('input_dim', input_dim)
-        # input_dim = args.num_queries * (91+4)
-        # input_dim = args.num_queries * (91+4)
+
         # how did we get 50 here
         self.core_model = nn.Sequential(
             nn.Identity(),

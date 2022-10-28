@@ -315,19 +315,19 @@ def get_train_criterion(args):
     elif "semi" in args.experiment:
         if "centroid" in args.experiment:
             train_criterion = SemiKeypointLoss(seg_const=args.seg_const_trn)
-        elif "dino" in args.experiment:
+
+        # TODO: move to SemiBBOXLoss class?
+        if args.obj_det_arch == "dino": 
             losses = ['labels', 'boxes', 'cardinality']
             from DINO.models.dino.matcher import build_matcher
             import copy
 
             matcher = build_matcher(args)
 
-
             # prepare weight dict
             weight_dict = {'loss_ce': args.cls_loss_coef, 'loss_bbox': args.bbox_loss_coef}
             weight_dict['loss_giou'] = args.giou_loss_coef
             clean_weight_dict_wo_dn = copy.deepcopy(weight_dict)
-
             
             # for DN training
             if args.use_dn:
@@ -370,6 +370,8 @@ def get_train_criterion(args):
             #                         )
             train_criterion = SemiBBOXLoss(args.num_classes, matcher=matcher, weight_dict=weight_dict,
                                     focal_alpha=args.focal_alpha, losses=losses, seg_const=args.seg_const_trn)
+        
+        
         else:
             train_criterion = SemiSumLoss(seg_const=args.seg_const_trn)
     train_criterion = train_criterion.cuda(args.gpu)
