@@ -137,24 +137,7 @@ def build_classifier(args):
         elif model_token == "bbox":
             # two options, either bbox model from object detection or bbox from segmentation model 
             if args.obj_det_arch == "dino":            
-                # handling dino args                    
-                from DINO.util.slconfig import SLConfig
-                # load cfg file and update the args
-                print("Loading config file from {}".format(args.config_file))
-                cfg = SLConfig.fromfile(args.config_file)
-                if args.options is not None:
-                    cfg.merge_from_dict(args.options)
-
-                cfg_dict = cfg._cfg_dict.to_dict()
-                args_vars = vars(args)
-                for k,v in cfg_dict.items():
-                    if k not in args_vars:
-                        setattr(args, k, v)
-                    else:
-                        raise ValueError("Key {} can used by args only".format(k))
-
                 model = DinoBoundingBoxModel(args)
-                
             else:
                 model = BoundingBoxModel(args, segmenter)
 
@@ -188,19 +171,30 @@ def build_classifier(args):
 
     model = wrap_distributed(args, model)
 
-    p_wd, p_non_wd = [], []
-    for n, p in model.named_parameters():
-        if p.requires_grad:
-            if "bias" in n or "ln" in n or "bn" in n:
-                p_non_wd.append(p)
-            else:
-                p_wd.append(p)
+    
 
-    optim_params = [
-        {"params": p_wd, "weight_decay": args.wd},
-        {"params": p_non_wd, "weight_decay": 0},
-    ]
+    if args.obj_det_arch == "dino":
+        optim_params = [
+            {"params": [p for n, p in model.named_parameters() if "backbone" not in n and p.requires_grad]},
+            {
+                "params": [p for n, p in model.named_parameters() if "backbone" in n and p.requires_grad],
+                "lr": args.lr_backbone,
+            }
+        ]
+    else:
+        p_wd, p_non_wd = [], []
+        for n, p in model.named_parameters():
+            if p.requires_grad:
+                if "bias" in n or "ln" in n or "bn" in n:
+                    p_non_wd.append(p)
+                else:
+                    p_wd.append(p)
 
+        optim_params = [
+            {"params": p_wd, "weight_decay": args.wd},
+            {"params": p_non_wd, "weight_decay": 0},
+        ]
+        
     if args.optim == "sgd":
         optimizer = torch.optim.SGD(
             optim_params,
@@ -217,6 +211,7 @@ def build_classifier(args):
             weight_decay=args.wd,
         )
 
+        
     scaler = amp.GradScaler(enabled=not args.full_precision)
 
     # Optionally resume from a checkpoint

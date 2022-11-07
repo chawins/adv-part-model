@@ -411,7 +411,7 @@ class SemiBBOXLoss(SetCriterion):
             clf_loss = F.cross_entropy(logits, targets, reduction="none")
             loss += (1 - self.seg_const) * clf_loss
         if self.seg_const > 0:
-            super(SemiBBOXLoss, self).weight_dict
+            # super(SemiBBOXLoss, self).weight_dict
             # loss_dict = criterion(outputs, targets)
             loss_dict = super().forward(dino_outputs, dino_targets, return_indices)
             bbox_loss = sum(loss_dict[k] * self.weight_dict[k] for k in loss_dict.keys() if k in self.weight_dict)

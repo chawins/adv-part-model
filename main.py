@@ -326,6 +326,23 @@ def main(args):
     """Main function."""
     init_distributed_mode(args)
 
+
+    # handling dino args                    
+    if args.config_file:
+        from DINO.util.slconfig import SLConfig
+        cfg = SLConfig.fromfile(args.config_file)
+
+        if args.options is not None:
+            cfg.merge_from_dict(args.options)
+
+        cfg_dict = cfg._cfg_dict.to_dict()
+        args_vars = vars(args)
+        for k,v in cfg_dict.items():
+            if k not in args_vars:
+                setattr(args, k, v)
+            else:
+                raise ValueError("Key {} can used by args only".format(k))
+
     global best_acc1
 
     # Fix the seed for reproducibility
@@ -347,11 +364,11 @@ def main(args):
 
             images, target_bbox, targets = samples
             
-            # TODO: what is second return here?
-            images, _ = images.decompose()
+            images, mask = images.decompose()
             
-            debug_index = 1
-            torchvision.utils.save_image(images[debug_index], 'debug.png')
+            debug_index = 0
+            torchvision.utils.save_image(images[debug_index], f'example_images/img_{debug_index}.png')
+            torchvision.utils.save_image(mask[debug_index] * 1.0, f'example_images/mask_{debug_index}.png')
             img_uint8 = torchvision.io.read_image(f'example_images/img_{debug_index}.png')
             shape = target_bbox[debug_index]['size']
             print(target_bbox[debug_index])
@@ -421,7 +438,7 @@ def main(args):
                 train_sampler.set_epoch(epoch)
             lr = adjust_learning_rate(optimizer, epoch, args)
             print(f"=> lr @ epoch {epoch}: {lr:.2e}")
-
+            
             # Train for one epoch
             train_stats = _train(
                 train_loader,
@@ -543,6 +560,16 @@ def _train(
     # Switch to train mode
     model.train()
 
+    # for index, parameter in enumerate(model.parameters()):
+    #     print(index, type(parameter))
+    #     print(torch.isnan(parameter.data).sum())
+    #     print()
+
+    #     if torch.isnan(parameter.data).sum():
+    #         import pdb
+    #         pdb.set_trace()
+    # qqq
+
     end = time.time()
     for i, samples in enumerate(train_loader):
         # Measure data loading time
@@ -563,7 +590,12 @@ def _train(
                 except:
                     need_tgt_for_training = False
 
-                images, target_bbox, targets = samples
+                # images, target_bbox, targets = samples
+                # print(len(samples))
+                # import pdb
+                # pdb.set_trace()
+                nested_tensors, target_bbox, targets = samples
+                images, masks = nested_tensors.decompose()
                 targets = torch.LongTensor(targets)
                 
             else:
@@ -572,10 +604,13 @@ def _train(
 
 
         if args.obj_det_arch == "dino": 
-            # TODO: this is wrong since it uses only 1 gpu?
+            # TODO: move import
             from DINO.util.utils import to_device
             device = 'cuda'
-            images = images.to(device)
+            # images = images.to(device)
+            # masks = masks.to(device)
+            images = images.cuda(args.gpu, non_blocking=True)
+            masks = masks.cuda(args.gpu, non_blocking=True)
             target_bbox = [{k: to_device(v, device) for k, v in t.items()} for t in target_bbox]
             targets = targets.cuda(args.gpu, non_blocking=True)
             batch_size = targets.size(0)
@@ -585,9 +620,17 @@ def _train(
             batch_size = images.size(0)
 
         # Compute output
+        # outputs, dino_outputs = model(images, target_bbox, need_tgt_for_training, return_mask=need_tgt_for_training)
+        # loss = criterion(outputs, dino_outputs, target_bbox, targets)
+        # print('lossssss')
+        # import pdb
+        # pdb.set_trace()
+
         with amp.autocast(enabled=not args.full_precision):
             if args.obj_det_arch == "dino": 
-                outputs, dino_outputs = model(images, target_bbox, need_tgt_for_training, return_mask=need_tgt_for_training)
+                forward_args = {'masks':masks, 'dino_targets': target_bbox, 'need_tgt_for_training': need_tgt_for_training, 'return_mask': False}
+                images = attack(images, targets, forward_args)
+                outputs, dino_outputs = model(images, masks, target_bbox, need_tgt_for_training, return_mask=True)
                 loss = criterion(outputs, dino_outputs, target_bbox, targets)
             else:
                 if attack.use_mask:
@@ -693,13 +736,30 @@ def _validate(val_loader, model, criterion, attack, args):
                 except:
                     need_tgt_for_training = False
 
-                images, target_bbox, targets = samples
-                targets = torch.Tensor(targets)
+                # images, target_bbox, targets = samples
+                nested_tensors, target_bbox, targets = samples
+                images, masks = nested_tensors.decompose()
+                targets = torch.LongTensor(targets)
                 
-    
             else:
                 images, segs, targets = samples
                 segs = segs.cuda(args.gpu, non_blocking=True)
+
+                
+            # # handling dino validation
+            # if args.obj_det_arch == "dino": 
+            #     try:
+            #         need_tgt_for_training = args.use_dn
+            #     except:
+            #         need_tgt_for_training = False
+
+            #     images, target_bbox, targets = samples
+            #     targets = torch.Tensor(targets)
+                
+    
+            # else:
+            #     images, segs, targets = samples
+            #     segs = segs.cuda(args.gpu, non_blocking=True)
 
 
         # DEBUG
@@ -708,19 +768,37 @@ def _validate(val_loader, model, criterion, attack, args):
             save_image(images, "test.png")
 
         if args.obj_det_arch == "dino": 
+            # TODO: this is wrong since it uses only 1 gpu?
             from DINO.util.utils import to_device
             device = 'cuda'
             images = images.to(device)
+            masks = masks.to(device)
+
             target_bbox = [{k: to_device(v, device) for k, v in t.items()} for t in target_bbox]
-            # images = images.cuda(args.gpu, non_blocking=True)
-            # target_bbox = [{k: v.cuda(args.gpu, non_blocking=True) for k, v in t.items()} for t in target_bbox]
             targets = targets.cuda(args.gpu, non_blocking=True)
             batch_size = targets.size(0)
-            # batch_size = images.size(0)
+
         else:
             images = images.cuda(args.gpu, non_blocking=True)
             targets = targets.cuda(args.gpu, non_blocking=True)
             batch_size = images.size(0)
+
+
+
+        # if args.obj_det_arch == "dino": 
+        #     from DINO.util.utils import to_device
+        #     device = 'cuda'
+        #     images = images.to(device)
+        #     target_bbox = [{k: to_device(v, device) for k, v in t.items()} for t in target_bbox]
+        #     # images = images.cuda(args.gpu, non_blocking=True)
+        #     # target_bbox = [{k: v.cuda(args.gpu, non_blocking=True) for k, v in t.items()} for t in target_bbox]
+        #     targets = targets.cuda(args.gpu, non_blocking=True)
+        #     batch_size = targets.size(0)
+        #     # batch_size = images.size(0)
+        # else:
+        #     images = images.cuda(args.gpu, non_blocking=True)
+        #     targets = targets.cuda(args.gpu, non_blocking=True)
+        #     batch_size = images.size(0)
 
         # DEBUG: fixed clean segmentation masks
         if "clean" in args.experiment:
@@ -729,18 +807,16 @@ def _validate(val_loader, model, criterion, attack, args):
         # compute output
         with torch.no_grad():
             if args.obj_det_arch == "dino": 
-                # TODO: need to attack images
-                if need_tgt_for_training:
-                    outputs, dino_outputs = model(images, return_mask=need_tgt_for_training)
-                else:
-                    outputs = model(images)
-            
-                loss_dict = criterion(outputs, dino_outputs, target_bbox, targets)
 
-                weight_dict = criterion.weight_dict
-                # import ipdb; ipdb.set_trace()
-                loss = criterion()
-                loss = sum(loss_dict[k] * weight_dict[k] for k in loss_dict.keys() if k in weight_dict)
+                forward_args = {'masks':masks, 'dino_targets': target_bbox, 'need_tgt_for_training': need_tgt_for_training, 'return_mask': False}
+                images = attack(images, targets, forward_args)
+                outputs = model(images, masks, target_bbox, need_tgt_for_training, return_mask=False)
+                loss = criterion(outputs, targets)
+
+
+                # outputs, _ = model(images, target_bbox, need_tgt_for_training, return_mask=need_tgt_for_training)
+                # loss = criterion(outputs, targets)
+
             else:
                 if attack.use_mask:
                     images = attack(images, targets, segs)

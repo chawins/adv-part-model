@@ -14,7 +14,50 @@ class DinoBoundingBoxModel(nn.Module):
         tmp_num_classes = args.num_classes
         
         setattr(args, 'num_classes', args.seg_labels)
-        self.object_detector, self.criterion, self.postprocessors = build_model_main(args)        
+        self.object_detector, self.criterion, self.postprocessors = build_model_main(args)     
+
+        
+        
+        
+        # # load pretrained dino backbone
+        # import DINO.util.misc as utils
+        # from DINO.util.utils import ModelEma
+
+
+        # if (not args.resume) and args.pretrain_model_path:
+        #     checkpoint = torch.load(args.pretrain_model_path, map_location='cpu')['model']
+        # from collections import OrderedDict
+        # _ignorekeywordlist = args.finetune_ignore if args.finetune_ignore else []
+        # ignorelist = []
+
+        # def check_keep(keyname, ignorekeywordlist):
+        #     for keyword in ignorekeywordlist:
+        #         if keyword in keyname:
+        #             ignorelist.append(keyname)
+        #             return False
+        #     return True
+
+        # # logger.info("Ignore keys: {}".format(json.dumps(ignorelist, indent=2)))
+        # _tmp_st = OrderedDict({k:v for k, v in utils.clean_state_dict(checkpoint).items() if check_keep(k, _ignorekeywordlist)})
+
+        # # _load_output = model_without_ddp.load_state_dict(_tmp_st, strict=False)
+        # _load_output = self.object_detector.load_state_dict(_tmp_st, strict=False)
+        # # logger.info(str(_load_output))
+
+        # if args.use_ema:
+        #     if 'ema_model' in checkpoint:
+        #         print('ema in checkpoint')
+        #         ema_m.module.load_state_dict(utils.clean_state_dict(checkpoint['ema_model']))
+        #     else:
+        #         del ema_m
+        #         ema_m = ModelEma(self.object_detector, args.ema_decay) 
+
+
+
+
+
+
+
         
         # TODO: remove from here. only for debugging
         n_seg = sum(p.numel() for p in self.object_detector.parameters()) / 1e6
@@ -40,14 +83,16 @@ class DinoBoundingBoxModel(nn.Module):
             nn.Linear(50, args.num_classes),
         )
 
-    def forward(self, images, dino_targets, need_tgt_for_training, return_mask=False, **kwargs):
-        # outputs, dino_outputs = model(images, target_bbox, need_tgt_for_training, return_mask=need_tgt_for_training)
-
+    def forward(self, images, masks, dino_targets, need_tgt_for_training, return_mask=False, **kwargs):
         # Object Detection part
+        from DINO.util.misc import NestedTensor
+        nested_tensors = NestedTensor(images, masks)
         if need_tgt_for_training:
-            dino_outputs = self.object_detector(images, dino_targets)
+            dino_outputs = self.object_detector(nested_tensors, dino_targets)
+            # dino_outputs = self.object_detector(images, dino_targets)
         else:
-            dino_outputs = self.object_detector(images)
+            dino_outputs = self.object_detector(nested_tensors)
+            # dino_outputs = self.object_detector(images)
         
 
         # concatenate softmax'd logits and bounding box predictions

@@ -1,6 +1,6 @@
 #!/bin/bash
 ID=9
-GPU=0
+GPU=1
 NUM_GPU=1
 BS=2
 AA_BS=32
@@ -73,18 +73,35 @@ EPS=0.03137254901
 #     --output-dir results/2082 --experiment part-bbox-norm_img-semi
 
 DATASET=part-imagenet-bbox
-GPU=0
-NUM_GPU=1
+# GPU=0
+# NUM_GPU=1
 # TODO: check pretrained and use it for dino
 # TODO: does pretrained in this context mean pretrained resnet (backbone) only or does it mean whole dino model?
 # TODO: should seg_labels be 41 or 40?
 
+# no adversarial training
+# CUDA_VISIBLE_DEVICES=$GPU python -u main.py \
+#     --seg-backbone resnet50 --obj-det-arch dino --full-precision --pretrained \
+#     --data $DATAPATH --seg-label-dir $SEGPATH --dataset $DATASET --batch-size $BS \
+#     --adv-train none \
+#     --epsilon $EPS --atk-norm Linf \
+#     --resume-if-exist \
+#     --seg-const-trn 0.5 \
+#     --lr 0.0001 \
+#     --output-dir results/2082 --experiment part-bbox-norm_img-semi \
+#     --seg-labels 41 \
+#     --config_file DINO/config/DINO/DINO_4scale_modified.py \
+#     --options dn_scalar=100 dn_label_coef=1.0 dn_bbox_coef=1.0 # all of these are for options
+
+# with pgd adversarial training
 CUDA_VISIBLE_DEVICES=$GPU python -u main.py \
     --seg-backbone resnet50 --obj-det-arch dino --full-precision --pretrained \
     --data $DATAPATH --seg-label-dir $SEGPATH --dataset $DATASET --batch-size $BS \
-    --adv-train none \
-    --epsilon $EPS --atk-norm Linf --debug \
+    --adv-train pgd \
+    --epsilon $EPS --atk-norm Linf \
     --resume-if-exist \
+    --seg-const-trn 0.5 \
+    --lr 0.0001 \
     --output-dir results/2082 --experiment part-bbox-norm_img-semi \
     --seg-labels 41 \
     --config_file DINO/config/DINO/DINO_4scale_modified.py \

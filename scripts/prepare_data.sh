@@ -24,12 +24,12 @@ source activate /global/scratch/users/$USER/env_part_based
 #     --allow-missing-parts \
 #     --use-box-seg
 
-python prepare_pascal_part.py \
-    --data-dir /global/scratch/users/nabeel126/pascal_part/ \
-    --name aeroplane_bird_car_cat_dog_new \
-    --min-area 0.
+# python prepare_pascal_part.py \
+#     --data-dir /global/scratch/users/nabeel126/pascal_part/ \
+#     --name aeroplane_bird_car_cat_dog_new \
+#     --min-area 0.
 
-# python -u prepare_part_imagenet.py \
-#     --data-dir /global/scratch/users/nabeel126/PartImageNet/ \
-#     --name All
+python -u prepare_part_imagenet.py \
+    --data-dir /data/nab_126/PartImageNet/ \
+    --name All
 # # --use-box-seg
