@@ -35,7 +35,7 @@ conda env create -f environment.yml
 # Install pytorch 1.10 (or the latest)
 conda install -y pytorch torchvision torchaudio cudatoolkit=11.3 -c pytorch
 conda install -y h5py 
-conda install -y -c conda-forge ruamel.yaml scikit-image timm torchmetrics
+conda install -y -c conda-forge ruamel.yaml scikit-image timm torchmetrics matplotlib
 conda install -y -c anaconda cython
 pip install -U kornia wandb segmentation-models-pytorch imagecorruptions foolbox
 ```

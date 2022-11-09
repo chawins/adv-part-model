@@ -19,7 +19,6 @@ import torch.utils.data.distributed
 import wandb
 from torch.distributed.elastic.multiprocessing.errors import record
 
-# from torchmetrics import IoU as IoU   # Use this for older version of torchmetrics
 from torchmetrics import JaccardIndex as IoU
 from torchvision.utils import save_image
 
@@ -44,6 +43,8 @@ from part_model.utils import (
     save_on_master,
 )
 from part_model.utils.argparse import get_args_parser
+from part_model.utils.atta import ATTA
+from part_model.utils.image import get_seg_type
 from part_model.utils.loss import get_train_criterion
 
 best_acc1 = 0
@@ -95,6 +96,11 @@ def main(args):
         "test": [],
     }
 
+    # Initialize ATTA training if specified
+    atta: ATTA | None = None
+    if args.use_atta:
+        atta = ATTA(input_dim=args.input_dim, num_samples=args.num_train)
+
     print(args)
 
     if args.evaluate:
@@ -122,6 +128,7 @@ def main(args):
                 scaler,
                 epoch,
                 args,
+                atta=atta,
             )
 
             if (epoch + 1) % 2 == 0:
@@ -215,8 +222,21 @@ def main(args):
 
 
 def _train(
-    train_loader, model, criterion, attack, optimizer, scaler, epoch, args
+    train_loader,
+    model,
+    criterion,
+    attack,
+    optimizer,
+    scaler,
+    epoch,
+    args,
+    atta: ATTA | None = None,
 ):
+    use_seg: bool = get_seg_type(args) is not None
+    seg_only: bool = "seg-only" in args.experiment
+    tf_params_offset: int = 2 if not use_seg or seg_only else 3
+    use_atta: bool = args.use_atta
+
     batch_time = AverageMeter("Time", ":6.3f")
     data_time = AverageMeter("Data", ":6.3f")
     losses = AverageMeter("Loss", ":.4e")
@@ -228,7 +248,6 @@ def _train(
         prefix="Epoch: [{}]".format(epoch),
     )
     compute_acc = get_compute_acc(args)
-    seg_only = "seg-only" in args.experiment
 
     # Switch to train mode
     model.train()
@@ -238,16 +257,19 @@ def _train(
         # Measure data loading time
         data_time.update(time.time() - end)
 
-        if len(samples) == 2:
-            images, targets = samples
-            segs = None
-        elif seg_only:
+        segs: torch.Tensor | None = None
+        if not use_seg or seg_only:
             # If training segmenter only, `targets` is segmentation mask
-            images, targets, _ = samples
-            segs = None
+            images, targets = samples[:tf_params_offset]
         else:
-            images, segs, targets = samples
+            images, segs, targets = samples[:tf_params_offset]
             segs = segs.cuda(args.gpu, non_blocking=True)
+
+        if use_atta:
+            orig_images: torch.Tensor = images.clone()
+            tf_params: list[torch.Tensor] = samples[tf_params_offset:]
+            # Update image with saved perturbation
+            images = atta.apply(images, tf_params)
 
         images = images.cuda(args.gpu, non_blocking=True)
         targets = targets.cuda(args.gpu, non_blocking=True)
@@ -260,8 +282,8 @@ def _train(
                 # labels are used
                 images = attack(images, targets, segs)
                 if attack.dual_losses:
-                    targets = torch.cat([targets, targets], axis=0)
-                    segs = torch.cat([segs, segs], axis=0)
+                    targets = torch.cat([targets, targets], dim=0)
+                    segs = torch.cat([segs, segs], dim=0)
             else:
                 # Attack for either classifier or segmenter alone
                 images = attack(images, targets)
@@ -312,6 +334,11 @@ def _train(
                 )
             progress.display(i)
 
+        if use_atta:
+            # Update saved perturbation in ATTA
+            perturbation: torch.Tensor = images.cpu() - orig_images
+            atta.update(perturbation, tf_params)
+
     progress.synchronize()
     return {
         "acc1": top1.avg,
@@ -344,12 +371,11 @@ def _validate(val_loader, model, criterion, attack, args):
     for i, samples in enumerate(val_loader):
         # measure data loading time
         data_time.update(time.time() - end)
+        segs: torch.Tensor | None = None
         if len(samples) == 2:
             images, targets = samples
-            segs = None
         elif seg_only:
             images, targets, _ = samples
-            segs = None
         else:
             images, segs, targets = samples
             segs = segs.cuda(args.gpu, non_blocking=True)
@@ -440,7 +466,7 @@ def _validate(val_loader, model, criterion, attack, args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        "Part Classification", parents=[get_args_parser()]
+        "Main script for part model (ATTA)", parents=[get_args_parser()]
     )
     args = parser.parse_args()
     os.makedirs(args.output_dir, exist_ok=True)
