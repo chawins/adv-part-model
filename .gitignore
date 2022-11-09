@@ -136,3 +136,5 @@ results/
 .fuse_hidden*
 log/
 results
+tmp*
+temp*

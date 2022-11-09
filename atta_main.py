@@ -98,7 +98,7 @@ def main(args):
 
     # Initialize ATTA training if specified
     atta: ATTA | None = None
-    if args.use_atta:
+    if args.adv_train == "atta":
         atta = ATTA(input_dim=args.input_dim, num_samples=args.num_train)
 
     print(args)
@@ -235,7 +235,7 @@ def _train(
     use_seg: bool = get_seg_type(args) is not None
     seg_only: bool = "seg-only" in args.experiment
     tf_params_offset: int = 2 if not use_seg or seg_only else 3
-    use_atta: bool = args.use_atta
+    use_atta: bool = args.adv_train == "atta"
 
     batch_time = AverageMeter("Time", ":6.3f")
     data_time = AverageMeter("Data", ":6.3f")
