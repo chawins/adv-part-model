@@ -3,7 +3,7 @@
 # export NCCL_IB_DISABLE=1
 # export NCCL_P2P_DISABLE=1
 # export NCCL_DEBUG=INFO
-ID=8
+ID=0
 GPU=0
 NUM_GPU=1
 BS=128
@@ -47,14 +47,13 @@ torchrun \
     atta_main.py \
     --dist-url tcp://localhost:$PORT --seed 0 --dist-backend $BACKEND \
     --arch resnet50 --seg-backbone resnet50 --seg-arch deeplabv3plus \
-    --full-precision --data $DATAPATH --seg-label-dir $SEGPATH \
+    --full-precision --pretrained --data $DATAPATH --seg-label-dir $SEGPATH \
     --dataset $DATASET --workers $NUM_WORKERS --print-freq 50 \
     --epochs 50 --batch-size $BS --lr 1e-1 --wd 5e-4 \
     --adv-train pgd --epsilon $EPS --atk-norm Linf --adv-beta 0.8 \
     --eval-attack pgd --seg-const-trn 0.5 --semi-label 1 \
     --resume results/rn50_normal_none/checkpoint_best.pt --load-weight-only --resume-if-exist \
-    --output-dir results/rn50_normal_atta --experiment normal \
-    --use-atta --atk-steps 1
+    --output-dir results/rn50_normal_pgd2 --experiment normal
 sleep 30
 
 # $PYTHON main.py \

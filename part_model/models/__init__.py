@@ -219,11 +219,11 @@ def build_classifier(args):
                 scaler.load_state_dict(checkpoint["scaler"])
             print(f'=> loaded resume checkpoint (epoch {checkpoint["epoch"]})')
         elif args.resume:
-            raise FileNotFoundError(f"=> no checkpoint found at {model_path}")
+            raise FileNotFoundError(f"=> No checkpoint found at {model_path}.")
         else:
-            print(f"=> Tried to resume if exist but found no checkpoint")
+            print(f"=> Tried to resume if exist but found no checkpoint.")
     else:
-        print(f"=> model is randomly initialized")
+        print(f"=> Loaded model without using resumed weights.")
 
     return model, optimizer, scaler
 
