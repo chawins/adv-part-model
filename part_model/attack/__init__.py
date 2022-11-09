@@ -1,46 +1,47 @@
-import part_model.models as pm_models
+"""Utility functions for setting up attack modules."""
+
 import torch
 import torch.nn as nn
+
+import part_model.models as pm_models
 from part_model.utils.loss import (
     PixelwiseCELoss,
     SegGuidedCELoss,
     SemiSumLoss,
-    SingleSegGuidedCELoss,
 )
 
-from .auto import AutoAttackModule
-from .auto_square import AutoAttackSPModule
-from .corruption_benchmark import CorruptionBenchmarkModule
+from part_model.attack.auto import AutoAttackModule
+from part_model.attack.auto_square import AutoAttackSPModule
+from part_model.attack.corruption_benchmark import CorruptionBenchmarkModule
 
-# from ._hsja import HopSkipJumpAttack
-from .hsj import HopSkipJump
-from .masked_pgd import MaskedPGDAttackModule
-from .mat import MATAttackModule
-from .none import NoAttackModule
-from .pgd import PGDAttackModule
-from .rays import RayS
-from .seg_guide import SegGuidedAttackModule
-from .seg_pgd import SegPGDAttackModule
-from .trades import TRADESAttackModule
+from part_model.attack.hsj import HopSkipJump
+from part_model.attack.masked_pgd import MaskedPGDAttackModule
+from part_model.attack.mat import MATAttackModule
+from part_model.attack.none import NoAttackModule
+from part_model.attack.pgd import PGDAttackModule
+from part_model.attack.rays import RayS
+from part_model.attack.seg_guide import SegGuidedAttackModule
+from part_model.attack.seg_pgd import SegPGDAttackModule
+from part_model.attack.trades import TRADESAttackModule
 
 
-def setup_seg_guide_loss(args):
-    from part_model.dataloader.cityscapes import seg_file_to_mask
+# def setup_seg_guide_loss(args):
+#     from part_model.dataloader.cityscapes import seg_file_to_mask
 
-    # TODO
-    guide_images = ["./figures/00092.tif", "./figures/00033.tif"]
-    guide_masks, loss_masks = [], []
-    for i in range(args.num_classes):
-        guide_mask, mask = seg_file_to_mask(guide_images[i])
-        guide_masks.append(guide_mask.cuda(args.gpu))
-        # TODO: 0 -> 1, 1 -> 0
-        loss_masks.append(mask[:, :, 1 - i].cuda(args.gpu))
-    guide_masks = torch.stack(guide_masks, dim=0)
-    loss_masks = torch.stack(loss_masks, dim=0)
-    loss = SingleSegGuidedCELoss(
-        guide_masks, loss_masks=loss_masks, const=args.seg_loss_const
-    )
-    return loss
+#     # TODO
+#     guide_images = ["./figures/00092.tif", "./figures/00033.tif"]
+#     guide_masks, loss_masks = [], []
+#     for i in range(args.num_classes):
+#         guide_mask, mask = seg_file_to_mask(guide_images[i])
+#         guide_masks.append(guide_mask.cuda(args.gpu))
+#         # TODO: 0 -> 1, 1 -> 0
+#         loss_masks.append(mask[:, :, 1 - i].cuda(args.gpu))
+#     guide_masks = torch.stack(guide_masks, dim=0)
+#     loss_masks = torch.stack(loss_masks, dim=0)
+#     loss = SingleSegGuidedCELoss(
+#         guide_masks, loss_masks=loss_masks, const=args.seg_loss_const
+#     )
+#     return loss
 
 
 def get_loss(args, option):
@@ -181,10 +182,11 @@ def setup_eval_attacker(args, model, num_classes=None, guide_dataloader=None):
 
 def setup_train_attacker(args, model):
 
-    eps = float(args.epsilon)
-    norm = args.atk_norm
+    eps: float = float(args.epsilon)
+    use_atta: bool = args.adv_train == "atta"
+    norm: str = args.atk_norm
     attack_config = {
-        "pgd_steps": args.atk_steps,
+        "pgd_steps": 1 if use_atta else args.atk_steps,
         "pgd_step_size": eps / args.atk_steps * 1.25,
         # 'pgd_steps': 5,
         # 'pgd_step_size': eps / 3,
@@ -216,13 +218,16 @@ def setup_train_attacker(args, model):
         "mpgd": MaskedPGDAttackModule(
             attack_config, model, get_loss(args, "ce"), norm, eps
         ),
+        "atta": PGDAttackModule(
+            attack_config, model, get_loss(args, "ce"), norm, eps
+        ),
     }[args.adv_train]
 
     return attack
 
 
 def setup_aa_attacker(args, model, num_classes=None):
-    """Set up attack for validation"""
+    """Set up AutoAttack for validation."""
     if num_classes is None:
         num_classes = args.num_classes
     eps = float(args.epsilon)

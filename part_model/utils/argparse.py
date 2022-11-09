@@ -155,7 +155,10 @@ def get_args_parser():
         "--adv-train",
         default="none",
         type=str,
-        help="Use adversarial training (default: none = normal training)",
+        help=(
+            'Select types of adversarial training (options: "none", "pgd", '
+            '"trades", "mat", "atta". Defaults to "none" (normal training).'
+        ),
     )
     parser.add_argument(
         "--atk-steps", default=10, type=int, help="Number of attack iterations"
@@ -171,11 +174,6 @@ def get_args_parser():
         default=6.0,
         type=float,
         help="Beta parameter for TRADES or MAT (default: 6)",
-    )
-    parser.add_argument(
-        "--use-atta",
-        action="store_true",
-        help="Use ATTA to speed up adversarial training",
     )
     parser.add_argument(
         "--eval-attack",

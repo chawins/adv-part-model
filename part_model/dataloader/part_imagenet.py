@@ -178,6 +178,7 @@ class PartImageNetSegDataset(data.Dataset):
 def get_loader_sampler(args, transform, split: str):
     seg_type: str = get_seg_type(args)
     is_train: bool = split == "train"
+    use_atta: bool = args.adv_train == "atta"
 
     part_imagenet_dataset = PartImageNetSegDataset(
         args.data,
@@ -187,7 +188,7 @@ def get_loader_sampler(args, transform, split: str):
         seg_type=seg_type,
         use_label=("semi" in args.experiment) or (seg_type is None),
         seg_fraction=args.semi_label if is_train else 1.0,
-        use_atta=args.use_atta,
+        use_atta=use_atta,
     )
 
     sampler: Optional[torch.utils.data.Sampler] = None
@@ -243,7 +244,7 @@ def get_loader_sampler(args, transform, split: str):
 def load_part_imagenet(args):
 
     img_size = PART_IMAGENET["input_dim"][1]
-    use_atta: bool = args.use_atta
+    use_atta: bool = args.adv_train == "atta"
 
     train_transforms = Compose(
         [
