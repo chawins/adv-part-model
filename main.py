@@ -1,5 +1,7 @@
 """Main script for both training and evaluation."""
 
+from __future__ import annotations
+
 import argparse
 import json
 import math

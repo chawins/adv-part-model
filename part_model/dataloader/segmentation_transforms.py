@@ -4,6 +4,8 @@ This code is copied from
 https://github.com/pytorch/vision/blob/master/references/segmentation/transforms.py
 """
 
+from __future__ import annotations
+
 import random
 from typing import Any, Callable
 
