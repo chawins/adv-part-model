@@ -126,7 +126,7 @@ def setup_eval_attacker(args, model, num_classes=None, guide_dataloader=None):
                 get_loss(args, "seg"),
                 norm,
                 eps,
-                classifier=pm_models.wrap_distributed(
+                classifier=pm_models._wrap_distributed(
                     args, model.module.get_classifier()
                 ),
                 dataloader=guide_dataloader,

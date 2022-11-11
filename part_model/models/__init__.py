@@ -6,29 +6,36 @@ import torch.cuda.amp as amp
 import torch.nn as nn
 import torchvision
 
-from ..dataloader import DATASET_DICT
-from ..utils.image import get_seg_type
-from .bbox_model import BoundingBoxModel
-from .clean_mask_model import CleanMaskModel
-from .common import Normalize
-from .groundtruth_mask_model import GroundtruthMaskModel
-from .part_fc_model import PartFCModel
-from .part_mask_model import PartMaskModel
-from .part_seg_cat_model import PartSegCatModel
-from .part_seg_model import PartSegModel
-from .pixel_count_model import PixelCountModel
-from .pooling_model import PoolingModel
-from .segmentation_model import SEGM_BUILDER
-from .two_head_model import TwoHeadModel
-from .weighted_bbox_model import WeightedBBoxModel
+from part_model.dataloader import DATASET_DICT
+from part_model.models.bbox_model import BoundingBoxModel
+from part_model.models.clean_mask_model import CleanMaskModel
+from part_model.models.common import Normalize
+from part_model.models.groundtruth_mask_model import GroundtruthMaskModel
+from part_model.models.part_fc_model import PartFCModel
+from part_model.models.part_mask_model import PartMaskModel
+from part_model.models.part_seg_cat_model import PartSegCatModel
+from part_model.models.part_seg_model import PartSegModel
+from part_model.models.pixel_count_model import PixelCountModel
+from part_model.models.pooling_model import PoolingModel
+from part_model.models.segmentation_model import SEGM_BUILDER
+from part_model.models.two_head_model import TwoHeadModel
+from part_model.models.weighted_bbox_model import WeightedBBoxModel
+from part_model.utils.image import get_seg_type
 
 
-def wrap_distributed(args, model):
+def _wrap_distributed(args, model):
+    # TODO: When using efficientnet as backbone, pytorch's torchrun complains
+    # about unused parameters. This can be suppressed by setting
+    # find_unused_parameters to True.
+    find_unused_parameters: bool = "efficientnet" in args.seg_backbone
+    
     if args.distributed:
         model.cuda(args.gpu)
         model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
         model = torch.nn.parallel.DistributedDataParallel(
-            model, device_ids=[args.gpu]
+            model,
+            device_ids=[args.gpu],
+            find_unused_parameters=find_unused_parameters,
         )
     else:
         model.cuda()
@@ -152,7 +159,7 @@ def build_classifier(args):
     n_model = sum(p.numel() for p in model.parameters()) / 1e6
     print(f"=> total params: {n_model:.2f}M")
 
-    model = wrap_distributed(args, model)
+    model = _wrap_distributed(args, model)
 
     p_wd, p_non_wd = [], []
     for n, p in model.named_parameters():
@@ -241,7 +248,7 @@ def build_segmentation(args):
     #         model, device_ids=[args.gpu]
     #     )
     #     model_without_ddp = model.module[1]
-    model = wrap_distributed(args, model)
+    model = _wrap_distributed(args, model)
     model_without_ddp = model.module[1]
 
     backbone_params = list(model_without_ddp.encoder.parameters())
