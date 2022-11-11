@@ -23,6 +23,8 @@ import torch.utils.data.distributed
 import wandb
 from torch.distributed.elastic.multiprocessing.errors import record
 
+from DINO.util.utils import to_device
+
 # from torchmetrics import IoU as IoU   # Use this for older version of torchmetrics
 from torchmetrics import JaccardIndex as IoU
 from torchvision.utils import save_image
@@ -260,7 +262,7 @@ def _get_args_parser():
         help="Softmax temperature for part-seg model",
     )
     parser.add_argument("--save-all-epochs", action="store_true")
-
+    parser.add_argument("--sample", action="store_true")
 
 
 
@@ -604,8 +606,6 @@ def _train(
 
 
         if args.obj_det_arch == "dino": 
-            # TODO: move import
-            from DINO.util.utils import to_device
             device = 'cuda'
             # images = images.to(device)
             # masks = masks.to(device)
@@ -768,8 +768,6 @@ def _validate(val_loader, model, criterion, attack, args):
             save_image(images, "test.png")
 
         if args.obj_det_arch == "dino": 
-            # TODO: this is wrong since it uses only 1 gpu?
-            from DINO.util.utils import to_device
             device = 'cuda'
             images = images.to(device)
             masks = masks.to(device)

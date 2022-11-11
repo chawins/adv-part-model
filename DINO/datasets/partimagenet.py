@@ -714,8 +714,8 @@ def get_aux_target_hacks_list(image_set, args):
 
 def build(image_set, args):
     # TODO: add as arg
-    # root = Path('/data/shared/PartImageNet/PartBoxSegmentations')
-    root = Path('/global/scratch/users/nabeel126/PartImageNet/PartBoxSegmentations')
+    root = Path('/data/shared/PartImageNet/PartBoxSegmentations')
+    # root = Path('/global/scratch/users/nabeel126/PartImageNet/PartBoxSegmentations')
 
     PATHS = {
         "train": (root / "train", root / "image_labels" / 'train.json', root / "annotations" / 'train.json'),

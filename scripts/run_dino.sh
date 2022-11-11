@@ -97,7 +97,7 @@ DATASET=part-imagenet-bbox
 CUDA_VISIBLE_DEVICES=$GPU python -u main.py \
     --seg-backbone resnet50 --obj-det-arch dino --full-precision --pretrained \
     --data $DATAPATH --seg-label-dir $SEGPATH --dataset $DATASET --batch-size $BS \
-    --adv-train pgd \
+    --adv-train none \
     --epsilon $EPS --atk-norm Linf \
     --resume-if-exist \
     --seg-const-trn 0.5 \
