@@ -98,7 +98,9 @@ def get_seg_masks(path, all_image_names, use_box_seg=False):
             if img["file_name"].split(".")[0] not in all_image_names:
                 print(f'{img["file_name"].split(".")[0]} file missing!')
                 continue
-            img_path = f'{img["file_name"].split("_")[0]}/{img["file_name"].split(".")[0]}'
+            img_path = (
+                f'{img["file_name"].split("_")[0]}/{img["file_name"].split(".")[0]}'
+            )
             img_paths.append(img_path)
 
             # Turn annotation to mask
@@ -117,9 +119,7 @@ def get_seg_masks(path, all_image_names, use_box_seg=False):
 
         data_dict["seg_masks"].extend(seg_masks)
         data_dict["img_paths"].extend(img_paths)
-        data_dict["labels"].extend(
-            [list(CLASSES.keys()).index(label)] * len(seg_masks)
-        )
+        data_dict["labels"].extend([list(CLASSES.keys()).index(label)] * len(seg_masks))
 
     return data_dict
 
@@ -133,13 +133,9 @@ def save_pil_image(img, path):
 def save_images_partition(partition, data_dict, idx, label, use_box_seg=False):
     # Copy images to new directory
     if use_box_seg:
-        path = os.path.join(
-            args.data_dir, "BoxSegmentations", args.name, partition
-        )
+        path = os.path.join(args.data_dir, "BoxSegmentations", args.name, partition)
     else:
-        path = os.path.join(
-            args.data_dir, "PartSegmentations", args.name, partition
-        )
+        path = os.path.join(args.data_dir, "PartSegmentations", args.name, partition)
     label_path = os.path.join(path, label)
     os.makedirs(label_path, exist_ok=True)
     img_paths = data_dict["img_paths"]
@@ -199,11 +195,17 @@ if __name__ == "__main__":
         idx = np.where(np.array(data_dict["labels"]) == l)[0]
         num_samples = len(idx)
         np.random.shuffle(idx)
-        num_val, num_test = int(0.1 * num_samples), int(0.1 * num_samples)
+        # num_val, num_test = int(0.1 * num_samples), int(0.1 * num_samples)
+        num_val, num_test = int(0.008 * num_samples), int(0.92 * num_samples)
         val_idx = idx[:num_val]
         test_idx = idx[num_val : num_val + num_test]
         train_idx = idx[num_val + num_test :]
-        print(f"  ==> {num_samples} samples in total")
+        print(
+            f"  ==> {num_samples} samples in total",
+            len(train_idx),
+            len(val_idx),
+            len(test_idx),
+        )
 
         for partition, indices in zip(
             ["train", "val", "test"], [train_idx, val_idx, test_idx]

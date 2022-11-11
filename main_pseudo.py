@@ -390,7 +390,9 @@ def main(args):
     for attack in eval_attack:
         # Use DataParallel (not distributed) model for AutoAttack.
         # Otherwise, DDP model can get timeout or c10d failure.
-        stats = _validate(test_loader, model, criterion, attack[1], args)
+        stats = _validate(
+            test_loader, model, criterion, attack[1], args
+        )  # TODO: change back to test_loader
         print(f"=> {attack[0]}: {stats}")
         stats["attack"] = str(attack[0])
         dist_barrier()
@@ -541,6 +543,8 @@ def _validate(val_loader, model, criterion, attack, args):
 
     end = time.time()
     for i, samples in enumerate(val_loader):
+        if i < 100:
+            continue
         # measure data loading time
         data_time.update(time.time() - end)
         if len(samples) == 2:
@@ -557,6 +561,8 @@ def _validate(val_loader, model, criterion, attack, args):
         if args.debug:
             save_image(COLORMAP[segs].permute(0, 3, 1, 2), "gt.png")
             save_image(images, "test.png")
+        save_image(COLORMAP[targets].permute(0, 3, 1, 2), "gt.png")
+        save_image(images, "test.png")
 
         images = images.cuda(args.gpu, non_blocking=True)
         targets = targets.cuda(args.gpu, non_blocking=True)
@@ -596,6 +602,14 @@ def _validate(val_loader, model, criterion, attack, args):
 
         # DEBUG
         # if args.debug and isinstance(attack, PGDAttackModule):
+        # print(outputs.shape)
+        save_image(
+            COLORMAP[outputs.argmax(1)].permute(0, 3, 1, 2),
+            "pred_seg_clean.png",
+        )
+        print(targets[0], outputs.argmax(1)[0])
+        0 / 0
+        print(targets == outputs.argmax(1))
         if args.debug:
             save_image(
                 COLORMAP[masks.argmax(1)].permute(0, 3, 1, 2),

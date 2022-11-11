@@ -3,6 +3,7 @@ from typing import Optional, Union
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torch.cuda.amp as amp
 
 _EPS = 1e-6
 
@@ -202,7 +203,7 @@ class SemiSumLoss(nn.Module):
             # Check whether target masks contain any negative number. We use
             # -1 to specify masks that we want to drop when seg_frac < 1.
             semi_mask = seg_targets[:, 0, 0] >= 0
-            seg_loss = torch.zeros_like(semi_mask, dtype=logits.dtype)
+            seg_loss = torch.zeros_like(semi_mask, dtype=torch.float32)
             seg_loss[semi_mask] = semi_seg_loss(seg_mask, seg_targets)
             loss += self.seg_const * seg_loss
         if self.reduction == "mean":
