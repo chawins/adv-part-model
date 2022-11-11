@@ -27,8 +27,10 @@ def _wrap_distributed(args, model):
     # TODO: When using efficientnet as backbone, pytorch's torchrun complains
     # about unused parameters. This can be suppressed by setting
     # find_unused_parameters to True.
-    find_unused_parameters: bool = "efficientnet" in args.seg_backbone
-    
+    find_unused_parameters: bool = any(
+        ["efficientnet" in arch for arch in (args.seg_backbone, args.arch)]
+    )
+
     if args.distributed:
         model.cuda(args.gpu)
         model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
