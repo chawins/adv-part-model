@@ -7,7 +7,7 @@ https://github.com/pytorch/vision/blob/master/references/segmentation/transforms
 from __future__ import annotations
 
 import random
-from typing import Any, Callable
+from typing import Any, Callable, Dict, Tuple, Union
 
 import numpy as np
 import torch
@@ -16,7 +16,7 @@ from torchvision.transforms import functional as F
 from PIL.Image import Image
 
 
-_TransformOut = tuple[Image, Image] | tuple[Image, Image, dict[str, Any]]
+_TransformOut = Union[Tuple[Image, Image], Tuple[Image, Image, Dict[str, Any]]]
 
 
 def _pad_if_smaller(img, size, fill=0):
