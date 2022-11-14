@@ -1,5 +1,7 @@
 """Main script for both training and evaluation."""
 
+from __future__ import annotations
+
 import argparse
 import json
 import math
@@ -27,7 +29,6 @@ from part_model.attack import (
     setup_train_attacker,
     setup_val_attacker,
 )
-from part_model.attack.pgd import PGDAttackModule
 from part_model.dataloader import COLORMAP, load_dataset
 from part_model.models import build_model
 from part_model.utils import (

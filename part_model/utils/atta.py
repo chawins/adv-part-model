@@ -1,5 +1,7 @@
 """Module for handling transforms and saving/loading perturbation."""
 
+from __future__ import annotations
+
 from typing import Any
 
 import torch
