@@ -9,6 +9,7 @@ import os
 import pickle
 import sys
 import time
+from typing import Any
 
 import numpy as np
 import torch
@@ -30,7 +31,6 @@ from part_model.attack import (
     setup_train_attacker,
     setup_val_attacker,
 )
-from part_model.attack.pgd import PGDAttackModule
 from part_model.dataloader import COLORMAP, load_dataset
 from part_model.models import build_model
 from part_model.utils import (
@@ -49,6 +49,13 @@ from part_model.utils.argparse import get_args_parser
 from part_model.utils.loss import get_train_criterion
 
 best_acc1 = 0
+
+
+def _write_metrics(save_metrics: Any):
+    if is_main_process():
+        # Save metrics to pickle file if not exists else append
+        pkl_path = os.path.join(args.output_dir, "metrics.pkl")
+        pickle.dump([save_metrics], open(pkl_path, "wb"))
 
 
 @record
@@ -169,6 +176,7 @@ def main(args):
 
             if is_main_process():
                 save_metrics["train"].append(log_stats)
+                _write_metrics(save_metrics)
                 if args.wandb:
                     wandb.log(log_stats)
                 logfile.write(json.dumps(log_stats) + "\n")
@@ -197,19 +205,14 @@ def main(args):
         dist_barrier()
         if is_main_process():
             save_metrics["test"].append(stats)
+            _write_metrics(save_metrics)
             if args.wandb:
                 wandb.log(stats)
             logfile.write(json.dumps(stats) + "\n")
 
     if is_main_process():
         # Save metrics to pickle file if not exists else append
-        pkl_path = os.path.join(args.output_dir, "metrics.pkl")
-        if os.path.exists(pkl_path):
-            metrics = pickle.load(open(pkl_path, "rb"))
-            metrics.append(save_metrics)
-        else:
-            pickle.dump([save_metrics], open(pkl_path, "wb"))
-
+        _write_metrics(save_metrics)
         last_path = f"{args.output_dir}/checkpoint_last.pt"
         if os.path.exists(last_path):
             os.remove(last_path)
