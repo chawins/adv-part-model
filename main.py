@@ -140,10 +140,12 @@ def main(args):
                 clean_acc1, acc1 = val_stats["acc1"], None
                 is_best = clean_acc1 > best_acc1
                 if args.adv_train != "none":
-                    val_stats = _validate(
+                    adv_val_stats = _validate(
                         val_loader, model, criterion, val_attack, args
                     )
-                    acc1 = val_stats["acc1"]
+                    acc1 = adv_val_stats["acc1"]
+                    val_stats["adv_acc1"] = acc1
+                    val_stats["adv_loss"] = adv_val_stats["loss"]
                     is_best = acc1 > best_acc1 and clean_acc1 >= acc1
 
                 save_dict = {
@@ -170,7 +172,7 @@ def main(args):
 
             log_stats = {
                 **{f"train_{k}": v for k, v in train_stats.items()},
-                **{f"test_{k}": v for k, v in val_stats.items()},
+                **{f"val_{k}": v for k, v in val_stats.items()},
                 "epoch": epoch,
             }
 
