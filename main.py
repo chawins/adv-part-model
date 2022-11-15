@@ -71,12 +71,12 @@ def main(args):
     np.random.seed(seed)
 
     # Data loading code
-    print("=> creating dataset")
+    print("=> Creating dataset...")
     loaders = load_dataset(args)
     train_loader, train_sampler, val_loader, test_loader = loaders
 
     # Create model
-    print("=> creating model")
+    print("=> Creating model...")
     model, optimizer, scaler = build_model(args)
     cudnn.benchmark = True
 
@@ -112,7 +112,7 @@ def main(args):
         else:
             load_path = f"{args.output_dir}/checkpoint_best.pt"
     else:
-        print("=> beginning training")
+        print("=> Beginning training...")
         val_stats = {}
         for epoch in range(args.start_epoch, args.epochs):
             is_best = False
@@ -158,7 +158,7 @@ def main(args):
                 }
 
                 if is_best:
-                    print("=> Saving new best checkpoint")
+                    print("=> Saving new best checkpoint...")
                     save_on_master(save_dict, args.output_dir, is_best=True)
                     best_acc1 = (
                         max(clean_acc1, best_acc1)
@@ -188,7 +188,7 @@ def main(args):
         dist_barrier()
         load_path = f"{args.output_dir}/checkpoint_best.pt"
 
-    print(f"=> loading checkpoint from {load_path}...")
+    print(f"=> Loading checkpoint from {load_path}...")
     if args.gpu is None:
         checkpoint = torch.load(load_path)
     else:
