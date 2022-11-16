@@ -1,10 +1,12 @@
+"""Model utility."""
+
 import os
 
 import timm
 import torch
-import torch.cuda.amp as amp
-import torch.nn as nn
 import torchvision
+from torch import nn
+from torch.cuda import amp
 
 from part_model.dataloader import DATASET_DICT
 from part_model.models.bbox_model import BoundingBoxModel
@@ -23,12 +25,12 @@ from part_model.models.weighted_bbox_model import WeightedBBoxModel
 from part_model.utils.image import get_seg_type
 
 
-def _wrap_distributed(args, model):
+def wrap_distributed(args, model):
     # TODO: When using efficientnet as backbone, pytorch's torchrun complains
     # about unused parameters. This can be suppressed by setting
     # find_unused_parameters to True.
     find_unused_parameters: bool = any(
-        ["efficientnet" in arch for arch in (args.seg_backbone, args.arch)]
+        "efficientnet" in arch for arch in (args.seg_backbone, args.arch)
     )
 
     if args.distributed:
@@ -161,7 +163,7 @@ def build_classifier(args):
     n_model = sum(p.numel() for p in model.parameters()) / 1e6
     print(f"=> total params: {n_model:.2f}M")
 
-    model = _wrap_distributed(args, model)
+    model = wrap_distributed(args, model)
 
     p_wd, p_non_wd = [], []
     for n, p in model.named_parameters():
@@ -209,11 +211,11 @@ def build_classifier(args):
                 checkpoint = torch.load(model_path)
             else:
                 # Map model to be loaded to specified single gpu.
-                loc = "cuda:{}".format(args.gpu)
+                loc = f"cuda:{args.gpu}"
                 checkpoint = torch.load(model_path, map_location=loc)
 
             if args.load_from_segmenter:
-                print(f"=> loading segmenter weight only...")
+                print("=> Loading segmenter weight only...")
                 state_dict = {}
                 for name, params in checkpoint["state_dict"].items():
                     name.replace("module", "module.segmenter")
@@ -230,9 +232,9 @@ def build_classifier(args):
         elif args.resume:
             raise FileNotFoundError(f"=> No checkpoint found at {model_path}.")
         else:
-            print(f"=> Tried to resume if exist but found no checkpoint.")
+            print("=> Tried to resume if exist but found no checkpoint.")
     else:
-        print(f"=> Loaded model without using resumed weights.")
+        print("=> Loaded model without using resumed weights.")
 
     return model, optimizer, scaler
 
@@ -250,7 +252,7 @@ def build_segmentation(args):
     #         model, device_ids=[args.gpu]
     #     )
     #     model_without_ddp = model.module[1]
-    model = _wrap_distributed(args, model)
+    model = wrap_distributed(args, model)
     model_without_ddp = model.module[1]
 
     backbone_params = list(model_without_ddp.encoder.parameters())
@@ -276,7 +278,7 @@ def build_segmentation(args):
                 checkpoint = torch.load(args.resume)
             else:
                 # Map model to be loaded to specified single gpu.
-                loc = "cuda:{}".format(args.gpu)
+                loc = f"cuda:{args.gpu}"
                 checkpoint = torch.load(args.resume, map_location=loc)
             model.load_state_dict(checkpoint["state_dict"])
 
