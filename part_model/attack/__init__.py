@@ -1,19 +1,11 @@
 """Utility functions for setting up attack modules."""
 
-import torch
 import torch.nn as nn
 
 import part_model.models as pm_models
-from part_model.utils.loss import (
-    PixelwiseCELoss,
-    SegGuidedCELoss,
-    SemiSumLoss,
-)
-
 from part_model.attack.auto import AutoAttackModule
 from part_model.attack.auto_square import AutoAttackSPModule
 from part_model.attack.corruption_benchmark import CorruptionBenchmarkModule
-
 from part_model.attack.hsj import HopSkipJump
 from part_model.attack.masked_pgd import MaskedPGDAttackModule
 from part_model.attack.mat import MATAttackModule
@@ -23,7 +15,7 @@ from part_model.attack.rays import RayS
 from part_model.attack.seg_guide import SegGuidedAttackModule
 from part_model.attack.seg_pgd import SegPGDAttackModule
 from part_model.attack.trades import TRADESAttackModule
-
+from part_model.utils.loss import PixelwiseCELoss, SegGuidedCELoss, SemiSumLoss
 
 # def setup_seg_guide_loss(args):
 #     from part_model.dataloader.cityscapes import seg_file_to_mask

@@ -1,15 +1,16 @@
+"""Adaptive attack on part models."""
+
 from typing import Any, Optional, Tuple
 
 import numpy as np
-import part_model.utils.loss as loss_lib
 import torch
 import torch.nn.functional as F
 from torchvision.utils import save_image
-import torch.nn.functional as F
 
-from .base import AttackModule
+import part_model.utils.loss as loss_lib
+from part_model.attack.base import AttackModule
 
-EPS = 1e-6
+_EPS = 1e-6
 
 
 class SegGuidedAttackModule(AttackModule):
@@ -229,7 +230,7 @@ class SegGuidedAttackModule(AttackModule):
         dims = [-1,] + [
             1,
         ] * (x.ndim - 1)
-        return x / (x.view(len(x), -1).norm(2, 1).view(dims) + EPS) * eps
+        return x / (x.view(len(x), -1).norm(2, 1).view(dims) + _EPS) * eps
 
     def _forward_l2(self, x, y):
         raise NotImplementedError()
