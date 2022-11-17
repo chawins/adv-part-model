@@ -1,6 +1,6 @@
 """Utility functions for setting up attack modules."""
 
-import torch.nn as nn
+from torch import nn
 
 import part_model.models as pm_models
 from part_model.attack.auto import AutoAttackModule
@@ -15,7 +15,12 @@ from part_model.attack.rays import RayS
 from part_model.attack.seg_guide import SegGuidedAttackModule
 from part_model.attack.seg_pgd import SegPGDAttackModule
 from part_model.attack.trades import TRADESAttackModule
-from part_model.utils.loss import PixelwiseCELoss, SegGuidedCELoss, SemiSumLoss
+from part_model.utils.loss import (
+    PixelwiseCELoss,
+    SegGuidedCELoss,
+    SemiSumLinearLoss,
+    SemiSumLoss,
+)
 
 # def setup_seg_guide_loss(args):
 #     from part_model.dataloader.cityscapes import seg_file_to_mask
@@ -36,7 +41,7 @@ from part_model.utils.loss import PixelwiseCELoss, SegGuidedCELoss, SemiSumLoss
 #     return loss
 
 
-def get_loss(args, option):
+def _get_loss(args, option):
     if "seg-only" in args.experiment:
         loss = PixelwiseCELoss(reduction="pixelmean").cuda(args.gpu)
     elif option == "both":
@@ -47,8 +52,12 @@ def get_loss(args, option):
     else:
         loss = {
             "ce": nn.CrossEntropyLoss(reduction="none"),
-            "seg": SemiSumLoss(seg_const=1, reduction="none"),
-            "sum": SemiSumLoss(seg_const=args.seg_const_atk, reduction="none"),
+            # TODO: Rename to be less ambiguous
+            "seg-sum": SemiSumLoss(
+                seg_const=args.seg_const_atk, reduction="none"
+            ),
+            "seg-ce": SemiSumLoss(seg_const=1, reduction="none"),
+            "seg-linear": SemiSumLinearLoss(seg_const=1, reduction="none"),
             "seg-guide": SegGuidedCELoss(const=args.seg_const_atk),
             # 'single-seg': setup_seg_guide_loss(args),
         }[option].cuda(args.gpu)
@@ -76,7 +85,7 @@ def setup_eval_attacker(args, model, num_classes=None, guide_dataloader=None):
     for atk in args.eval_attack.split(","):
         if atk == "pgd":
             attack = PGDAttackModule(
-                attack_config, model, get_loss(args, "ce"), norm, eps
+                attack_config, model, _get_loss(args, "ce"), norm, eps
             )
         elif atk == "aa":
             attack = AutoAttackModule(
@@ -115,10 +124,10 @@ def setup_eval_attacker(args, model, num_classes=None, guide_dataloader=None):
                     "use_two_stages": use_two_stages,
                 },
                 model,
-                get_loss(args, "seg"),
+                _get_loss(args, "seg-ce"),
                 norm,
                 eps,
-                classifier=pm_models._wrap_distributed(
+                classifier=pm_models.wrap_distributed(
                     args, model.module.get_classifier()
                 ),
                 dataloader=guide_dataloader,
@@ -128,22 +137,18 @@ def setup_eval_attacker(args, model, num_classes=None, guide_dataloader=None):
             attack = PGDAttackModule(
                 attack_config,
                 model,
-                get_loss(args, "ce"),
+                _get_loss(args, "ce"),
                 norm,
                 eps,
                 forward_args={"return_mask": True},
             )
-        elif atk == "seg":
+        elif "seg-" in atk:
             attack = SegPGDAttackModule(
-                attack_config, model, get_loss(args, "seg"), norm, eps
-            )
-        elif atk == "seg-sum":
-            attack = SegPGDAttackModule(
-                attack_config, model, get_loss(args, "sum"), norm, eps
+                attack_config, model, _get_loss(args, atk), norm, eps
             )
         elif atk == "mpgd":
             attack = MaskedPGDAttackModule(
-                attack_config, model, get_loss(args, "ce"), norm, eps
+                attack_config, model, _get_loss(args, "ce"), norm, eps
             )
         # elif atk == 'hsja':
         #     attack = HopSkipJumpAttack(None, model, None, norm, eps)
@@ -165,7 +170,7 @@ def setup_eval_attacker(args, model, num_classes=None, guide_dataloader=None):
                 "num_restarts": 2,
             }
             attack = PGDAttackModule(
-                attack_config, model, get_loss(args, "ce"), norm, eps
+                attack_config, model, _get_loss(args, "ce"), norm, eps
             )
         attack_list.append((atk, attack))
 
@@ -190,28 +195,28 @@ def setup_train_attacker(args, model):
     attack = {
         "none": NoAttackModule(None, None, None, norm, eps),
         "pgd": PGDAttackModule(
-            attack_config, model, get_loss(args, "ce"), norm, eps
+            attack_config, model, _get_loss(args, "ce"), norm, eps
         ),
         "pgd-semi-sum": SegPGDAttackModule(
-            attack_config, model, get_loss(args, "sum"), norm, eps
+            attack_config, model, _get_loss(args, "seg-sum"), norm, eps
         ),
         "pgd-semi-seg": SegPGDAttackModule(
-            attack_config, model, get_loss(args, "seg"), norm, eps
+            attack_config, model, _get_loss(args, "seg-ce"), norm, eps
         ),
         "pgd-semi-both": SegPGDAttackModule(
-            attack_config, model, get_loss(args, "both"), norm, eps
+            attack_config, model, _get_loss(args, "both"), norm, eps
         ),
         "trades": TRADESAttackModule(
-            attack_config, model, get_loss(args, "ce"), norm, eps
+            attack_config, model, _get_loss(args, "ce"), norm, eps
         ),
         "mat": MATAttackModule(
-            attack_config, model, get_loss(args, "ce"), norm, eps
+            attack_config, model, _get_loss(args, "ce"), norm, eps
         ),
         "mpgd": MaskedPGDAttackModule(
-            attack_config, model, get_loss(args, "ce"), norm, eps
+            attack_config, model, _get_loss(args, "ce"), norm, eps
         ),
         "atta": PGDAttackModule(
-            attack_config, model, get_loss(args, "ce"), norm, eps
+            attack_config, model, _get_loss(args, "ce"), norm, eps
         ),
     }[args.adv_train]
 
@@ -240,14 +245,14 @@ def setup_val_attacker(args, model):
     }
     if args.adv_train == "mpgd":
         return MaskedPGDAttackModule(
-            attack_config, model, get_loss(args, "ce"), norm, eps
+            attack_config, model, _get_loss(args, "ce"), norm, eps
         )
     # TODO: special case for hard-label pixel model
     if "pixel" in args.experiment and "hard" in args.experiment:
         return SegPGDAttackModule(
-            attack_config, model, get_loss(args, "seg"), norm, eps
+            attack_config, model, _get_loss(args, "seg-ce"), norm, eps
         )
 
     return PGDAttackModule(
-        attack_config, model, get_loss(args, "ce"), norm, eps
+        attack_config, model, _get_loss(args, "ce"), norm, eps
     )

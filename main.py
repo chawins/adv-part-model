@@ -361,6 +361,9 @@ def _validate(val_loader, model, criterion, attack, args):
             images, segs, targets = samples
             segs = segs.cuda(args.gpu, non_blocking=True)
 
+        if i == 10:
+            break
+
         # DEBUG
         if args.debug:
             save_image(COLORMAP[segs].permute(0, 3, 1, 2), "gt.png")
