@@ -198,7 +198,8 @@ def main(args):
     model.load_state_dict(checkpoint["state_dict"])
 
     # Running evaluation
-    for attack in eval_attack:
+    # DEBUG
+    for attack in eval_attack[1:]:
         # Use DataParallel (not distributed) model for AutoAttack.
         # Otherwise, DDP model can get timeout or c10d failure.
         stats = _validate(test_loader, model, criterion, attack[1], args)
@@ -363,7 +364,7 @@ def _validate(val_loader, model, criterion, attack, args):
 
         # DEBUG
         if args.debug:
-            save_image(COLORMAP[segs].permute(0, 3, 1, 2), "gt.png")
+            save_image(COLORMAP[segs.cpu()].permute(0, 3, 1, 2), "gt.png")
             save_image(images, "test.png")
 
         images = images.cuda(args.gpu, non_blocking=True)
@@ -405,16 +406,13 @@ def _validate(val_loader, model, criterion, attack, args):
             loss = criterion(outputs, targets)
 
         # DEBUG
-        # if args.debug and isinstance(attack, PGDAttackModule):
         if args.debug:
             save_image(
-                COLORMAP[masks.argmax(1)].permute(0, 3, 1, 2),
+                COLORMAP[masks.argmax(1).cpu()].permute(0, 3, 1, 2),
                 "pred_seg_clean.png",
             )
             print(targets == outputs.argmax(1))
-            import pdb
-
-            pdb.set_trace()
+            raise NotImplementedError("End of debugging. Exit.")
 
         # measure accuracy and record loss
         acc1 = compute_acc(outputs, targets)

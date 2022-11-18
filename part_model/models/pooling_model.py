@@ -1,6 +1,8 @@
+"""Downsampled (pooling) part model."""
+
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
+from torch import nn
 
 
 class PoolingFeatureExtractor(nn.Module):
@@ -8,9 +10,14 @@ class PoolingFeatureExtractor(nn.Module):
         super().__init__()
         self.no_bg = no_bg
 
-    def forward(self, logits_masks: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self, logits_masks: torch.Tensor, from_logits: bool = True
+    ) -> torch.Tensor:
         # masks: [B, num_segs (including background), H, W]
-        masks = F.softmax(logits_masks, dim=1)
+        if from_logits:
+            masks = F.softmax(logits_masks, dim=1)
+        else:
+            masks = logits_masks
         # Remove background
         if self.no_bg:
             masks = masks[:, 1:]

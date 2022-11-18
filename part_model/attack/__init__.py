@@ -1,5 +1,6 @@
 """Utility functions for setting up attack modules."""
 
+import math
 from torch import nn
 
 import part_model.models as pm_models
@@ -13,6 +14,7 @@ from part_model.attack.none import NoAttackModule
 from part_model.attack.pgd import PGDAttackModule
 from part_model.attack.rays import RayS
 from part_model.attack.seg_guide import SegGuidedAttackModule
+from part_model.attack.seg_inverse import SegInverseAttackModule
 from part_model.attack.seg_pgd import SegPGDAttackModule
 from part_model.attack.trades import TRADESAttackModule
 from part_model.utils.loss import (
@@ -141,6 +143,16 @@ def setup_eval_attacker(args, model, num_classes=None, guide_dataloader=None):
                 norm,
                 eps,
                 forward_args={"return_mask": True},
+            )
+        elif atk == "seg-inverse":
+            # loss_fn is defined in SegInverseAttackModule
+            attack_config["seg_const"] = args.seg_const_atk
+            # TODO: Better define norm?
+            # L2-norm of sqrt(d) in logit space
+            attack_config["mask_l2_eps"] = 224 * math.sqrt(args.seg_labels)
+            attack_config["num_restarts"] = 2
+            attack = SegInverseAttackModule(
+                attack_config, model, None, norm, eps
             )
         elif "seg-" in atk:
             attack = SegPGDAttackModule(

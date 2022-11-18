@@ -1,5 +1,7 @@
 """Definition of all loss functions."""
 
+from __future__ import annotations
+
 from typing import Optional, Union
 
 import torch
@@ -41,18 +43,26 @@ def mat_loss(cl_logits, adv_logits, targets, beta):
 
 def _seg_loss(
     seg_mask: torch.Tensor, seg_targets: torch.Tensor, loss_fn: str = "ce"
-):
+) -> torch.Tensor:
+    """Compute segmentation loss.
+
+    If CE loss is used, ignore targets (and corresponding masks) that are set to
+    -1.
+    """
     if seg_mask.size(0) == 2 * seg_targets.size(0):
         seg_targets = torch.cat([seg_targets, seg_targets], dim=0)
     # Ignore targets that were set to -1 (hack to simulate semi-supervised
     # segmentation)
-    semi_mask = seg_targets[:, 0, 0] >= 0
-    seg_loss = 0
-    if semi_mask.any():
-        seg_loss = F.cross_entropy(
-            seg_mask[semi_mask], seg_targets[semi_mask], reduction="none"
-        )
-        return seg_loss.mean((1, 2))
+    if loss_fn == "ce":
+        semi_mask = seg_targets[:, 0, 0] >= 0
+        seg_loss = 0
+        if semi_mask.any():
+            seg_loss = F.cross_entropy(
+                seg_mask[semi_mask], seg_targets[semi_mask], reduction="none"
+            ).mean((1, 2))
+        return seg_loss
+    # Expect seg_mask to be logits
+    seg_loss = F.kl_div(seg_mask, seg_targets, reduction="none").mean((1, 2))
     return seg_loss
 
 
@@ -108,26 +118,26 @@ class PixelwiseCELoss(nn.Module):
 
 
 class TRADESLoss(nn.Module):
-    def __init__(self, beta):
-        super(TRADESLoss, self).__init__()
-        self.beta = beta
+    def __init__(self, beta: float) -> None:
+        super().__init__()
+        self._beta: float = beta
 
     def forward(self, logits, targets):
         batch_size = logits.size(0) // 2
         cl_logits, adv_logits = logits[:batch_size], logits[batch_size:]
-        loss = trades_loss(cl_logits, adv_logits, targets, self.beta)
+        loss = trades_loss(cl_logits, adv_logits, targets, self._beta)
         return loss
 
 
 class MATLoss(nn.Module):
-    def __init__(self, beta):
-        super(MATLoss, self).__init__()
-        self.beta = beta
+    def __init__(self, beta: float) -> None:
+        super().__init__()
+        self._beta: float = beta
 
     def forward(self, logits, targets):
         batch_size = logits.size(0) // 2
         cl_logits, adv_logits = logits[:batch_size], logits[batch_size:]
-        loss = mat_loss(cl_logits, adv_logits, targets, self.beta)
+        loss = mat_loss(cl_logits, adv_logits, targets, self._beta)
         return loss
 
 
@@ -206,33 +216,51 @@ class SegGuidedCELoss(nn.Module):
 
 
 class SemiSumLoss(nn.Module):
-    def __init__(self, seg_const: float = 0.5, reduction: str = "mean"):
-        super(SemiSumLoss, self).__init__()
+    def __init__(
+        self,
+        seg_const: float = 0.5,
+        reduction: str = "mean",
+        targeted_seg: bool = False,
+        seg_loss_fn: str = "ce",
+    ):
+        super().__init__()
         assert 0 <= seg_const <= 1
-        self.seg_const = seg_const
-        self.reduction = reduction
+        self._seg_const: float = seg_const
+        self._reduction: str = reduction
+        self._targeted_seg: bool = targeted_seg
+        self._seg_loss_fn: str = seg_loss_fn
 
     def forward(
         self,
-        logits: Union[list, tuple],
+        logits: list[torch.Tensor] | tuple[torch.Tensor, torch.Tensor],
         targets: torch.Tensor,
-        seg_targets: Optional[torch.Tensor] = None,
+        seg_targets: torch.Tensor | None = None,
     ) -> torch.Tensor:
-
         logits, seg_mask = logits
         loss = 0
-        if self.seg_const < 1:
+
+        if self._seg_const < 1:
             clf_loss = F.cross_entropy(logits, targets, reduction="none")
-            loss += (1 - self.seg_const) * clf_loss
-        if self.seg_const > 0:
-            # Check whether target masks contain any negative number. We use
-            # -1 to specify masks that we want to drop when seg_frac < 1.
-            semi_mask = seg_targets[:, 0, 0] >= 0
-            seg_loss = torch.zeros_like(semi_mask, dtype=torch.float32)
-            seg_loss[semi_mask] = _seg_loss(seg_mask, seg_targets)
-            loss += self.seg_const * seg_loss
-        if self.reduction == "mean":
+            loss += (1 - self._seg_const) * clf_loss
+
+        if self._seg_const > 0:
+            if self._seg_loss_fn == "ce":
+                # Check whether target masks contain any negative number. We use
+                # -1 to specify masks that we want to drop when seg_frac < 1.
+                semi_mask = seg_targets[:, 0, 0] >= 0
+                seg_loss = torch.zeros_like(semi_mask, dtype=torch.float32)
+                seg_loss[semi_mask] = _seg_loss(
+                    seg_mask, seg_targets, loss_fn="ce"
+                )
+            else:
+                seg_loss = _seg_loss(seg_mask, seg_targets, loss_fn="kld")
+            if self._targeted_seg:
+                seg_loss *= -1
+            loss += self._seg_const * seg_loss
+
+        if self._reduction == "mean":
             return loss.mean()
+
         return loss
 
 
@@ -241,7 +269,7 @@ class SemiSumLinearLoss(nn.Module):
         self,
         seg_const: float = 0.5,
         reduction: str = "mean",
-    ):
+    ) -> None:
         super().__init__()
         assert 0 <= seg_const <= 1
         self._seg_const: float = seg_const
@@ -312,9 +340,9 @@ class SemiSegTRADESLoss(nn.Module):
 
     def forward(
         self,
-        logits: Union[list, tuple],
+        logits: list[torch.Tensor] | tuple[torch.Tensor, torch.Tensor],
         targets: torch.Tensor,
-        seg_targets: Optional[torch.Tensor] = None,
+        seg_targets: torch.Tensor | None = None,
     ) -> torch.Tensor:
 
         logits, seg_mask = logits

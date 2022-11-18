@@ -3,7 +3,7 @@
 import argparse
 
 
-def get_args_parser():
+def get_args_parser() -> argparse.ArgumentParser:
     """Create argparser for common main function."""
     parser = argparse.ArgumentParser(
         description="Part classification", add_help=False

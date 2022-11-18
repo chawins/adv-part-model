@@ -15,7 +15,7 @@ class PGDAttackModule(AttackModule):
         forward_args={},
         **kwargs
     ):
-        super(PGDAttackModule, self).__init__(
+        super().__init__(
             attack_config, core_model, loss_fn, norm, eps, **kwargs
         )
         assert self.norm in ("L2", "Linf")
@@ -25,9 +25,7 @@ class PGDAttackModule(AttackModule):
         self.forward_args = forward_args
 
     def _project_l2(self, x, eps):
-        dims = [-1,] + [
-            1,
-        ] * (x.ndim - 1)
+        dims = [-1] + [1] * (x.ndim - 1)
         return x / (x.view(len(x), -1).norm(2, 1).view(dims) + EPS) * eps
 
     def _forward_l2(self, x, y):
