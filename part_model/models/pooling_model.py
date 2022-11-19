@@ -1,18 +1,39 @@
 """Downsampled (pooling) part model."""
 
+from __future__ import annotations
+
+from argparse import Namespace
+
 import torch
 import torch.nn.functional as F
 from torch import nn
 
 
 class PoolingFeatureExtractor(nn.Module):
-    def __init__(self, no_bg: bool):
+    """Feature extraction layer for Downsampled part model."""
+
+    def __init__(self, no_bg: bool) -> None:
+        """Initialize PoolingFeatureExtractor.
+
+        Args:
+            no_bg: If True, background channel of the mask is dropped.
+        """
         super().__init__()
-        self.no_bg = no_bg
+        self.no_bg: bool = no_bg
 
     def forward(
         self, logits_masks: torch.Tensor, from_logits: bool = True
     ) -> torch.Tensor:
+        """Extract features.
+
+        Args:
+            logits_masks: Predicted masks to extract features from.
+            from_logits: If True, expect logits_masks to be logits. Otherwise,
+                expect softmax/probability mask.
+
+        Returns:
+            Extracted features.
+        """
         # masks: [B, num_segs (including background), H, W]
         if from_logits:
             masks = F.softmax(logits_masks, dim=1)
@@ -25,7 +46,10 @@ class PoolingFeatureExtractor(nn.Module):
 
 
 class PoolingModel(nn.Module):
-    def __init__(self, args, segmenter):
+    """Downsampled (or pooling) part model."""
+
+    def __init__(self, args: Namespace, segmenter: nn.Module):
+        """Initialize Downsampled part model."""
         print("=> Initializing PoolingModel...")
         super().__init__()
         self.segmenter = segmenter
@@ -59,9 +83,23 @@ class PoolingModel(nn.Module):
         self.feature_extactor = PoolingFeatureExtractor(self.no_bg)
 
     def get_classifier(self):
+        """Get model that takes logit mask and returns classification output."""
         return nn.Sequential(self.feature_extactor, self.core_model)
 
-    def forward(self, images, return_mask=False, **kwargs):
+    def forward(
+        self, images: torch.Tensor, return_mask: bool = False, **kwargs
+    ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
+        """End-to-end prediction from images.
+
+        Args:
+            images:
+            return_mask: If True, return predicted mask together with
+                classification outputs.
+
+        Returns:
+            Predicted classes and segmentation maskes (if return_mask is True)
+            in logit form.
+        """
         # Segmentation part
         logits_masks = self.segmenter(images)
         masks = self.feature_extactor(logits_masks)

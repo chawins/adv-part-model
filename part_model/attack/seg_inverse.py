@@ -44,7 +44,9 @@ class SegInverseAttackModule(PGDAttackModule):
             seg_loss_fn="kld",
         )
         self._clf_loss_fn = nn.CrossEntropyLoss(reduction="none")
+        # TODO: Wrap mask_classifier in DataParallel
         self.core_model = self.core_model.module
+        self.mask_classifier = self.core_model.get_classifier()
 
     def _attack_mask(
         self,
@@ -67,14 +69,12 @@ class SegInverseAttackModule(PGDAttackModule):
 
             # Compute logits, loss, gradients
             with torch.enable_grad():
-                features = self.core_model.feature_extactor(
-                    x_adv, from_logits=True
-                )
-                logits = self.core_model.core_model(features)
+                logits = self.mask_classifier(x_adv)
                 loss = self._clf_loss_fn(logits, y).mean()
                 if self._targeted:
                     loss *= -1
                 grads = torch.autograd.grad(loss, x_adv)[0].detach()
+                # print("mask:", loss)
 
             with torch.no_grad():
                 # Perform gradient update, project to norm ball
@@ -85,12 +85,6 @@ class SegInverseAttackModule(PGDAttackModule):
                 )
                 x_adv = x_mask + self._project_l2(delta, self._mask_l2_eps)
 
-            # DEBUG
-            # if j % 10 == 0:
-            #     from part_model.dataloader.cityscapes_seg import COLORMAP
-            #     img = [COLORMAP[m].permute(2, 0, 1) for m in logits[1].argmax(1)]
-            #     save_image(img, f'test_{j:03d}.png')
-
         # DEBUG
         # print(y)
         # show_img = [img for img in x.cpu()][:16]
@@ -98,10 +92,6 @@ class SegInverseAttackModule(PGDAttackModule):
         # show_img.extend([COLORMAP[m].permute(2, 0, 1) for m in orig_mask][:16])
         # mask = logits[1].argmax(1)
         # show_img.extend([COLORMAP[m].permute(2, 0, 1) for m in mask][:16])
-
-        # save_image(show_img, 'test.png')
-        # import pdb
-        # pdb.set_trace()
 
         # Return worst-case perturbed input logits
         self.core_model.train(mode)
@@ -130,9 +120,13 @@ class SegInverseAttackModule(PGDAttackModule):
 
             # First find the mask that fools classifier
             adv_mask = self._attack_mask(x, y)
+            assert adv_mask.max() <= 1 and adv_mask.min() >= 0, (
+                "adv_mask must be in probability simplex (after softmax), but "
+                "it is likely a logit here!"
+            )
 
             # Run PGD on inputs for specified number of steps
-            for j in range(self._num_steps):
+            for _ in range(self._num_steps):
                 x_adv.requires_grad_()
 
                 # Compute logits, loss, gradients
@@ -142,6 +136,7 @@ class SegInverseAttackModule(PGDAttackModule):
                     if self._targeted:
                         loss *= -1
                     grads = torch.autograd.grad(loss, x_adv)[0].detach()
+                    # print("clf:", loss)
 
                 with torch.no_grad():
                     # Perform gradient update, project to norm ball
@@ -152,19 +147,10 @@ class SegInverseAttackModule(PGDAttackModule):
                     # Clip perturbed inputs to image domain
                     x_adv = torch.clamp(x_adv, 0, 1)
 
-                # DEBUG
-                # if j % 10 == 0:
-                #     from part_model.dataloader.cityscapes_seg import COLORMAP
-                #     img = [COLORMAP[m].permute(2, 0, 1) for m in logits[1].argmax(1)]
-                #     save_image(img, f'test_{j:03d}.png')
-
-            # import pdb
-            # pdb.set_trace()
             if self._num_restarts == 1:
                 x_adv_worst = x_adv
             else:
-                # Update worst-case inputs with itemized final losses only in
-                # 2nd stage.
+                # Update worst-case inputs with final losses
                 fin_losses = self._clf_loss_fn(
                     self.core_model(x_adv, return_mask=False), y
                 ).reshape(worst_losses.shape)

@@ -28,11 +28,10 @@ class SegGuidedAttackModule(AttackModule):
         no_bg: bool = False,
         seg_labels: int = 40,
         **kwargs,
-    ):
+    ) -> None:
         super().__init__(
             attack_config, core_model, loss_fn, norm, eps, **kwargs
         )
-        assert self.norm in ("L2", "Linf")
         if classifier is None:
             raise ValueError("classifier must be torch.Module and not None.")
         self.classifier = classifier
@@ -193,7 +192,13 @@ class SegGuidedAttackModule(AttackModule):
         y: torch.Tensor,
         y_seg: torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        """
+        """Selects guide masks and samples for second-stage attack.
+
+        Args:
+            x: Input images.
+            y: Ground-truth class labels.
+            y_seg: Ground-truth segmentation labels.
+
         Returns:
             guide_masks: shape [num_restarts, B, H, W]
         """
@@ -215,7 +220,6 @@ class SegGuidedAttackModule(AttackModule):
         y_sort = torch.argsort(copy_logits, dim=-1, descending=True)
         y_guides = y_2nd.unsqueeze(0).expand(self.num_restarts, -1)
 
-        # TODO
         if self.guide_selection == "2nd_pred_by_scores":
             guide_masks, y_guides = self._select_2nd_pred_by_scores(y_sort)
         elif self.guide_selection == "2nd_gt_random":
@@ -351,6 +355,7 @@ class SegGuidedAttackModule(AttackModule):
         return self._forward_linf(*args, **kwargs)
 
     def forward(self, *args, **kwargs):
+        """Run attack."""
         if not self.use_two_stages:
             return self._forward(*args, **kwargs)
 

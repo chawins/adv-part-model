@@ -1,6 +1,7 @@
 """Utility functions for setting up attack modules."""
 
 import math
+
 from torch import nn
 
 import part_model.models as pm_models
@@ -197,10 +198,6 @@ def setup_train_attacker(args, model):
     attack_config = {
         "pgd_steps": 1 if use_atta else args.atk_steps,
         "pgd_step_size": eps / args.atk_steps * 1.25,
-        # 'pgd_steps': 5,
-        # 'pgd_step_size': eps / 3,
-        # 'pgd_steps': 3,
-        # 'pgd_step_size': eps / 2,
         "num_restarts": 1,
     }
 
