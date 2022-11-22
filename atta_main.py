@@ -9,7 +9,6 @@ import os
 import pickle
 import sys
 import time
-from typing import Any
 
 import numpy as np
 import torch
@@ -20,8 +19,8 @@ import torch.optim
 import torch.utils.data
 import torch.utils.data.distributed
 import wandb
+from torch.distributed.elastic.multiprocessing.errors import record
 
-# from torchmetrics import IoU as IoU   # Use this for older version of torchmetrics
 from torchmetrics import JaccardIndex as IoU
 from torchvision.utils import save_image
 
@@ -45,36 +44,32 @@ from part_model.utils import (
     save_on_master,
 )
 from part_model.utils.argparse import get_args_parser
+from part_model.utils.atta import ATTA
+from part_model.utils.image import get_seg_type
 from part_model.utils.loss import get_train_criterion
 
 best_acc1 = 0
 
 
-def _write_metrics(save_metrics: Any) -> None:
-    if is_main_process():
-        # Save metrics to pickle file if not exists else append
-        pkl_path = os.path.join(args.output_dir, "metrics.pkl")
-        pickle.dump([save_metrics], open(pkl_path, "wb"))
-
-
-def main() -> None:
+@record
+def main(args):
     """Main function."""
     init_distributed_mode(args)
 
     global best_acc1
 
     # Fix the seed for reproducibility
-    seed: int = args.seed + get_rank()
+    seed = args.seed + get_rank()
     torch.manual_seed(seed)
     np.random.seed(seed)
 
     # Data loading code
-    print("=> Creating dataset...")
+    print("=> creating dataset")
     loaders = load_dataset(args)
     train_loader, train_sampler, val_loader, test_loader = loaders
 
     # Create model
-    print("=> Creating model...")
+    print("=> creating model")
     model, optimizer, scaler = build_model(args)
     cudnn.benchmark = True
 
@@ -102,6 +97,11 @@ def main() -> None:
         "test": [],
     }
 
+    # Initialize ATTA training if specified
+    atta: ATTA | None = None
+    if args.adv_train == "atta":
+        atta = ATTA(input_dim=args.input_dim, num_samples=args.num_train)
+
     print(args)
 
     if args.evaluate:
@@ -110,7 +110,7 @@ def main() -> None:
         else:
             load_path = f"{args.output_dir}/checkpoint_best.pt"
     else:
-        print("=> Beginning training...")
+        print("=> beginning training")
         val_stats = {}
         for epoch in range(args.start_epoch, args.epochs):
             is_best = False
@@ -128,19 +128,21 @@ def main() -> None:
                 optimizer,
                 scaler,
                 epoch,
+                args,
+                atta=atta,
             )
 
             if (epoch + 1) % 2 == 0:
-                val_stats = _validate(val_loader, model, criterion, no_attack)
+                val_stats = _validate(
+                    val_loader, model, criterion, no_attack, args
+                )
                 clean_acc1, acc1 = val_stats["acc1"], None
                 is_best = clean_acc1 > best_acc1
                 if args.adv_train != "none":
-                    adv_val_stats = _validate(
-                        val_loader, model, criterion, val_attack
+                    val_stats = _validate(
+                        val_loader, model, criterion, val_attack, args
                     )
-                    acc1 = adv_val_stats["acc1"]
-                    val_stats["adv_acc1"] = acc1
-                    val_stats["adv_loss"] = adv_val_stats["loss"]
+                    acc1 = val_stats["acc1"]
                     is_best = acc1 > best_acc1 and clean_acc1 >= acc1
 
                 save_dict = {
@@ -153,7 +155,7 @@ def main() -> None:
                 }
 
                 if is_best:
-                    print("=> Saving new best checkpoint...")
+                    print("=> Saving new best checkpoint")
                     save_on_master(save_dict, args.output_dir, is_best=True)
                     best_acc1 = (
                         max(clean_acc1, best_acc1)
@@ -167,13 +169,12 @@ def main() -> None:
 
             log_stats = {
                 **{f"train_{k}": v for k, v in train_stats.items()},
-                **{f"val_{k}": v for k, v in val_stats.items()},
+                **{f"test_{k}": v for k, v in val_stats.items()},
                 "epoch": epoch,
             }
 
             if is_main_process():
                 save_metrics["train"].append(log_stats)
-                _write_metrics(save_metrics)
                 if args.wandb:
                     wandb.log(log_stats)
                 logfile.write(json.dumps(log_stats) + "\n")
@@ -183,7 +184,7 @@ def main() -> None:
         dist_barrier()
         load_path = f"{args.output_dir}/checkpoint_best.pt"
 
-    print(f"=> Loading checkpoint from {load_path}...")
+    print(f"=> loading checkpoint from {load_path}...")
     if args.gpu is None:
         checkpoint = torch.load(load_path)
     else:
@@ -196,27 +197,47 @@ def main() -> None:
     for attack in eval_attack:
         # Use DataParallel (not distributed) model for AutoAttack.
         # Otherwise, DDP model can get timeout or c10d failure.
-        stats = _validate(test_loader, model, criterion, attack[1])
+        stats = _validate(test_loader, model, criterion, attack[1], args)
         print(f"=> {attack[0]}: {stats}")
         stats["attack"] = str(attack[0])
         dist_barrier()
         if is_main_process():
             save_metrics["test"].append(stats)
-            _write_metrics(save_metrics)
             if args.wandb:
                 wandb.log(stats)
             logfile.write(json.dumps(stats) + "\n")
 
     if is_main_process():
         # Save metrics to pickle file if not exists else append
-        _write_metrics(save_metrics)
+        pkl_path = os.path.join(args.output_dir, "metrics.pkl")
+        if os.path.exists(pkl_path):
+            metrics = pickle.load(open(pkl_path, "rb"))
+            metrics.append(save_metrics)
+        else:
+            pickle.dump([save_metrics], open(pkl_path, "wb"))
+
         last_path = f"{args.output_dir}/checkpoint_last.pt"
         if os.path.exists(last_path):
             os.remove(last_path)
         logfile.close()
 
 
-def _train(train_loader, model, criterion, attack, optimizer, scaler, epoch):
+def _train(
+    train_loader,
+    model,
+    criterion,
+    attack,
+    optimizer,
+    scaler,
+    epoch,
+    args,
+    atta: ATTA | None = None,
+):
+    use_seg: bool = get_seg_type(args) is not None
+    seg_only: bool = "seg-only" in args.experiment
+    tf_params_offset: int = 2 if not use_seg or seg_only else 3
+    use_atta: bool = args.adv_train == "atta"
+
     batch_time = AverageMeter("Time", ":6.3f")
     data_time = AverageMeter("Data", ":6.3f")
     losses = AverageMeter("Loss", ":.4e")
@@ -228,7 +249,6 @@ def _train(train_loader, model, criterion, attack, optimizer, scaler, epoch):
         prefix="Epoch: [{}]".format(epoch),
     )
     compute_acc = get_compute_acc(args)
-    seg_only = "seg-only" in args.experiment
 
     # Switch to train mode
     model.train()
@@ -238,16 +258,19 @@ def _train(train_loader, model, criterion, attack, optimizer, scaler, epoch):
         # Measure data loading time
         data_time.update(time.time() - end)
 
-        if len(samples) == 2:
-            images, targets = samples
-            segs = None
-        elif seg_only:
+        segs: torch.Tensor | None = None
+        if not use_seg or seg_only:
             # If training segmenter only, `targets` is segmentation mask
-            images, targets, _ = samples
-            segs = None
+            images, targets = samples[:tf_params_offset]
         else:
-            images, segs, targets = samples
+            images, segs, targets = samples[:tf_params_offset]
             segs = segs.cuda(args.gpu, non_blocking=True)
+
+        if use_atta:
+            orig_images: torch.Tensor = images.clone()
+            tf_params: list[torch.Tensor] = samples[tf_params_offset:]
+            # Update image with saved perturbation
+            images = atta.apply(images, tf_params)
 
         images = images.cuda(args.gpu, non_blocking=True)
         targets = targets.cuda(args.gpu, non_blocking=True)
@@ -260,8 +283,8 @@ def _train(train_loader, model, criterion, attack, optimizer, scaler, epoch):
                 # labels are used
                 images = attack(images, targets, segs)
                 if attack.dual_losses:
-                    targets = torch.cat([targets, targets], axis=0)
-                    segs = torch.cat([segs, segs], axis=0)
+                    targets = torch.cat([targets, targets], dim=0)
+                    segs = torch.cat([segs, segs], dim=0)
             else:
                 # Attack for either classifier or segmenter alone
                 images = attack(images, targets)
@@ -312,6 +335,11 @@ def _train(train_loader, model, criterion, attack, optimizer, scaler, epoch):
                 )
             progress.display(i)
 
+        if use_atta:
+            # Update saved perturbation in ATTA
+            perturbation: torch.Tensor = images.cpu() - orig_images
+            atta.update(perturbation, tf_params)
+
     progress.synchronize()
     return {
         "acc1": top1.avg,
@@ -320,7 +348,7 @@ def _train(train_loader, model, criterion, attack, optimizer, scaler, epoch):
     }
 
 
-def _validate(val_loader, model, criterion, attack):
+def _validate(val_loader, model, criterion, attack, args):
     seg_only = "seg-only" in args.experiment
     batch_time = AverageMeter("Time", ":6.3f")
     data_time = AverageMeter("Data", ":6.3f")
@@ -344,19 +372,18 @@ def _validate(val_loader, model, criterion, attack):
     for i, samples in enumerate(val_loader):
         # measure data loading time
         data_time.update(time.time() - end)
+        segs: torch.Tensor | None = None
         if len(samples) == 2:
             images, targets = samples
-            segs = None
         elif seg_only:
             images, targets, _ = samples
-            segs = None
         else:
             images, segs, targets = samples
             segs = segs.cuda(args.gpu, non_blocking=True)
 
         # DEBUG
         if args.debug:
-            save_image(COLORMAP[segs.cpu()].permute(0, 3, 1, 2), "gt.png")
+            save_image(COLORMAP[segs].permute(0, 3, 1, 2), "gt.png")
             save_image(images, "test.png")
 
         images = images.cuda(args.gpu, non_blocking=True)
@@ -398,13 +425,16 @@ def _validate(val_loader, model, criterion, attack):
             loss = criterion(outputs, targets)
 
         # DEBUG
+        # if args.debug and isinstance(attack, PGDAttackModule):
         if args.debug:
             save_image(
-                COLORMAP[masks.argmax(1).cpu()].permute(0, 3, 1, 2),
+                COLORMAP[masks.argmax(1)].permute(0, 3, 1, 2),
                 "pred_seg_clean.png",
             )
             print(targets == outputs.argmax(1))
-            raise NotImplementedError("End of debugging. Exit.")
+            import pdb
+
+            pdb.set_trace()
 
         # measure accuracy and record loss
         acc1 = compute_acc(outputs, targets)
@@ -437,8 +467,8 @@ def _validate(val_loader, model, criterion, attack):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        "Part Classification", parents=[get_args_parser()]
+        "Main script for part model (ATTA)", parents=[get_args_parser()]
     )
     args = parser.parse_args()
     os.makedirs(args.output_dir, exist_ok=True)
-    main()
+    main(args)

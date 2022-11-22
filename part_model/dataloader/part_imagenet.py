@@ -1,15 +1,17 @@
+"""PartImageNet dataset."""
+
+from __future__ import annotations
+
 import os
+from typing import Any, Callable, Optional
 
 import numpy as np
 import torch
-import torch.utils.data as data
-from part_model.dataloader.util import COLORMAP
-from part_model.utils import get_seg_type, np_temp_seed
-from part_model.utils.eval_sampler import DistributedEvalSampler
-from part_model.utils.image import get_seg_type
+from torch.utils import data
 from PIL import Image
+from PIL.Image import Image as _ImageType
 
-from .segmentation_transforms import (
+from part_model.dataloader.segmentation_transforms import (
     CenterCrop,
     Compose,
     RandomHorizontalFlip,
@@ -17,6 +19,11 @@ from .segmentation_transforms import (
     Resize,
     ToTensor,
 )
+from part_model.dataloader.util import COLORMAP
+from part_model.utils import np_temp_seed
+from part_model.utils.eval_sampler import DistributedEvalSampler
+from part_model.utils.image import get_seg_type
+
 
 CLASSES = {
     "Quadruped": 4,
@@ -34,46 +41,55 @@ CLASSES = {
 
 
 class PartImageNetSegDataset(data.Dataset):
+    """PartImageNet Dataset."""
+
     def __init__(
         self,
-        root,
-        seg_path,
-        split="train",
-        transform=None,
-        use_label=False,
-        seg_type=None,
-        seg_fraction=1.0,
-        seed=0,
-    ):
-        """Load our processed Part-ImageNet dataset
+        root: str = "~/data/",
+        seg_path: str = "~/data/",
+        split: str = "train",
+        transform: Callable[..., Any] = None,
+        use_label: bool = False,
+        seg_type: str | None = None,
+        seg_fraction: float = 1.0,
+        seed: int = 0,
+        use_atta: bool = False,
+    ) -> None:
+        """Load our processed Part-ImageNet dataset.
 
         Args:
-            root (str): Path to root directory
-            split (str, optional): Data split to load. Defaults to 'train'.
-            transform (optional): Transformations to apply to the images (and
+            root: Path to root directory
+            split: Data split to load. Defaults to "train".
+            transform: Transformations to apply to the images (and
                 the segmentation masks if applicable). Defaults to None.
-            use_label (bool, optional): Whether to yield class label. Defaults to False.
-            seg_type (str, optional): Specify types of segmentation to load
-                ('part', 'object', or None). Defaults to 'part'.
-            seg_fraction (float, optional): Fraction of segmentation mask to
+            use_label: Whether to yield class label. Defaults to False.
+            seg_type: Specify types of segmentation to load
+                ("part", "object", "fg", or None). Defaults to "part".
+            seg_fraction: Fraction of segmentation mask to
                 provide. The dropped masks are set to all -1. Defaults to 1.
-            seed (int, optional): Random seed. Defaults to 0.
+            seed: Random seed. Defaults to 0.
+            use_atta: If True, use ATTA (fast adversarial training) and return
+                transform params during training.
         """
-        self.root = root
-        self.split = split
-        self.path = os.path.join(seg_path, split)
-        self.transform = transform
-        self.use_label = use_label
-        self.seg_type = seg_type
+        self._root: str = root
+        self._split: str = split
+        self._seg_path: str = os.path.join(seg_path, split)
+        self._transform = transform
+        self._use_label: bool = use_label
+        self._seg_type: str | None = seg_type
+        self._use_atta: bool = use_atta
 
-        self.classes = self._list_classes()
-        self.num_classes = len(self.classes)
-        self.num_seg_labels = sum([CLASSES[c] for c in self.classes])
+        self.classes: list[str] = self._list_classes()
+        self.num_classes: int = len(self.classes)
+        self.num_seg_labels: int = sum([CLASSES[c] for c in self.classes])
 
+        # Load data from specified path
         self.images, self.labels, self.masks = self._get_data()
+        # Randomly shuffle data
         idx = np.arange(len(self.images))
         with np_temp_seed(seed):
             np.random.shuffle(idx)
+        # Randomly drop seg masks if specified for semi-supervised training
         self.seg_drop_idx = idx[: int((1 - seg_fraction) * len(self.images))]
 
         # Create matrix that maps part segmentation to object segmentation
@@ -87,63 +103,85 @@ class PartImageNetSegDataset(data.Dataset):
             self.part_to_class.extend([base] * CLASSES[label])
         self.part_to_object = torch.tensor(part_to_object, dtype=torch.long)
 
-    def __getitem__(self, index):
-        _img = Image.open(self.images[index]).convert("RGB")
-        _target = Image.open(self.masks[index])
+    def __getitem__(self, index: int) -> tuple[torch.Tensor, ...]:
+        """Get sample at index.
 
-        if self.transform is not None:
-            _img, _target = self.transform(_img, _target)
+        Args:
+            index: Index of data sample to retrieve.
 
-        if self.seg_type is not None:
-            if self.seg_type == "object":
+        Returns:
+            Image, segmentation label (optional), class label (optional),
+            transform params (optional).
+        """
+        # Collect variables to return
+        return_items: list[Any] = []
+        atta_data: list[torch.Tensor] | None = None
+        _img: _ImageType = Image.open(self.images[index]).convert("RGB")
+        _target: _ImageType = Image.open(self.masks[index])
+        width, height = _img.size
+
+        if self._transform is not None:
+            tf_out = self._transform(_img, _target)
+            if len(tf_out) == 3:
+                # In ATTA, transform params are also returned
+                _img, _target, params = tf_out
+                atta_data = [torch.tensor(index), torch.tensor((height, width))]
+                for p in params:
+                    atta_data.append(torch.tensor(p))
+            else:
+                _img, _target = tf_out
+        return_items.append(_img)
+
+        if self._seg_type is not None:
+            if self._seg_type == "object":
                 _target = self.part_to_object[_target]
-            elif self.seg_type == "fg":
+            elif self._seg_type == "fg":
                 _target = (_target > 0).long()
-
             if index in self.seg_drop_idx:
                 # Drop segmentation mask by setting all pixels to -1 to ignore
                 # later at loss computation
                 _target.mul_(0).add_(-1)
+            return_items.append(_target)
 
-            if self.use_label:
-                _label = self.labels[index]
-                return _img, _target, _label
-            return _img, _target
-
-        if self.use_label:
+        if self._use_label:
             _label = self.labels[index]
-            return _img, _label
-        return _img
+            return_items.append(_label)
+        if atta_data is not None:
+            for ad in atta_data:
+                return_items.append(ad)
+        return return_items
 
     def _get_data(self):
         images, labels, masks = [], [], []
-        for l, label in enumerate(self.classes):
-            img_path = os.path.join(self.root, "JPEGImages")
-            part_path = os.path.join(self.path, label)
+        for label_idx, label in enumerate(self.classes):
+            img_path = os.path.join(self._root, "JPEGImages")
+            part_path = os.path.join(self._seg_path, label)
             # Read file names
-            with open(f"{self.path}/{label}.txt", "r") as fns:
+            with open(f"{self._seg_path}/{label}.txt", "r") as fns:
                 filenames = sorted([f.strip() for f in fns.readlines()])
             images.extend([f"{img_path}/{f}.JPEG" for f in filenames])
             masks.extend(
                 [f'{part_path}/{f.split("/")[1]}.tif' for f in filenames]
             )
-            labels.extend([l] * len(filenames))
+            labels.extend([label_idx] * len(filenames))
         labels = torch.tensor(labels, dtype=torch.long)
         return images, labels, masks
 
     def _list_classes(self):
-        dirs = os.listdir(self.path)
-        dirs = [d for d in dirs if os.path.isdir(os.path.join(self.path, d))]
+        dirs = os.listdir(self._seg_path)
+        dirs = [
+            d for d in dirs if os.path.isdir(os.path.join(self._seg_path, d))
+        ]
         return sorted(dirs)
 
     def __len__(self):
         return len(self.images)
 
 
-def get_loader_sampler(args, transform, split):
-    # TODO: add mpgd if needed
-    seg_type = get_seg_type(args)
-    is_train = split == "train"
+def get_loader_sampler(args, transform, split: str):
+    seg_type: str = get_seg_type(args)
+    is_train: bool = split == "train"
+    use_atta: bool = args.adv_train == "atta"
 
     part_imagenet_dataset = PartImageNetSegDataset(
         args.data,
@@ -153,9 +191,11 @@ def get_loader_sampler(args, transform, split):
         seg_type=seg_type,
         use_label=("semi" in args.experiment) or (seg_type is None),
         seg_fraction=args.semi_label if is_train else 1.0,
+        use_atta=use_atta,
     )
 
-    sampler = None
+    sampler: Optional[torch.utils.data.Sampler] = None
+    shuffle: Optional[bool] = is_train
     if args.distributed:
         shuffle = None
         if is_train:
@@ -170,9 +210,6 @@ def get_loader_sampler(args, transform, split):
             sampler = DistributedEvalSampler(
                 part_imagenet_dataset, shuffle=False, seed=args.seed
             )
-    else:
-        # shuffle = is_train
-        shuffle = True
 
     batch_size = args.batch_size
     loader = torch.utils.data.DataLoader(
@@ -190,7 +227,6 @@ def get_loader_sampler(args, transform, split):
     PART_IMAGENET["num_classes"] = part_imagenet_dataset.num_classes
     PART_IMAGENET["num_seg_labels"] = part_imagenet_dataset.num_seg_labels
 
-    setattr(args, "num_classes", part_imagenet_dataset.num_classes)
     pto = part_imagenet_dataset.part_to_object
     if seg_type == "part":
         seg_labels = len(pto)
@@ -198,7 +234,12 @@ def get_loader_sampler(args, transform, split):
         seg_labels = 2
     else:
         seg_labels = pto.max().item() + 1
+
     setattr(args, "seg_labels", seg_labels)
+    setattr(args, "num_classes", part_imagenet_dataset.num_classes)
+    setattr(args, "input_dim", PART_IMAGENET["input_dim"])
+    if is_train:
+        setattr(args, "num_train", len(part_imagenet_dataset))
 
     return loader, sampler
 
@@ -206,11 +247,12 @@ def get_loader_sampler(args, transform, split):
 def load_part_imagenet(args):
 
     img_size = PART_IMAGENET["input_dim"][1]
+    use_atta: bool = args.adv_train == "atta"
 
     train_transforms = Compose(
         [
-            RandomResizedCrop(img_size),
-            RandomHorizontalFlip(0.5),
+            RandomResizedCrop(img_size, return_params=use_atta),
+            RandomHorizontalFlip(0.5, return_params=use_atta),
             ToTensor(),
         ]
     )
