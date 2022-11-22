@@ -101,12 +101,8 @@ def _semi_keypoint_loss(
 
     # Only penalize parts that exist in seg_targets
     present_part = torch.sum(target_masks, (2, 3)) > 0
-    keypoint_loss_x = F.mse_loss(
-        target_centerX[present_part], centerX[present_part]
-    )
-    keypoint_loss_y = F.mse_loss(
-        target_centerY[present_part], centerY[present_part]
-    )
+    keypoint_loss_x = F.mse_loss(target_centerX[present_part], centerX[present_part])
+    keypoint_loss_y = F.mse_loss(target_centerY[present_part], centerY[present_part])
     keypoint_loss = keypoint_loss_x + keypoint_loss_y
 
     # TODO: This loss probably drives all pixels to one part/class
@@ -375,9 +371,7 @@ class SemiSegTRADESLoss(nn.Module):
         adv_lprobs = F.log_softmax(adv_logits, dim=1)
         adv_loss = F.kl_div(adv_lprobs, cl_probs, reduction="batchmean")
         loss = (
-            (1 - self.const) * clf_loss
-            + self.const * seg_loss
-            + self.beta * adv_loss
+            (1 - self.const) * clf_loss + self.const * seg_loss + self.beta * adv_loss
         )
         return loss
 
@@ -414,9 +408,7 @@ def get_train_criterion(args):
     train_criterion = criterion
     if args.adv_train == "trades":
         if "semi" in args.experiment:
-            train_criterion = SemiSegTRADESLoss(
-                args.seg_const_trn, args.adv_beta
-            )
+            train_criterion = SemiSegTRADESLoss(args.seg_const_trn, args.adv_beta)
         else:
             train_criterion = TRADESLoss(args.adv_beta)
     elif args.adv_train == "mat":
