@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import math
 
 import torch
@@ -63,7 +65,7 @@ class ProgressMeter(object):
 
 
 def adjust_learning_rate(optimizer, epoch, args):
-    """Decay the learning rate based on schedule"""
+    """Decay the learning rate based on schedule."""
     lr = args.lr
     if epoch < args.warmup_epochs:
         lr *= (epoch + 1) / args.warmup_epochs

@@ -16,7 +16,7 @@ class SegPGDAttackModule(AttackModule):
         forward_args={},
         **kwargs
     ):
-        super(SegPGDAttackModule, self).__init__(
+        super().__init__(
             attack_config, core_model, loss_fn, norm, eps, **kwargs
         )
         assert self.norm in ("L2", "Linf")

@@ -7,7 +7,7 @@ from typing import Any, Callable, Optional
 
 import numpy as np
 import torch
-import torch.utils.data as data
+from torch.utils import data
 from PIL import Image
 from PIL.Image import Image as _ImageType
 
@@ -20,9 +20,10 @@ from part_model.dataloader.segmentation_transforms import (
     ToTensor,
 )
 from part_model.dataloader.util import COLORMAP
-from part_model.utils import get_seg_type, np_temp_seed
+from part_model.utils import np_temp_seed
 from part_model.utils.eval_sampler import DistributedEvalSampler
 from part_model.utils.image import get_seg_type
+
 
 CLASSES = {
     "Quadruped": 4,
