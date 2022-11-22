@@ -20,7 +20,6 @@ import torch.optim
 import torch.utils.data
 import torch.utils.data.distributed
 import wandb
-from torch.distributed.elastic.multiprocessing.errors import record
 
 # from torchmetrics import IoU as IoU   # Use this for older version of torchmetrics
 from torchmetrics import JaccardIndex as IoU
@@ -51,22 +50,21 @@ from part_model.utils.loss import get_train_criterion
 best_acc1 = 0
 
 
-def _write_metrics(save_metrics: Any):
+def _write_metrics(save_metrics: Any) -> None:
     if is_main_process():
         # Save metrics to pickle file if not exists else append
         pkl_path = os.path.join(args.output_dir, "metrics.pkl")
         pickle.dump([save_metrics], open(pkl_path, "wb"))
 
 
-@record
-def main(args):
+def main() -> None:
     """Main function."""
     init_distributed_mode(args)
 
     global best_acc1
 
     # Fix the seed for reproducibility
-    seed = args.seed + get_rank()
+    seed: int = args.seed + get_rank()
     torch.manual_seed(seed)
     np.random.seed(seed)
 
@@ -130,18 +128,15 @@ def main(args):
                 optimizer,
                 scaler,
                 epoch,
-                args,
             )
 
             if (epoch + 1) % 2 == 0:
-                val_stats = _validate(
-                    val_loader, model, criterion, no_attack, args
-                )
+                val_stats = _validate(val_loader, model, criterion, no_attack)
                 clean_acc1, acc1 = val_stats["acc1"], None
                 is_best = clean_acc1 > best_acc1
                 if args.adv_train != "none":
                     adv_val_stats = _validate(
-                        val_loader, model, criterion, val_attack, args
+                        val_loader, model, criterion, val_attack
                     )
                     acc1 = adv_val_stats["acc1"]
                     val_stats["adv_acc1"] = acc1
@@ -201,7 +196,7 @@ def main(args):
     for attack in eval_attack:
         # Use DataParallel (not distributed) model for AutoAttack.
         # Otherwise, DDP model can get timeout or c10d failure.
-        stats = _validate(test_loader, model, criterion, attack[1], args)
+        stats = _validate(test_loader, model, criterion, attack[1])
         print(f"=> {attack[0]}: {stats}")
         stats["attack"] = str(attack[0])
         dist_barrier()
@@ -221,9 +216,7 @@ def main(args):
         logfile.close()
 
 
-def _train(
-    train_loader, model, criterion, attack, optimizer, scaler, epoch, args
-):
+def _train(train_loader, model, criterion, attack, optimizer, scaler, epoch):
     batch_time = AverageMeter("Time", ":6.3f")
     data_time = AverageMeter("Data", ":6.3f")
     losses = AverageMeter("Loss", ":.4e")
@@ -327,7 +320,7 @@ def _train(
     }
 
 
-def _validate(val_loader, model, criterion, attack, args):
+def _validate(val_loader, model, criterion, attack):
     seg_only = "seg-only" in args.experiment
     batch_time = AverageMeter("Time", ":6.3f")
     data_time = AverageMeter("Data", ":6.3f")
@@ -363,7 +356,7 @@ def _validate(val_loader, model, criterion, attack, args):
 
         # DEBUG
         if args.debug:
-            save_image(COLORMAP[segs].permute(0, 3, 1, 2), "gt.png")
+            save_image(COLORMAP[segs.cpu()].permute(0, 3, 1, 2), "gt.png")
             save_image(images, "test.png")
 
         images = images.cuda(args.gpu, non_blocking=True)
@@ -405,16 +398,13 @@ def _validate(val_loader, model, criterion, attack, args):
             loss = criterion(outputs, targets)
 
         # DEBUG
-        # if args.debug and isinstance(attack, PGDAttackModule):
         if args.debug:
             save_image(
-                COLORMAP[masks.argmax(1)].permute(0, 3, 1, 2),
+                COLORMAP[masks.argmax(1).cpu()].permute(0, 3, 1, 2),
                 "pred_seg_clean.png",
             )
             print(targets == outputs.argmax(1))
-            import pdb
-
-            pdb.set_trace()
+            raise NotImplementedError("End of debugging. Exit.")
 
         # measure accuracy and record loss
         acc1 = compute_acc(outputs, targets)
@@ -451,4 +441,4 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
     os.makedirs(args.output_dir, exist_ok=True)
-    main(args)
+    main()
