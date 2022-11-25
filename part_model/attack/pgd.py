@@ -81,10 +81,7 @@ class PGDAttackModule(AttackModule):
         self.core_model.train(mode)
         return x_adv_worst.detach()
 
-    def _forward_linf(self, x, y, forward_args=None):
-        if forward_args:
-            self.forward_args = forward_args
-            
+    def _forward_linf(self, x, y):
         mode = self.core_model.training
         self.core_model.eval()
 
@@ -151,6 +148,7 @@ class PGDAttackModule(AttackModule):
         return x_adv_worst.detach()
 
     def forward(self, *args, **kwargs):
+        self.forward_args = kwargs
         if self.norm == "L2":
-            return self._forward_l2(*args, **kwargs)
-        return self._forward_linf(*args, **kwargs)
+            return self._forward_l2(*args)
+        return self._forward_linf(*args)

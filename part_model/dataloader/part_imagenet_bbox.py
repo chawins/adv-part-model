@@ -522,7 +522,8 @@ def get_loader_sampler_bbox(args, transforms, split):
     is_train = split == "train"
 
     # TODO: add as arg
-    root = Path('/data/shared/PartImageNet/PartBoxSegmentations')
+    # root = Path('/data/shared/PartImageNet/PartBoxSegmentations')
+    root = Path('/data1/chawins/PartImageNet/PartBoxSegmentations')
     # root = Path('/global/scratch/users/nabeel126/PartImageNet/PartBoxSegmentations')
 
     if not args.sample:

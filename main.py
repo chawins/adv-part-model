@@ -263,7 +263,7 @@ def _get_args_parser():
     )
     parser.add_argument("--save-all-epochs", action="store_true")
     parser.add_argument("--sample", action="store_true")
-
+    parser.add_argument("--multi-head", action="store_true")
 
 
     ### DINO args
@@ -286,12 +286,12 @@ def _get_args_parser():
 
     # training parameters
     # TODO: merge output_dir and output-dir from before
-    parser.add_argument('--output_dir', default='',
-                        help='path where to save, empty for no saving')
+    # parser.add_argument('--output_dir', default='',
+    #                     help='path where to save, empty for no saving')
     parser.add_argument('--note', default='',
                         help='add some notes to the experiment')
-    parser.add_argument('--device', default='cuda',
-                        help='device to use for training / testing')
+    # parser.add_argument('--device', default='cuda',
+    #                     help='device to use for training / testing')
     parser.add_argument('--pretrain_model_path', help='load from other checkpoint')
     parser.add_argument('--finetune_ignore', type=str, nargs='+')
     parser.add_argument('--start_epoch', default=0, type=int, metavar='N',
@@ -306,13 +306,13 @@ def _get_args_parser():
     parser.add_argument('--save_log', action='store_true')
 
     # distributed training parameters
-    parser.add_argument('--world_size', default=1, type=int,
-                        help='number of distributed processes')
-    parser.add_argument('--dist_url', default='env://', help='url used to set up distributed training')
+    # parser.add_argument('--world_size', default=1, type=int,
+    #                     help='number of distributed processes')
+    # parser.add_argument('--dist_url', default='env://', help='url used to set up distributed training')
 
-    parser.add_argument("--local_rank", type=int, help='local rank for DistributedDataParallel')
-    parser.add_argument('--amp', action='store_true',
-                        help="Train with mixed precision")
+    # parser.add_argument("--local_rank", type=int, help='local rank for DistributedDataParallel')
+    # parser.add_argument('--amp', action='store_true',
+    #                     help="Train with mixed precision")
     
 
 
@@ -442,6 +442,7 @@ def main(args):
             print(f"=> lr @ epoch {epoch}: {lr:.2e}")
             
             # Train for one epoch
+            # train_stats = {}
             train_stats = _train(
                 train_loader,
                 model,
@@ -454,16 +455,21 @@ def main(args):
             )
 
             if (epoch + 1) % 2 == 0:
+            # if (epoch) % 2 == 0:
                 val_stats = _validate(
                     val_loader, model, criterion, no_attack, args
                 )
                 clean_acc1, acc1 = val_stats["acc1"], None
                 is_best = clean_acc1 > best_acc1
+                
                 if args.adv_train != "none":
                     val_stats = _validate(
                         val_loader, model, criterion, val_attack, args
                     )
                     acc1 = val_stats["acc1"]
+                    
+                    # is_best = False
+                    # clean_acc1 = 0
                     is_best = acc1 > best_acc1 and clean_acc1 >= acc1
 
                 save_dict = {
@@ -627,11 +633,18 @@ def _train(
         # pdb.set_trace()
 
         with amp.autocast(enabled=not args.full_precision):
+            
             if args.obj_det_arch == "dino": 
                 forward_args = {'masks':masks, 'dino_targets': target_bbox, 'need_tgt_for_training': need_tgt_for_training, 'return_mask': False}
-                images = attack(images, targets, forward_args)
+                # images = attack(images, targets, forward_args)
+                images = attack(images, targets, **forward_args)
+
+                # if args.multi_head:
                 outputs, dino_outputs = model(images, masks, target_bbox, need_tgt_for_training, return_mask=True)
                 loss = criterion(outputs, dino_outputs, target_bbox, targets)
+                # else:
+                #     outputs, dino_outputs = model(images, masks, target_bbox, need_tgt_for_training, return_mask=True)
+                #     loss = criterion(outputs, dino_outputs, target_bbox, targets)
             else:
                 if attack.use_mask:
                     # Attack for part models where both class and segmentation
@@ -737,6 +750,8 @@ def _validate(val_loader, model, criterion, attack, args):
                     need_tgt_for_training = False
 
                 # images, target_bbox, targets = samples
+                # import pdb
+                # pdb.set_trace()
                 nested_tensors, target_bbox, targets = samples
                 images, masks = nested_tensors.decompose()
                 targets = torch.LongTensor(targets)
@@ -805,16 +820,25 @@ def _validate(val_loader, model, criterion, attack, args):
         # compute output
         with torch.no_grad():
             if args.obj_det_arch == "dino": 
-
                 forward_args = {'masks':masks, 'dino_targets': target_bbox, 'need_tgt_for_training': need_tgt_for_training, 'return_mask': False}
-                images = attack(images, targets, forward_args)
+                # print('attack', attack)
+                # print('images', images.shape)
+                # print('targets', targets.shape)
+                # print('forward_args', forward_args)
+                # print(args.rank, images.shape)
+                # if len(images) == 1:
+                #     images = torch.cat([images, images], dim=0)
+                #     masks = torch.cat([masks, masks], dim=0)
+                #     print('corrected')
+                # print(args.rank, images.shape)
+                images = attack(images, targets, **forward_args)
+
+                # if args.multi_head:
+                #     outputs, dino_outputs = model(images, masks, target_bbox, need_tgt_for_training, return_mask=True)
+                #     loss = criterion(outputs, dino_outputs, targets)
+                # else:
                 outputs = model(images, masks, target_bbox, need_tgt_for_training, return_mask=False)
                 loss = criterion(outputs, targets)
-
-
-                # outputs, _ = model(images, target_bbox, need_tgt_for_training, return_mask=need_tgt_for_training)
-                # loss = criterion(outputs, targets)
-
             else:
                 if attack.use_mask:
                     images = attack(images, targets, segs)

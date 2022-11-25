@@ -237,7 +237,7 @@ def setup_val_attacker(args, model):
     eps = float(args.epsilon)
     norm = args.atk_norm
     attack_config = {
-        "pgd_steps": 100,
+        "pgd_steps": 50,
         "pgd_step_size": 0.002,
         "num_restarts": 1,
     }

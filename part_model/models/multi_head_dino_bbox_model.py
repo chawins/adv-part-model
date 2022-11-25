@@ -7,10 +7,10 @@ from DINO.main import build_model_main
 from DINO.models.dino.dino import build_backbone, build_deformable_transformer, DINO
 from DINO.util.misc import NestedTensor
 
-class DinoBoundingBoxModel(nn.Module):
+class MultiHeadDinoBoundingBoxModel(nn.Module):
     def __init__(self, args):
         print("=> Initializing DinoBoundingBoxModel...")
-        super(DinoBoundingBoxModel, self).__init__()
+        super(MultiHeadDinoBoundingBoxModel, self).__init__()
         
         # TODO: load weights if args.load_from_segmenter
 
@@ -37,7 +37,7 @@ class DinoBoundingBoxModel(nn.Module):
             dec_pred_bbox_embed_share = True
 
 
-        self.object_detector = DINO(
+        self.object_detector_head = DINO(
             self.backbone,
             transformer,
             num_classes=args.seg_labels,
@@ -65,43 +65,31 @@ class DinoBoundingBoxModel(nn.Module):
             dn_labelbook_size = dn_labelbook_size,
         )
                         
-        # setattr(args, 'num_classes', tmp_num_classes)
-        # logits for part labels and 4 for bounding box coords
-        input_dim = args.num_queries * (args.seg_labels+4)
-        print('input_dim', input_dim)
 
-        # how did we get 50 here
-        self.core_model = nn.Sequential(
-            nn.Identity(),
+        # TODO: don't hardcode
+        self.classifier_head = nn.Sequential(
+            nn.AdaptiveAvgPool2d(output_size=(1, 1)), 
             nn.Flatten(),
-            nn.BatchNorm1d(input_dim),
-            nn.Linear(input_dim, 50),
-            nn.ReLU(),
-            nn.BatchNorm1d(50),
-            nn.Linear(50, args.num_classes),
+            nn.Linear(in_features=2048, out_features=args.num_classes, bias=True)
         )
 
+        self.num_classes = args.num_classes
+        #         (avgpool): AdaptiveAvgPool2d(output_size=(1, 1))
+        #   (fc): Linear(in_features=2048, out_features=1000, bias=True)
+
+
     def forward(self, images, masks, dino_targets, need_tgt_for_training, return_mask=False, **kwargs):
-        # Object Detection part
         nested_tensors = NestedTensor(images, masks)
-
-        # out = self.backbone(nested_tensors)
-
-        # out[0][-1].tensors
-        # import pdb
-        # pdb.set_trace()
-        
+        out = self.backbone(nested_tensors)
+   
         if need_tgt_for_training:
-            dino_outputs = self.object_detector(nested_tensors, dino_targets)
+            out_object_detector_head = self.object_detector_head(nested_tensors, dino_targets)
         else:
-            dino_outputs = self.object_detector(nested_tensors)
+            out_object_detector_head = self.object_detector_head(nested_tensors)
         
-        # concatenate softmax'd logits and bounding box predictions
-        features = torch.cat([F.softmax(dino_outputs['pred_logits'], dim=1), dino_outputs['pred_boxes']], dim=2)
-        out = self.core_model(features)
-        
+        out_classifier_head = self.classifier_head(out[0][-1].tensors)
+
         if return_mask:
-            return out, dino_outputs
-            # return out, outputs['pred_logits'], outputs['pred_boxes']
-        return out
+            return out_classifier_head, out_object_detector_head
+        return out_classifier_head
 

@@ -10,6 +10,7 @@ from ..dataloader import DATASET_DICT
 from ..utils.image import get_seg_type
 from .bbox_model import BoundingBoxModel
 from .dino_bbox_model import DinoBoundingBoxModel
+from .multi_head_dino_bbox_model import MultiHeadDinoBoundingBoxModel
 from .clean_mask_model import CleanMaskModel
 from .common import Normalize
 from .groundtruth_mask_model import GroundtruthMaskModel
@@ -68,85 +69,88 @@ def build_classifier(args):
         elif args.obj_det_arch is not None:
             print("=> building object detection model...")
             pass 
+        
+        if args.multi_head:
+            model = MultiHeadDinoBoundingBoxModel(args)
+        else:
+            if args.freeze_seg:
+                # Froze all weights of the part segmentation model
+                for param in segmenter.parameters():
+                    param.requires_grad = False
 
-        if args.freeze_seg:
-            # Froze all weights of the part segmentation model
-            for param in segmenter.parameters():
-                param.requires_grad = False
+            if model_token == "mask":
+                model.conv1 = nn.Conv2d(
+                    args.seg_labels
+                    + (3 if "inpt" in exp_tokens else 0)
+                    - (1 if "nobg" in exp_tokens else 0),
+                    64,
+                    kernel_size=7,
+                    stride=2,
+                    padding=3,
+                    bias=False,
+                )
+                model.fc = nn.Linear(rep_dim, args.num_classes)
+                model = PartMaskModel(args, segmenter, model)
+            elif model_token == "seg_cat":
+                model.conv1 = nn.Conv2d(
+                    (args.seg_labels - 1) * 3
+                    if "nobg" in exp_tokens
+                    else args.seg_labels * 3,
+                    64,
+                    kernel_size=7,
+                    stride=2,
+                    padding=3,
+                    bias=False,
+                )
+                model.fc = nn.Linear(rep_dim, args.num_classes)
+                model = PartSegCatModel(args, segmenter, model, rep_dim)
+            elif model_token == "seg":
+                model = PartSegModel(args, segmenter, model, rep_dim, topk=None)
+            elif model_token == "clean":
+                model.conv1 = nn.Conv2d(
+                    args.seg_labels
+                    + (3 if "inpt" in exp_tokens else 0)
+                    - (1 if "nobg" in exp_tokens else 0),
+                    64,
+                    kernel_size=7,
+                    stride=2,
+                    padding=3,
+                    bias=False,
+                )
+                model.fc = nn.Linear(rep_dim, args.num_classes)
+                model = CleanMaskModel(args, segmenter, model)
+            elif model_token == "groundtruth":
+                model.conv1 = nn.Conv2d(
+                    args.seg_labels
+                    + (3 if "inpt" in exp_tokens else 0)
+                    - (1 if "nobg" in exp_tokens else 0),
+                    64,
+                    kernel_size=7,
+                    stride=2,
+                    padding=3,
+                    bias=False,
+                )
+                model.fc = nn.Linear(rep_dim, args.num_classes)
+                model = GroundtruthMaskModel(args, segmenter, model)
+            elif model_token == "2heads_d":
+                model = TwoHeadModel(args, segmenter, "d")
+            elif model_token == "2heads_e":
+                model = TwoHeadModel(args, segmenter, "e")
+            elif model_token == "pixel":
+                model = PixelCountModel(args, segmenter, None)
+            elif model_token == "bbox":
+                # two options, either bbox model from object detection or bbox from segmentation model 
+                if args.obj_det_arch == "dino":            
+                    model = DinoBoundingBoxModel(args)
+                else:
+                    model = BoundingBoxModel(args, segmenter)
 
-        if model_token == "mask":
-            model.conv1 = nn.Conv2d(
-                args.seg_labels
-                + (3 if "inpt" in exp_tokens else 0)
-                - (1 if "nobg" in exp_tokens else 0),
-                64,
-                kernel_size=7,
-                stride=2,
-                padding=3,
-                bias=False,
-            )
-            model.fc = nn.Linear(rep_dim, args.num_classes)
-            model = PartMaskModel(args, segmenter, model)
-        elif model_token == "seg_cat":
-            model.conv1 = nn.Conv2d(
-                (args.seg_labels - 1) * 3
-                if "nobg" in exp_tokens
-                else args.seg_labels * 3,
-                64,
-                kernel_size=7,
-                stride=2,
-                padding=3,
-                bias=False,
-            )
-            model.fc = nn.Linear(rep_dim, args.num_classes)
-            model = PartSegCatModel(args, segmenter, model, rep_dim)
-        elif model_token == "seg":
-            model = PartSegModel(args, segmenter, model, rep_dim, topk=None)
-        elif model_token == "clean":
-            model.conv1 = nn.Conv2d(
-                args.seg_labels
-                + (3 if "inpt" in exp_tokens else 0)
-                - (1 if "nobg" in exp_tokens else 0),
-                64,
-                kernel_size=7,
-                stride=2,
-                padding=3,
-                bias=False,
-            )
-            model.fc = nn.Linear(rep_dim, args.num_classes)
-            model = CleanMaskModel(args, segmenter, model)
-        elif model_token == "groundtruth":
-            model.conv1 = nn.Conv2d(
-                args.seg_labels
-                + (3 if "inpt" in exp_tokens else 0)
-                - (1 if "nobg" in exp_tokens else 0),
-                64,
-                kernel_size=7,
-                stride=2,
-                padding=3,
-                bias=False,
-            )
-            model.fc = nn.Linear(rep_dim, args.num_classes)
-            model = GroundtruthMaskModel(args, segmenter, model)
-        elif model_token == "2heads_d":
-            model = TwoHeadModel(args, segmenter, "d")
-        elif model_token == "2heads_e":
-            model = TwoHeadModel(args, segmenter, "e")
-        elif model_token == "pixel":
-            model = PixelCountModel(args, segmenter, None)
-        elif model_token == "bbox":
-            # two options, either bbox model from object detection or bbox from segmentation model 
-            if args.obj_det_arch == "dino":            
-                model = DinoBoundingBoxModel(args)
-            else:
-                model = BoundingBoxModel(args, segmenter)
-
-        elif model_token == "wbbox":
-            model = WeightedBBoxModel(args, segmenter)
-        elif model_token == "fc":
-            model = PartFCModel(args, segmenter)
-        elif model_token == "pooling":
-            model = PoolingModel(args, segmenter)
+            elif model_token == "wbbox":
+                model = WeightedBBoxModel(args, segmenter)
+            elif model_token == "fc":
+                model = PartFCModel(args, segmenter)
+            elif model_token == "pooling":
+                model = PoolingModel(args, segmenter)
 
         n_seg = sum(p.numel() for p in model.parameters()) / 1e6
         nt_seg = (
