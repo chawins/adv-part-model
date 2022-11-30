@@ -3,6 +3,9 @@ Code is adapted from
 https://github.com/chenxi116/DeepLabv3.pytorch/blob/master/cityscapes.py
 https://github.com/chenxi116/DeepLabv3.pytorch/blob/master/utils.py
 """
+
+from __future__ import annotations
+
 import glob
 import os
 

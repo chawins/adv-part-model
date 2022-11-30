@@ -1,35 +1,48 @@
+"""Model utility."""
+
 import os
 
 import timm
 import torch
-import torch.cuda.amp as amp
-import torch.nn as nn
 import torchvision
+from torch import nn
+from torch.cuda import amp
 
-from ..dataloader import DATASET_DICT
-from ..utils.image import get_seg_type
-from .bbox_model import BoundingBoxModel
 from .dino_bbox_model import DinoBoundingBoxModel
 from .multi_head_dino_bbox_model import MultiHeadDinoBoundingBoxModel
-from .clean_mask_model import CleanMaskModel
-from .common import Normalize
-from .groundtruth_mask_model import GroundtruthMaskModel
-from .part_fc_model import PartFCModel
-from .part_mask_model import PartMaskModel
-from .part_seg_cat_model import PartSegCatModel
-from .part_seg_model import PartSegModel
-from .pixel_count_model import PixelCountModel
-from .pooling_model import PoolingModel
-from .segmentation_model import SEGM_BUILDER
-from .two_head_model import TwoHeadModel
-from .weighted_bbox_model import WeightedBBoxModel
+
+from part_model.dataloader import DATASET_DICT
+from part_model.models.bbox_model import BoundingBoxModel
+from part_model.models.clean_mask_model import CleanMaskModel
+from part_model.models.common import Normalize
+from part_model.models.groundtruth_mask_model import GroundtruthMaskModel
+from part_model.models.part_fc_model import PartFCModel
+from part_model.models.part_mask_model import PartMaskModel
+from part_model.models.part_seg_cat_model import PartSegCatModel
+from part_model.models.part_seg_model import PartSegModel
+from part_model.models.pixel_count_model import PixelCountModel
+from part_model.models.pooling_model import PoolingModel
+from part_model.models.segmentation_model import SEGM_BUILDER
+from part_model.models.two_head_model import TwoHeadModel
+from part_model.models.weighted_bbox_model import WeightedBBoxModel
+from part_model.utils.image import get_seg_type
+
 
 def wrap_distributed(args, model):
+    # TODO: When using efficientnet as backbone, pytorch's torchrun complains
+    # about unused parameters. This can be suppressed by setting
+    # find_unused_parameters to True.
+    find_unused_parameters: bool = any(
+        "efficientnet" in arch for arch in (args.seg_backbone, args.arch)
+    )
+
     if args.distributed:
         model.cuda(args.gpu)
         model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
         model = torch.nn.parallel.DistributedDataParallel(
-            model, device_ids=[args.gpu]
+            model,
+            device_ids=[args.gpu],
+            find_unused_parameters=find_unused_parameters,
         )
     else:
         model.cuda()
@@ -231,11 +244,11 @@ def build_classifier(args):
                 checkpoint = torch.load(model_path)
             else:
                 # Map model to be loaded to specified single gpu.
-                loc = "cuda:{}".format(args.gpu)
+                loc = f"cuda:{args.gpu}"
                 checkpoint = torch.load(model_path, map_location=loc)
 
             if args.load_from_segmenter:
-                print(f"=> loading segmenter weight only...")
+                print("=> Loading segmenter weight only...")
                 state_dict = {}
                 for name, params in checkpoint["state_dict"].items():
                     name.replace("module", "module.segmenter")
@@ -250,11 +263,11 @@ def build_classifier(args):
                 scaler.load_state_dict(checkpoint["scaler"])
             print(f'=> loaded resume checkpoint (epoch {checkpoint["epoch"]})')
         elif args.resume:
-            raise FileNotFoundError(f"=> no checkpoint found at {model_path}")
+            raise FileNotFoundError(f"=> No checkpoint found at {model_path}.")
         else:
-            print(f"=> Tried to resume if exist but found no checkpoint")
+            print("=> Tried to resume if exist but found no checkpoint.")
     else:
-        print(f"=> model is randomly initialized")
+        print("=> Loaded model without using resumed weights.")
 
     return model, optimizer, scaler
 
@@ -298,7 +311,7 @@ def build_segmentation(args):
                 checkpoint = torch.load(args.resume)
             else:
                 # Map model to be loaded to specified single gpu.
-                loc = "cuda:{}".format(args.gpu)
+                loc = f"cuda:{args.gpu}"
                 checkpoint = torch.load(args.resume, map_location=loc)
             model.load_state_dict(checkpoint["state_dict"])
 

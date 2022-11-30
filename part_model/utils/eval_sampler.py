@@ -2,6 +2,9 @@
 Code is copied from 
 https://github.com/SeungjunNah/DeepDeblur-PyTorch/blob/master/src/data/sampler.py
 """
+
+from __future__ import annotations
+
 import torch
 import torch.distributed as dist
 from torch.utils.data import Sampler

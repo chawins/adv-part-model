@@ -1,9 +1,9 @@
-from .part_imagenet_corrupt import PART_IMAGENET_CORRUPT
-from .part_imagenet_mixed_next import PART_IMAGENET_MIXED
 from .cityscapes import CITYSCAPES
 from .part_imagenet import PART_IMAGENET
 from .part_imagenet_bbox import PART_IMAGENET_BBOX
+from .part_imagenet_corrupt import PART_IMAGENET_CORRUPT
 from .part_imagenet_geirhos import PART_IMAGENET_GEIRHOS
+from .part_imagenet_mixed_next import PART_IMAGENET_MIXED
 from .pascal_part import PASCAL_PART
 from .pascal_voc import PASCAL_VOC
 from .util import COLORMAP
@@ -21,5 +21,5 @@ DATASET_DICT = {
 
 
 def load_dataset(args):
-    loader = DATASET_DICT[args.dataset]['loader']
+    loader = DATASET_DICT[args.dataset]["loader"]
     return loader(args)

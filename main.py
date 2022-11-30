@@ -1,8 +1,6 @@
-"""Main script for both training and evaluation.
+"""Main script for both training and evaluation."""
 
-The template of this code is generously provided by Norman Mu (@normster).
-The original version is from https://github.com/pytorch/examples/blob/master/imagenet/main.py
-"""
+from __future__ import annotations
 
 import argparse
 import json
@@ -11,6 +9,7 @@ import os
 import pickle
 import sys
 import time
+from typing import Any
 
 import numpy as np
 import torch
@@ -21,7 +20,6 @@ import torch.optim
 import torch.utils.data
 import torch.utils.data.distributed
 import wandb
-from torch.distributed.elastic.multiprocessing.errors import record
 
 from DINO.util.utils import to_device
 
@@ -34,7 +32,6 @@ from part_model.attack import (
     setup_train_attacker,
     setup_val_attacker,
 )
-from part_model.attack.pgd import PGDAttackModule
 from part_model.dataloader import COLORMAP, load_dataset
 from part_model.models import build_model
 from part_model.utils import (
@@ -49,8 +46,8 @@ from part_model.utils import (
     pixel_accuracy,
     save_on_master,
 )
+from part_model.utils.argparse import get_args_parser
 from part_model.utils.loss import get_train_criterion
-
 
 def _get_args_parser():
     parser = argparse.ArgumentParser(
@@ -306,12 +303,18 @@ def _get_args_parser():
 
     return parser
 
-
 best_acc1 = 0
 
 
-@record
-def main(args):
+
+def _write_metrics(save_metrics: Any) -> None:
+    if is_main_process():
+        # Save metrics to pickle file if not exists else append
+        pkl_path = os.path.join(args.output_dir, "metrics.pkl")
+        pickle.dump([save_metrics], open(pkl_path, "wb"))
+
+
+def main() -> None:
     """Main function."""
     init_distributed_mode(args)
 
@@ -335,12 +338,12 @@ def main(args):
     global best_acc1
 
     # Fix the seed for reproducibility
-    seed = args.seed + get_rank()
+    seed: int = args.seed + get_rank()
     torch.manual_seed(seed)
     np.random.seed(seed)
 
     # Data loading code
-    print("=> creating dataset")
+    print("=> Creating dataset...")
     loaders = load_dataset(args)
     train_loader, train_sampler, val_loader, test_loader = loaders
 
@@ -382,7 +385,7 @@ def main(args):
             pdb.set_trace()
 
     # Create model
-    print("=> creating model")
+    print("=> Creating model...")
     model, optimizer, scaler = build_model(args)
 
     cudnn.benchmark = True
@@ -419,7 +422,7 @@ def main(args):
         else:
             load_path = f"{args.output_dir}/checkpoint_best.pt"
     else:
-        print("=> beginning training")
+        print("=> Beginning training...")
         val_stats = {}
         for epoch in range(args.start_epoch, args.epochs):
             is_best = False
@@ -438,25 +441,20 @@ def main(args):
                 optimizer,
                 scaler,
                 epoch,
-                args,
             )
 
             if (epoch + 1) % 2 == 0:
-            # if (epoch) % 2 == 0:
-                val_stats = _validate(
-                    val_loader, model, criterion, no_attack, args
-                )
+                val_stats = _validate(val_loader, model, criterion, no_attack)
                 clean_acc1, acc1 = val_stats["acc1"], None
                 is_best = clean_acc1 > best_acc1
                 
                 if args.adv_train != "none":
-                    val_stats = _validate(
-                        val_loader, model, criterion, val_attack, args
+                    adv_val_stats = _validate(
+                        val_loader, model, criterion, val_attack
                     )
-                    acc1 = val_stats["acc1"]
-                    
-                    # is_best = False
-                    # clean_acc1 = 0
+                    acc1 = adv_val_stats["acc1"]
+                    val_stats["adv_acc1"] = acc1
+                    val_stats["adv_loss"] = adv_val_stats["loss"]
                     is_best = acc1 > best_acc1 and clean_acc1 >= acc1
 
                 save_dict = {
@@ -469,7 +467,7 @@ def main(args):
                 }
 
                 if is_best:
-                    print("=> Saving new best checkpoint")
+                    print("=> Saving new best checkpoint...")
                     save_on_master(save_dict, args.output_dir, is_best=True)
                     best_acc1 = (
                         max(clean_acc1, best_acc1)
@@ -483,12 +481,13 @@ def main(args):
 
             log_stats = {
                 **{f"train_{k}": v for k, v in train_stats.items()},
-                **{f"test_{k}": v for k, v in val_stats.items()},
+                **{f"val_{k}": v for k, v in val_stats.items()},
                 "epoch": epoch,
             }
 
             if is_main_process():
                 save_metrics["train"].append(log_stats)
+                _write_metrics(save_metrics)
                 if args.wandb:
                     wandb.log(log_stats)
                 logfile.write(json.dumps(log_stats) + "\n")
@@ -498,7 +497,7 @@ def main(args):
         dist_barrier()
         load_path = f"{args.output_dir}/checkpoint_best.pt"
 
-    print(f"=> loading checkpoint from {load_path}...")
+    print(f"=> Loading checkpoint from {load_path}...")
     if args.gpu is None:
         checkpoint = torch.load(load_path)
     else:
@@ -512,34 +511,27 @@ def main(args):
     for attack in eval_attack:
         # Use DataParallel (not distributed) model for AutoAttack.
         # Otherwise, DDP model can get timeout or c10d failure.
-        stats = _validate(test_loader, model, criterion, attack[1], args)
+        stats = _validate(test_loader, model, criterion, attack[1])
         print(f"=> {attack[0]}: {stats}")
         stats["attack"] = str(attack[0])
         dist_barrier()
         if is_main_process():
             save_metrics["test"].append(stats)
+            _write_metrics(save_metrics)
             if args.wandb:
                 wandb.log(stats)
             logfile.write(json.dumps(stats) + "\n")
 
     if is_main_process():
         # Save metrics to pickle file if not exists else append
-        pkl_path = os.path.join(args.output_dir, "metrics.pkl")
-        if os.path.exists(pkl_path):
-            metrics = pickle.load(open(pkl_path, "rb"))
-            metrics.append(save_metrics)
-        else:
-            pickle.dump([save_metrics], open(pkl_path, "wb"))
-
+        _write_metrics(save_metrics)
         last_path = f"{args.output_dir}/checkpoint_last.pt"
         if os.path.exists(last_path):
             os.remove(last_path)
         logfile.close()
 
 
-def _train(
-    train_loader, model, criterion, attack, optimizer, scaler, epoch, args
-):
+def _train(train_loader, model, criterion, attack, optimizer, scaler, epoch):
     batch_time = AverageMeter("Time", ":6.3f")
     data_time = AverageMeter("Data", ":6.3f")
     losses = AverageMeter("Loss", ":.4e")
@@ -678,7 +670,7 @@ def _train(
     }
 
 
-def _validate(val_loader, model, criterion, attack, args):
+def _validate(val_loader, model, criterion, attack):
     seg_only = "seg-only" in args.experiment
     batch_time = AverageMeter("Time", ":6.3f")
     data_time = AverageMeter("Data", ":6.3f")
@@ -746,7 +738,7 @@ def _validate(val_loader, model, criterion, attack, args):
 
         # DEBUG
         if args.debug:
-            save_image(COLORMAP[segs].permute(0, 3, 1, 2), "gt.png")
+            save_image(COLORMAP[segs.cpu()].permute(0, 3, 1, 2), "gt.png")
             save_image(images, "test.png")
 
         if args.obj_det_arch == "dino": 
@@ -804,16 +796,13 @@ def _validate(val_loader, model, criterion, attack, args):
                 loss = criterion(outputs, targets)
 
         # DEBUG
-        # if args.debug and isinstance(attack, PGDAttackModule):
         if args.debug:
             save_image(
-                COLORMAP[masks.argmax(1)].permute(0, 3, 1, 2),
+                COLORMAP[masks.argmax(1).cpu()].permute(0, 3, 1, 2),
                 "pred_seg_clean.png",
             )
             print(targets == outputs.argmax(1))
-            import pdb
-
-            pdb.set_trace()
+            raise NotImplementedError("End of debugging. Exit.")
 
         # measure accuracy and record loss
         acc1 = compute_acc(outputs, targets)
@@ -846,8 +835,8 @@ def _validate(val_loader, model, criterion, attack, args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        "Part Classification", parents=[_get_args_parser()]
+        "Part Classification", parents=[get_args_parser()]
     )
     args = parser.parse_args()
     os.makedirs(args.output_dir, exist_ok=True)
-    main(args)
+    main()
