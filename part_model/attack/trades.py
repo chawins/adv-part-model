@@ -29,7 +29,7 @@ class TRADESAttackModule(AttackModule):
         x_adv_worst = x.clone().detach()
         x.requires_grad_()
         with torch.enable_grad():
-            cl_logits = self.core_model(x)
+            cl_logits = self.core_model(x, **self.forward_args)
         worst_losses = torch.zeros(len(x), 1, 1, 1, device=x.device)
 
         # Repeat PGD for specified number of restarts
@@ -46,7 +46,7 @@ class TRADESAttackModule(AttackModule):
 
                 # Compute logits, loss, gradients
                 with torch.enable_grad():
-                    logits = self.core_model(x_adv)
+                    logits = self.core_model(x_adv, **self.forward_args)
                     loss = self.trades_loss_fn(cl_logits, logits).mean()
                     grads = torch.autograd.grad(loss, x_adv)[0].detach()
 
@@ -61,7 +61,7 @@ class TRADESAttackModule(AttackModule):
                 x_adv_worst = x_adv
             else:
                 # Update worst-case inputs with itemized final losses
-                fin_losses = self.loss_fn(self.core_model(x_adv), y).reshape(worst_losses.shape)
+                fin_losses = self.loss_fn(self.core_model(x_adv, **self.forward_args), y).reshape(worst_losses.shape)
                 up_mask = (fin_losses >= worst_losses).float()
                 x_adv_worst = x_adv * up_mask + x_adv_worst * (1 - up_mask)
                 worst_losses = fin_losses * up_mask + worst_losses * (1 - up_mask)
@@ -78,7 +78,7 @@ class TRADESAttackModule(AttackModule):
         x_adv_worst = x.clone().detach()
         x.requires_grad_()
         with torch.enable_grad():
-            cl_logits = self.core_model(x)
+            cl_logits = self.core_model(x, **self.forward_args)
         worst_losses = torch.zeros(len(x), 1, 1, 1, device=x.device)
 
         # Repeat PGD for specified number of restarts
@@ -95,7 +95,7 @@ class TRADESAttackModule(AttackModule):
 
                 # Compute logits, loss, gradients
                 with torch.enable_grad():
-                    logits = self.core_model(x_adv)
+                    logits = self.core_model(x_adv, **self.forward_args)
                     loss = self.trades_loss_fn(cl_logits, logits).mean()
                     grads = torch.autograd.grad(loss, x_adv)[0].detach()
 
@@ -110,7 +110,7 @@ class TRADESAttackModule(AttackModule):
                 x_adv_worst = x_adv
             else:
                 # Update worst-case inputs with itemized final losses
-                fin_losses = self.loss_fn(self.core_model(x_adv), y).reshape(worst_losses.shape)
+                fin_losses = self.loss_fn(self.core_model(x_adv, **self.forward_args), y).reshape(worst_losses.shape)
                 up_mask = (fin_losses >= worst_losses).float()
                 x_adv_worst = x_adv * up_mask + x_adv_worst * (1 - up_mask)
                 worst_losses = fin_losses * up_mask + worst_losses * (1 - up_mask)
@@ -119,7 +119,8 @@ class TRADESAttackModule(AttackModule):
         self.core_model.train(mode)
         return torch.cat([x.detach(), x_adv_worst.detach()], dim=0)
 
-    def forward(self, *args):
+    def forward(self, *args, **kwargs):
+        self.forward_args = kwargs
         if self.norm == 'L2':
             return self._forward_l2(*args)
         return self._forward_linf(*args)

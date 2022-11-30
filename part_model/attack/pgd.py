@@ -66,7 +66,7 @@ class PGDAttackModule(AttackModule):
                 x_adv_worst = x_adv
             else:
                 # Update worst-case inputs with itemized final losses
-                fin_losses = self.loss_fn(self.core_model(x_adv), y).reshape(
+                fin_losses = self.loss_fn(self.core_model(x_adv, **self.forward_args), y).reshape(
                     worst_losses.shape
                 )
                 up_mask = (fin_losses >= worst_losses).float()
@@ -119,7 +119,7 @@ class PGDAttackModule(AttackModule):
                 x_adv_worst = x_adv
             else:
                 # Update worst-case inputs with itemized final losses
-                fin_losses = self.loss_fn(self.core_model(x_adv), y).reshape(
+                fin_losses = self.loss_fn(self.core_model(x_adv, **self.forward_args), y).reshape(
                     worst_losses.shape
                 )
                 up_mask = (fin_losses >= worst_losses).float()
@@ -145,7 +145,8 @@ class PGDAttackModule(AttackModule):
         self.core_model.train(mode)
         return x_adv_worst.detach()
 
-    def forward(self, *args):
+    def forward(self, *args, **kwargs):
+        self.forward_args = kwargs
         if self.norm == "L2":
             return self._forward_l2(*args)
         return self._forward_linf(*args)

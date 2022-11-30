@@ -8,6 +8,9 @@ import torchvision
 from torch import nn
 from torch.cuda import amp
 
+from .dino_bbox_model import DinoBoundingBoxModel
+from .multi_head_dino_bbox_model import MultiHeadDinoBoundingBoxModel
+
 from part_model.dataloader import DATASET_DICT
 from part_model.models.bbox_model import BoundingBoxModel
 from part_model.models.clean_mask_model import CleanMaskModel
@@ -72,9 +75,14 @@ def build_classifier(args):
         tokens = args.experiment.split("-")
         model_token = tokens[1]
         exp_tokens = tokens[2:]
-        print("=> building segmentation model...")
-        segmenter = SEGM_BUILDER[args.seg_arch](args)
 
+        if args.seg_arch is not None:
+            print("=> building segmentation model...")
+            segmenter = SEGM_BUILDER[args.seg_arch](args)
+        elif args.obj_det_arch is not None:
+            print("=> building object detection model...")
+            pass 
+        
         if args.freeze_seg:
             # Froze all weights of the part segmentation model
             for param in segmenter.parameters():
@@ -140,8 +148,14 @@ def build_classifier(args):
             model = TwoHeadModel(args, segmenter, "e")
         elif model_token == "pixel":
             model = PixelCountModel(args, segmenter, None)
+        elif model_token == "bbox_2heads_d":           
+            model = MultiHeadDinoBoundingBoxModel(args)
         elif model_token == "bbox":
-            model = BoundingBoxModel(args, segmenter)
+            # two options, either bbox model from object detection or bbox from segmentation model 
+            if args.obj_det_arch == "dino":
+                model = DinoBoundingBoxModel(args)
+            else:
+                model = BoundingBoxModel(args, segmenter)
         elif model_token == "wbbox":
             model = WeightedBBoxModel(args, segmenter)
         elif model_token == "fc":
@@ -149,12 +163,19 @@ def build_classifier(args):
         elif model_token == "pooling":
             model = PoolingModel(args, segmenter)
 
-        n_seg = sum(p.numel() for p in segmenter.parameters()) / 1e6
+        n_seg = sum(p.numel() for p in model.parameters()) / 1e6
         nt_seg = (
-            sum(p.numel() for p in segmenter.parameters() if p.requires_grad)
+            sum(p.numel() for p in model.parameters() if p.requires_grad)
             / 1e6
         )
-        print(f"=> segmenter params (train/total): {nt_seg:.2f}M/{n_seg:.2f}M")
+        print(f"=> model params (train/total): {nt_seg:.2f}M/{n_seg:.2f}M")
+
+        # n_seg = sum(p.numel() for p in segmenter.parameters()) / 1e6
+        # nt_seg = (
+        #     sum(p.numel() for p in segmenter.parameters() if p.requires_grad)
+        #     / 1e6
+        # )
+        # print(f"=> segmenter params (train/total): {nt_seg:.2f}M/{n_seg:.2f}M")    
     else:
         print("=> building a normal classifier (no segmentation)")
         model.fc = nn.Linear(rep_dim, args.num_classes)
@@ -165,19 +186,30 @@ def build_classifier(args):
 
     model = wrap_distributed(args, model)
 
-    p_wd, p_non_wd = [], []
-    for n, p in model.named_parameters():
-        if p.requires_grad:
-            if "bias" in n or "ln" in n or "bn" in n:
-                p_non_wd.append(p)
-            else:
-                p_wd.append(p)
+    
 
-    optim_params = [
-        {"params": p_wd, "weight_decay": args.wd},
-        {"params": p_non_wd, "weight_decay": 0},
-    ]
+    if args.obj_det_arch == "dino":
+        optim_params = [
+            {"params": [p for n, p in model.named_parameters() if "backbone" not in n and p.requires_grad]},
+            {
+                "params": [p for n, p in model.named_parameters() if "backbone" in n and p.requires_grad],
+                "lr": args.lr_backbone,
+            }
+        ]
+    else:
+        p_wd, p_non_wd = [], []
+        for n, p in model.named_parameters():
+            if p.requires_grad:
+                if "bias" in n or "ln" in n or "bn" in n:
+                    p_non_wd.append(p)
+                else:
+                    p_wd.append(p)
 
+        optim_params = [
+            {"params": p_wd, "weight_decay": args.wd},
+            {"params": p_non_wd, "weight_decay": 0},
+        ]
+        
     if args.optim == "sgd":
         optimizer = torch.optim.SGD(
             optim_params,
@@ -194,6 +226,7 @@ def build_classifier(args):
             weight_decay=args.wd,
         )
 
+        
     scaler = amp.GradScaler(enabled=not args.full_precision)
 
     # Optionally resume from a checkpoint
