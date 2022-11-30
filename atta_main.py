@@ -20,7 +20,6 @@ import torch.utils.data
 import torch.utils.data.distributed
 import wandb
 from torch.distributed.elastic.multiprocessing.errors import record
-
 from torchmetrics import JaccardIndex as IoU
 from torchvision.utils import save_image
 
