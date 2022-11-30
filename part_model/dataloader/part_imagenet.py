@@ -6,6 +6,7 @@ import os
 from typing import Any, Callable, Optional
 
 import numpy as np
+import json
 import torch
 from torch.utils import data
 from PIL import Image

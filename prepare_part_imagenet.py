@@ -66,6 +66,7 @@ def get_seg_masks(path, all_image_names, use_box_seg=False):
         num_parts += CLASSES[k]
         all_part_ids.extend(coco.getCatIds(supNms=k))
     # all_part_ids = coco.getCatIds(supNms=list(CLASSES.keys()))
+
     assert len(all_part_ids) == num_parts - 1
 
     data_dict = {
@@ -80,6 +81,9 @@ def get_seg_masks(path, all_image_names, use_box_seg=False):
         # Get id's of the desired class
         cat_ids = coco.getCatIds(supNms=label)
 
+        # import pdb
+        # pdb.set_trace()
+
         # Iterate through all combinations of parts
         img_ids = []
         for ids in powerset(cat_ids):
@@ -88,6 +92,9 @@ def get_seg_masks(path, all_image_names, use_box_seg=False):
             # Select only images from this class
             img_ids.extend(coco.getImgIds(catIds=ids))
         img_ids = set(img_ids)
+
+        # import pdb
+        # pdb.set_trace()
 
         imgs = coco.loadImgs(img_ids)
         seg_masks, img_paths = [], []
@@ -156,6 +163,8 @@ def save_images_partition(partition, data_dict, idx, label, use_box_seg=False):
     # Write segmentation as tif file
     for i in idx:
         name = f'{img_paths[i].split("/")[1]}.tif'
+        # import pdb
+        # pdb.set_trace()
         save_pil_image(seg_masks[i], os.path.join(label_path, name))
 
 
