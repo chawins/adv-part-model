@@ -522,8 +522,9 @@ def get_loader_sampler_bbox(args, transforms, split):
     is_train = split == "train"
 
     # TODO: add as arg
+    root = Path(args.bbox_label_dir)
     # root = Path('/data/shared/PartImageNet/PartBoxSegmentations')
-    root = Path('/data1/chawins/PartImageNet/PartBoxSegmentations')
+    # root = Path('/data1/chawins/PartImageNet/PartBoxSegmentations')
     # root = Path('/global/scratch/users/nabeel126/PartImageNet/PartBoxSegmentations')
 
     if not args.sample:
@@ -538,7 +539,6 @@ def get_loader_sampler_bbox(args, transforms, split):
             "val": (root / "val", root / "image_labels" / 'val_sample.json', root / "annotations" / 'val_sample.json'),
             "test": (root / "test", root / "image_labels" / 'test_sample.json', root / "annotations" / 'test_sample.json' ),
         }
-
 
     img_folder, class_label_file, ann_file = PATHS[split]
 

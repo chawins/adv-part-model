@@ -15,7 +15,7 @@ class DinoBoundingBoxModel(nn.Module):
         # TODO: load weights if args.load_from_segmenter
 
         
-        self.backbone = build_backbone(args)
+        backbone = build_backbone(args)
 
         transformer = build_deformable_transformer(args)
 
@@ -38,7 +38,7 @@ class DinoBoundingBoxModel(nn.Module):
 
 
         self.object_detector = DINO(
-            self.backbone,
+            backbone,
             transformer,
             num_classes=args.seg_labels,
             # num_classes=num_classes,

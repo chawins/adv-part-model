@@ -164,6 +164,13 @@ def _get_args_parser():
         help="Path to segmentation labels",
     )
     parser.add_argument(
+        "--bbox-label-dir",
+        default="",
+        type=str,
+        help="Path to bounding box labels",
+    )
+    
+    parser.add_argument(
         "--seg-labels",
         default=10,
         type=int,
@@ -263,8 +270,6 @@ def _get_args_parser():
     )
     parser.add_argument("--save-all-epochs", action="store_true")
     parser.add_argument("--sample", action="store_true")
-    parser.add_argument("--multi-head", action="store_true")
-
 
     ### DINO args
     # TODO: clean
@@ -278,20 +283,14 @@ def _get_args_parser():
 
     # dataset parameters
     parser.add_argument('--dataset_file', default='coco')
-    # parser.add_argument('--coco_path', type=str, default='/comp_robot/cv_public_dataset/COCO2017/')
     parser.add_argument('--coco_panoptic_path', type=str)
     parser.add_argument('--remove_difficult', action='store_true')
     parser.add_argument('--fix_size', action='store_true')
 
 
     # training parameters
-    # TODO: merge output_dir and output-dir from before
-    # parser.add_argument('--output_dir', default='',
-    #                     help='path where to save, empty for no saving')
     parser.add_argument('--note', default='',
                         help='add some notes to the experiment')
-    # parser.add_argument('--device', default='cuda',
-    #                     help='device to use for training / testing')
     parser.add_argument('--pretrain_model_path', help='load from other checkpoint')
     parser.add_argument('--finetune_ignore', type=str, nargs='+')
     parser.add_argument('--start_epoch', default=0, type=int, metavar='N',
@@ -304,18 +303,6 @@ def _get_args_parser():
 
     parser.add_argument('--save_results', action='store_true')
     parser.add_argument('--save_log', action='store_true')
-
-    # distributed training parameters
-    # parser.add_argument('--world_size', default=1, type=int,
-    #                     help='number of distributed processes')
-    # parser.add_argument('--dist_url', default='env://', help='url used to set up distributed training')
-
-    # parser.add_argument("--local_rank", type=int, help='local rank for DistributedDataParallel')
-    # parser.add_argument('--amp', action='store_true',
-    #                     help="Train with mixed precision")
-    
-
-
 
     return parser
 
@@ -518,6 +505,7 @@ def main(args):
         # Map model to be loaded to specified single gpu.
         loc = "cuda:{}".format(args.gpu)
         checkpoint = torch.load(load_path, map_location=loc)
+
     model.load_state_dict(checkpoint["state_dict"])
 
     # Running evaluation
@@ -568,16 +556,6 @@ def _train(
     # Switch to train mode
     model.train()
 
-    # for index, parameter in enumerate(model.parameters()):
-    #     print(index, type(parameter))
-    #     print(torch.isnan(parameter.data).sum())
-    #     print()
-
-    #     if torch.isnan(parameter.data).sum():
-    #         import pdb
-    #         pdb.set_trace()
-    # qqq
-
     end = time.time()
     for i, samples in enumerate(train_loader):
         # Measure data loading time
@@ -598,14 +576,9 @@ def _train(
                 except:
                     need_tgt_for_training = False
 
-                # images, target_bbox, targets = samples
-                # print(len(samples))
-                # import pdb
-                # pdb.set_trace()
                 nested_tensors, target_bbox, targets = samples
                 images, masks = nested_tensors.decompose()
                 targets = torch.LongTensor(targets)
-                
             else:
                 images, segs, targets = samples
                 segs = segs.cuda(args.gpu, non_blocking=True)
@@ -625,26 +598,20 @@ def _train(
             targets = targets.cuda(args.gpu, non_blocking=True)
             batch_size = images.size(0)
 
-        # Compute output
-        # outputs, dino_outputs = model(images, target_bbox, need_tgt_for_training, return_mask=need_tgt_for_training)
-        # loss = criterion(outputs, dino_outputs, target_bbox, targets)
-        # print('lossssss')
-        # import pdb
-        # pdb.set_trace()
-
         with amp.autocast(enabled=not args.full_precision):
-            
             if args.obj_det_arch == "dino": 
                 forward_args = {'masks':masks, 'dino_targets': target_bbox, 'need_tgt_for_training': need_tgt_for_training, 'return_mask': False}
-                # images = attack(images, targets, forward_args)
                 images = attack(images, targets, **forward_args)
 
-                # if args.multi_head:
+                if args.adv_train in ("trades"):
+                    masks = torch.cat([masks.detach(), masks.detach()], dim=0)
+                    target_bbox = [*target_bbox, *target_bbox]
+
                 outputs, dino_outputs = model(images, masks, target_bbox, need_tgt_for_training, return_mask=True)
                 loss = criterion(outputs, dino_outputs, target_bbox, targets)
-                # else:
-                #     outputs, dino_outputs = model(images, masks, target_bbox, need_tgt_for_training, return_mask=True)
-                #     loss = criterion(outputs, dino_outputs, target_bbox, targets)
+
+                if args.adv_train in ("trades", "mat"):
+                    outputs = outputs[batch_size:]
             else:
                 if attack.use_mask:
                     # Attack for part models where both class and segmentation
@@ -796,23 +763,6 @@ def _validate(val_loader, model, criterion, attack, args):
             targets = targets.cuda(args.gpu, non_blocking=True)
             batch_size = images.size(0)
 
-
-
-        # if args.obj_det_arch == "dino": 
-        #     from DINO.util.utils import to_device
-        #     device = 'cuda'
-        #     images = images.to(device)
-        #     target_bbox = [{k: to_device(v, device) for k, v in t.items()} for t in target_bbox]
-        #     # images = images.cuda(args.gpu, non_blocking=True)
-        #     # target_bbox = [{k: v.cuda(args.gpu, non_blocking=True) for k, v in t.items()} for t in target_bbox]
-        #     targets = targets.cuda(args.gpu, non_blocking=True)
-        #     batch_size = targets.size(0)
-        #     # batch_size = images.size(0)
-        # else:
-        #     images = images.cuda(args.gpu, non_blocking=True)
-        #     targets = targets.cuda(args.gpu, non_blocking=True)
-        #     batch_size = images.size(0)
-
         # DEBUG: fixed clean segmentation masks
         if "clean" in args.experiment:
             model(images, clean=True)
@@ -821,22 +771,7 @@ def _validate(val_loader, model, criterion, attack, args):
         with torch.no_grad():
             if args.obj_det_arch == "dino": 
                 forward_args = {'masks':masks, 'dino_targets': target_bbox, 'need_tgt_for_training': need_tgt_for_training, 'return_mask': False}
-                # print('attack', attack)
-                # print('images', images.shape)
-                # print('targets', targets.shape)
-                # print('forward_args', forward_args)
-                # print(args.rank, images.shape)
-                # if len(images) == 1:
-                #     images = torch.cat([images, images], dim=0)
-                #     masks = torch.cat([masks, masks], dim=0)
-                #     print('corrected')
-                # print(args.rank, images.shape)
                 images = attack(images, targets, **forward_args)
-
-                # if args.multi_head:
-                #     outputs, dino_outputs = model(images, masks, target_bbox, need_tgt_for_training, return_mask=True)
-                #     loss = criterion(outputs, dino_outputs, targets)
-                # else:
                 outputs = model(images, masks, target_bbox, need_tgt_for_training, return_mask=False)
                 loss = criterion(outputs, targets)
             else:

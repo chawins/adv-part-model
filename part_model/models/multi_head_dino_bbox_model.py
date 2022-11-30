@@ -11,10 +11,7 @@ class MultiHeadDinoBoundingBoxModel(nn.Module):
     def __init__(self, args):
         print("=> Initializing DinoBoundingBoxModel...")
         super(MultiHeadDinoBoundingBoxModel, self).__init__()
-        
-        # TODO: load weights if args.load_from_segmenter
-
-        
+                
         self.backbone = build_backbone(args)
 
         transformer = build_deformable_transformer(args)
@@ -74,9 +71,6 @@ class MultiHeadDinoBoundingBoxModel(nn.Module):
         )
 
         self.num_classes = args.num_classes
-        #         (avgpool): AdaptiveAvgPool2d(output_size=(1, 1))
-        #   (fc): Linear(in_features=2048, out_features=1000, bias=True)
-
 
     def forward(self, images, masks, dino_targets, need_tgt_for_training, return_mask=False, **kwargs):
         nested_tensors = NestedTensor(images, masks)
