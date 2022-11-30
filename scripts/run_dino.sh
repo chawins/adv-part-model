@@ -87,23 +87,23 @@ python3 prepare_part_imagenet_bbox.py --label-dir $DATAPATH --split test
 
 OUTPUT_DIR='/data1/nab_126/adv-part-model/models/part-image-net/two_head_dino/' # need to change
 # pretrain dino two headed bbox part model
-# CUDA_VISIBLE_DEVICES=$GPU torchrun \
-#     --standalone --nnodes=1 --max_restarts 0 --nproc_per_node=$NUM_GPU \
-#     main.py --dist-url tcp://localhost:$PORT \
-#     --seg-backbone resnet50 --obj-det-arch dino --full-precision --pretrained \
-#     --data $DATAPATH --seg-label-dir $SEGPATH --bbox-label-dir $BBOXDIR --dataset $DATASET --batch-size $BS \
-#     --adv-train none \
-#     --seg-const-trn 0.5 \
-#     --lr 0.0001 \
-#     --epsilon $EPS --atk-norm Linf \
-#     --output-dir $OUTPUT_DIR/pretrained \
-#     --epochs $EPOCHS \
-#     --experiment part-bbox_2heads_d-norm_img-semi \
-#     --seg-labels 41 \
-#     --config_file DINO/config/DINO/DINO_4scale_modified.py \
-#     --options dn_scalar=100 dn_label_coef=1.0 dn_bbox_coef=1.0
+CUDA_VISIBLE_DEVICES=$GPU torchrun \
+    --standalone --nnodes=1 --max_restarts 0 --nproc_per_node=$NUM_GPU \
+    main.py --dist-url tcp://localhost:$PORT \
+    --seg-backbone resnet50 --obj-det-arch dino --full-precision --pretrained \
+    --data $DATAPATH --seg-label-dir $SEGPATH --bbox-label-dir $BBOXDIR --dataset $DATASET --batch-size $BS \
+    --adv-train none \
+    --seg-const-trn 0.5 \
+    --lr 0.0001 \
+    --epsilon $EPS --atk-norm Linf \
+    --output-dir $OUTPUT_DIR/pretrained \
+    --epochs $EPOCHS \
+    --experiment part-bbox_2heads_d-norm_img-semi \
+    --seg-labels 41 \
+    --config_file DINO/config/DINO/DINO_4scale_modified.py \
+    --options dn_scalar=100 dn_label_coef=1.0 dn_bbox_coef=1.0
 
-# # adv train (pgd) dino two headed bbox part model
+# adv train (pgd) dino two headed bbox part model
 CUDA_VISIBLE_DEVICES=$GPU torchrun \
     --standalone --nnodes=1 --max_restarts 0 --nproc_per_node=$NUM_GPU \
     main.py --dist-url tcp://localhost:$PORT \
