@@ -39,13 +39,13 @@ class HopSkipJumpAttack(AttackModule):
         )
 
     def forward(self, x, y):
-        mode = self.core_model.training
-        self.core_model.eval()
+        mode = self._core_model.training
+        self._core_model.eval()
         criteria = foolbox.criteria.Misclassification(y)
         x_adv = self.attack.run(self.model, x, criterion=criteria)
         delta = x_adv - x
-        delta.clamp_(- self.eps, self.eps)
+        delta.clamp_(- self._eps, self._eps)
         x_adv = x + delta
         x_adv.clamp_(0, 1)
-        self.core_model.train(mode)
+        self._core_model.train(mode)
         return x_adv

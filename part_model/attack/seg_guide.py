@@ -10,12 +10,12 @@ import torch.nn.functional as F
 from torchvision.utils import save_image
 
 import part_model.utils.loss as loss_lib
-from part_model.attack.base import AttackModule
+from part_model.attack.pgd import PGDAttack
 
 _EPS = 1e-6
 
 
-class SegGuidedAttackModule(AttackModule):
+class SegGuidedAttack(PGDAttack):
     def __init__(
         self,
         attack_config,
@@ -36,9 +36,6 @@ class SegGuidedAttackModule(AttackModule):
             raise ValueError("classifier must be torch.Module and not None.")
         self.classifier = classifier
         self.seg_labels = seg_labels
-        self.num_steps = attack_config["pgd_steps"]
-        self.step_size = attack_config["pgd_step_size"]
-        self.num_restarts = attack_config["num_restarts"]
         self.use_mask = True
 
         # "opt": optimizes for worst-case mask.
@@ -137,7 +134,6 @@ class SegGuidedAttackModule(AttackModule):
 
     def _select_opt(self, y_2nd: torch.Tensor) -> torch.Tensor:
         raise NotImplementedError()
-        return
 
     def _select_random(self, y_sort: torch.Tensor) -> torch.Tensor:
         guide_masks = []
@@ -210,7 +206,7 @@ class SegGuidedAttackModule(AttackModule):
             return guide_masks.to(x.device), y_guides.to(x.device)
 
         with torch.no_grad():
-            logits, _ = self.core_model(x, return_mask=True)
+            logits, _ = self._core_model(x, return_mask=True)
 
         # Get 2nd-most confident class
         batch_size = logits.shape[0]
@@ -246,8 +242,8 @@ class SegGuidedAttackModule(AttackModule):
         y_seg: torch.Tensor,
         guides: tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None = None,
     ) -> torch.Tensor:
-        mode = self.core_model.training
-        self.core_model.eval()
+        mode = self._core_model.training
+        self._core_model.eval()
         y_orig = y.clone()
 
         if guides is None:
@@ -272,7 +268,7 @@ class SegGuidedAttackModule(AttackModule):
 
             if x_init.ndim == x.ndim:
                 # Randomly initialize adversarial inputs
-                x_adv = x + torch.zeros_like(x).uniform_(-self.eps, self.eps)
+                x_adv = x + torch.zeros_like(x).uniform_(-self._eps, self._eps)
                 x_adv = torch.clamp(x_adv, 0, 1)
             else:
                 x_adv = x_init[i % num_guides].clone().detach()
@@ -286,7 +282,7 @@ class SegGuidedAttackModule(AttackModule):
 
                 # Compute logits, loss, gradients
                 with torch.enable_grad():
-                    logits = self.core_model(x_adv, return_mask=True)
+                    logits = self._core_model(x_adv, return_mask=True)
                     loss = loss_fn(logits, y, guide_mask).mean()
                     if self.targeted:
                         loss *= -1
@@ -296,7 +292,7 @@ class SegGuidedAttackModule(AttackModule):
                     # Perform gradient update, project to norm ball
                     x_adv = x_adv.detach() + self.step_size * torch.sign(grads)
                     x_adv = torch.min(
-                        torch.max(x_adv, x - self.eps), x + self.eps
+                        torch.max(x_adv, x - self._eps), x + self._eps
                     )
                     # Clip perturbed inputs to image domain
                     x_adv = torch.clamp(x_adv, 0, 1)
@@ -319,7 +315,7 @@ class SegGuidedAttackModule(AttackModule):
                 # Update worst-case inputs with itemized final losses only in
                 # 2nd stage.
                 fin_losses = self.clf_loss_fn(
-                    self.core_model(x_adv, return_mask=True), y_orig, None
+                    self._core_model(x_adv, return_mask=True), y_orig, None
                 ).reshape(worst_losses.shape)
                 up_mask = (fin_losses >= worst_losses).float()
                 x_adv_worst = x_adv * up_mask + x_adv_worst * (1 - up_mask)
@@ -343,14 +339,14 @@ class SegGuidedAttackModule(AttackModule):
         # pdb.set_trace()
 
         # Return worst-case perturbed input logits
-        self.core_model.train(mode)
+        self._core_model.train(mode)
 
         if in_1st_stage:
             return guide_masks, guide_labels, x_adv_worst.detach()
         return x_adv_worst.detach()
 
     def _forward(self, *args, **kwargs):
-        if self.norm == "L2":
+        if self._norm == "L2":
             return self._forward_l2(*args, **kwargs)
         return self._forward_linf(*args, **kwargs)
 

@@ -1,10 +1,11 @@
-import os
-from pathlib import Path
-import json
-import numpy as np
-from PIL import Image
 import argparse
 import glob
+import json
+import os
+from pathlib import Path
+
+import numpy as np
+from PIL import Image
 from skimage.measure import label, regionprops
 
 # # reds

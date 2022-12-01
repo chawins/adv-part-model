@@ -7,18 +7,18 @@ from part_model.dataloader import DATASET_DICT
 class BoundingBoxModel(nn.Module):
     def __init__(self, args, segmenter):
         print("=> Initializing BoundingBoxModel...")
-        super(BoundingBoxModel, self).__init__()
+        super().__init__()
         self.segmenter = segmenter
         self.no_bg = "nobg" in args.experiment
         self.use_conv1d = "conv1d" in args.experiment
         dim_per_bbox = 10 if self.use_conv1d else 5
         input_dim = (args.seg_labels - int(self.no_bg)) * dim_per_bbox
-        datasetDict = DATASET_DICT[args.dataset]
+        dataset_dict = DATASET_DICT[args.dataset]
 
         self.norm_by_obj = "norm_obj" in args.experiment
         if self.norm_by_obj:
             # Get matrix that maps parts to object class
-            part_to_class = datasetDict["part_to_class"]
+            part_to_class = dataset_dict["part_to_class"]
             part_to_class = torch.tensor(part_to_class, dtype=torch.float32)
             bg_idx = 1 if self.no_bg else 0
             self.register_buffer(
@@ -29,7 +29,7 @@ class BoundingBoxModel(nn.Module):
 
         self.norm_by_img = "norm_img" in args.experiment
         if self.norm_by_img:
-            _, height, width = datasetDict["input_dim"]
+            _, height, width = dataset_dict["input_dim"]
             self.height = height
             self.width = width
             self.totalPixels = height * width

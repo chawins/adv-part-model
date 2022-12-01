@@ -7,10 +7,10 @@ import torch.nn.functional as F
 from torch import nn
 
 import part_model.utils.loss as loss_lib
-from part_model.attack.pgd import PGDAttackModule
+from part_model.attack.pgd import PGDAttack
 
 
-class SegInverseAttackModule(PGDAttackModule):
+class SegInverseAttack(PGDAttack):
     """Attack part models in inverse order.
 
     This algorithm first attacks the second-stage classifier of the part model
@@ -115,7 +115,7 @@ class SegInverseAttackModule(PGDAttackModule):
         # Repeat PGD for specified number of restarts
         for _ in range(self._num_restarts):
 
-            x_adv = x + torch.zeros_like(x).uniform_(-self.eps, self.eps)
+            x_adv = x + torch.zeros_like(x).uniform_(-self._eps, self._eps)
             x_adv = torch.clamp(x_adv, 0, 1)
 
             # First find the mask that fools classifier
@@ -142,7 +142,7 @@ class SegInverseAttackModule(PGDAttackModule):
                     # Perform gradient update, project to norm ball
                     x_adv = x_adv.detach() + self._step_size * torch.sign(grads)
                     x_adv = torch.min(
-                        torch.max(x_adv, x - self.eps), x + self.eps
+                        torch.max(x_adv, x - self._eps), x + self._eps
                     )
                     # Clip perturbed inputs to image domain
                     x_adv = torch.clamp(x_adv, 0, 1)
@@ -165,7 +165,7 @@ class SegInverseAttackModule(PGDAttackModule):
         return x_adv_worst.detach()
 
     def _forward(self, *args, **kwargs):
-        if self.norm == "L2":
+        if self._norm == "L2":
             return self._forward_l2(*args, **kwargs)
         return self._forward_linf(*args, **kwargs)
 

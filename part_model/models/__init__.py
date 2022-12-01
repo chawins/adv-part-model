@@ -8,14 +8,15 @@ import torchvision
 from torch import nn
 from torch.cuda import amp
 
-from .dino_bbox_model import DinoBoundingBoxModel
-from .multi_head_dino_bbox_model import MultiHeadDinoBoundingBoxModel
-
 from part_model.dataloader import DATASET_DICT
 from part_model.models.bbox_model import BoundingBoxModel
 from part_model.models.clean_mask_model import CleanMaskModel
 from part_model.models.common import Normalize
+from part_model.models.dino_bbox_model import DinoBoundingBoxModel
 from part_model.models.groundtruth_mask_model import GroundtruthMaskModel
+from part_model.models.multi_head_dino_bbox_model import (
+    MultiHeadDinoBoundingBoxModel,
+)
 from part_model.models.part_fc_model import PartFCModel
 from part_model.models.part_mask_model import PartMaskModel
 from part_model.models.part_seg_cat_model import PartSegCatModel
@@ -58,7 +59,7 @@ def build_classifier(args):
     if args.arch == "resnet101":
         # timm does not have pretrained resnet101
         model = torchvision.models.resnet101(
-            pretrained=args.pretrained, progress=True
+            weights=args.pretrained, progress=True
         )
         rep_dim = 2048
     else:
@@ -77,12 +78,11 @@ def build_classifier(args):
         exp_tokens = tokens[2:]
 
         if args.seg_arch is not None:
-            print("=> building segmentation model...")
+            print("=> Building segmentation model...")
             segmenter = SEGM_BUILDER[args.seg_arch](args)
         elif args.obj_det_arch is not None:
-            print("=> building object detection model...")
-            pass 
-        
+            print("=> Building detection model...")
+
         if args.freeze_seg:
             # Froze all weights of the part segmentation model
             for param in segmenter.parameters():
@@ -148,10 +148,10 @@ def build_classifier(args):
             model = TwoHeadModel(args, segmenter, "e")
         elif model_token == "pixel":
             model = PixelCountModel(args, segmenter, None)
-        elif model_token == "bbox_2heads_d":           
+        elif model_token == "bbox_2heads_d":
             model = MultiHeadDinoBoundingBoxModel(args)
         elif model_token == "bbox":
-            # two options, either bbox model from object detection or bbox from segmentation model 
+            # two options, either bbox model from object detection or bbox from segmentation model
             if args.obj_det_arch == "dino":
                 model = DinoBoundingBoxModel(args)
             else:
@@ -165,17 +165,9 @@ def build_classifier(args):
 
         n_seg = sum(p.numel() for p in model.parameters()) / 1e6
         nt_seg = (
-            sum(p.numel() for p in model.parameters() if p.requires_grad)
-            / 1e6
+            sum(p.numel() for p in model.parameters() if p.requires_grad) / 1e6
         )
         print(f"=> model params (train/total): {nt_seg:.2f}M/{n_seg:.2f}M")
-
-        # n_seg = sum(p.numel() for p in segmenter.parameters()) / 1e6
-        # nt_seg = (
-        #     sum(p.numel() for p in segmenter.parameters() if p.requires_grad)
-        #     / 1e6
-        # )
-        # print(f"=> segmenter params (train/total): {nt_seg:.2f}M/{n_seg:.2f}M")    
     else:
         print("=> building a normal classifier (no segmentation)")
         model.fc = nn.Linear(rep_dim, args.num_classes)
@@ -186,15 +178,23 @@ def build_classifier(args):
 
     model = wrap_distributed(args, model)
 
-    
-
     if args.obj_det_arch == "dino":
         optim_params = [
-            {"params": [p for n, p in model.named_parameters() if "backbone" not in n and p.requires_grad]},
             {
-                "params": [p for n, p in model.named_parameters() if "backbone" in n and p.requires_grad],
+                "params": [
+                    p
+                    for n, p in model.named_parameters()
+                    if "backbone" not in n and p.requires_grad
+                ]
+            },
+            {
+                "params": [
+                    p
+                    for n, p in model.named_parameters()
+                    if "backbone" in n and p.requires_grad
+                ],
                 "lr": args.lr_backbone,
-            }
+            },
         ]
     else:
         p_wd, p_non_wd = [], []
@@ -209,7 +209,7 @@ def build_classifier(args):
             {"params": p_wd, "weight_decay": args.wd},
             {"params": p_non_wd, "weight_decay": 0},
         ]
-        
+
     if args.optim == "sgd":
         optimizer = torch.optim.SGD(
             optim_params,
@@ -226,7 +226,6 @@ def build_classifier(args):
             weight_decay=args.wd,
         )
 
-        
     scaler = amp.GradScaler(enabled=not args.full_precision)
 
     # Optionally resume from a checkpoint
@@ -278,13 +277,6 @@ def build_segmentation(args):
 
     if args.distributed:
         model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
-
-    # model_without_ddp = model[1]
-    # if args.distributed:
-    #     model = torch.nn.parallel.DistributedDataParallel(
-    #         model, device_ids=[args.gpu]
-    #     )
-    #     model_without_ddp = model.module[1]
     model = wrap_distributed(args, model)
     model_without_ddp = model.module[1]
 

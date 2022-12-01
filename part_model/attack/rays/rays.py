@@ -125,7 +125,7 @@ class RayS(AttackModule):
         x_adv, _, _, idx_success = self.attack_hard_label(x, y, target=target)
         # x_adv[~idx_success] = x[~idx_success]
         delta = x_adv - x
-        delta.clamp_(- self.eps, self.eps)
+        delta.clamp_(- self._eps, self._eps)
         x_adv = x + delta
         x_adv.clamp_(0, 1)
         return x_adv

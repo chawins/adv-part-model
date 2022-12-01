@@ -1,20 +1,23 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from part_model.dataloader import DATASET_DICT
 
 from DINO.main import build_model_main
-from DINO.models.dino.dino import build_backbone, build_deformable_transformer, DINO
+from DINO.models.dino.dino import (
+    DINO,
+    build_backbone,
+    build_deformable_transformer,
+)
 from DINO.util.misc import NestedTensor
+
 
 class DinoBoundingBoxModel(nn.Module):
     def __init__(self, args):
         print("=> Initializing DinoBoundingBoxModel...")
-        super(DinoBoundingBoxModel, self).__init__()
-        
+        super().__init__()
+
         # TODO: load weights if args.load_from_segmenter
 
-        
         backbone = build_backbone(args)
 
         transformer = build_deformable_transformer(args)
@@ -35,7 +38,6 @@ class DinoBoundingBoxModel(nn.Module):
             dec_pred_bbox_embed_share = args.dec_pred_bbox_embed_share
         except:
             dec_pred_bbox_embed_share = True
-
 
         self.object_detector = DINO(
             backbone,
@@ -59,16 +61,16 @@ class DinoBoundingBoxModel(nn.Module):
             two_stage_class_embed_share=args.two_stage_class_embed_share,
             decoder_sa_type=args.decoder_sa_type,
             num_patterns=args.num_patterns,
-            dn_number = args.dn_number if args.use_dn else 0,
-            dn_box_noise_scale = args.dn_box_noise_scale,
-            dn_label_noise_ratio = args.dn_label_noise_ratio,
-            dn_labelbook_size = dn_labelbook_size,
+            dn_number=args.dn_number if args.use_dn else 0,
+            dn_box_noise_scale=args.dn_box_noise_scale,
+            dn_label_noise_ratio=args.dn_label_noise_ratio,
+            dn_labelbook_size=dn_labelbook_size,
         )
-                        
+
         # setattr(args, 'num_classes', tmp_num_classes)
         # logits for part labels and 4 for bounding box coords
-        input_dim = args.num_queries * (args.seg_labels+4)
-        print('input_dim', input_dim)
+        input_dim = args.num_queries * (args.seg_labels + 4)
+        print("input_dim", input_dim)
 
         # how did we get 50 here
         self.core_model = nn.Sequential(
@@ -81,7 +83,15 @@ class DinoBoundingBoxModel(nn.Module):
             nn.Linear(50, args.num_classes),
         )
 
-    def forward(self, images, masks, dino_targets, need_tgt_for_training, return_mask=False, **kwargs):
+    def forward(
+        self,
+        images,
+        masks,
+        dino_targets,
+        need_tgt_for_training,
+        return_mask=False,
+        **kwargs
+    ):
         # Object Detection part
         nested_tensors = NestedTensor(images, masks)
 
@@ -90,18 +100,23 @@ class DinoBoundingBoxModel(nn.Module):
         # out[0][-1].tensors
         # import pdb
         # pdb.set_trace()
-        
+
         if need_tgt_for_training:
             dino_outputs = self.object_detector(nested_tensors, dino_targets)
         else:
             dino_outputs = self.object_detector(nested_tensors)
-        
+
         # concatenate softmax'd logits and bounding box predictions
-        features = torch.cat([F.softmax(dino_outputs['pred_logits'], dim=1), dino_outputs['pred_boxes']], dim=2)
+        features = torch.cat(
+            [
+                F.softmax(dino_outputs["pred_logits"], dim=1),
+                dino_outputs["pred_boxes"],
+            ],
+            dim=2,
+        )
         out = self.core_model(features)
-        
+
         if return_mask:
             return out, dino_outputs
             # return out, outputs['pred_logits'], outputs['pred_boxes']
         return out
-

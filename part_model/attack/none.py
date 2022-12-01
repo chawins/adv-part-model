@@ -1,12 +1,16 @@
+"""No attack (identity function)."""
 
-from .base import AttackModule
+import torch
+
+from part_model.attack.base import AttackModule
 
 
-class NoAttackModule(AttackModule):
+class NoAttack(AttackModule):
+    """No attack."""
 
-    def __init__(self, attack_config, core_model, loss_fn, norm, eps, **kwargs):
-        super(NoAttackModule, self).__init__(
-            attack_config, core_model, loss_fn, norm, eps, **kwargs)
-
-    def forward(self, x, y, **kwargs):
-        return x
+    def forward(
+        self, inputs: torch.Tensor, targets: torch.Tensor, **kwargs
+    ) -> torch.Tensor:
+        """Returns original inputs."""
+        _ = targets, kwargs  # Unused
+        return inputs

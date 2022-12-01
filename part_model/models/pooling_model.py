@@ -62,13 +62,13 @@ class PoolingModel(nn.Module):
         var_per_mask = 5
 
         if use_bn_after_pooling:
-            bn = [nn.BatchNorm2d(input_dim), nn.ReLU(inplace=True)]
+            batchnorm = [nn.BatchNorm2d(input_dim), nn.ReLU(inplace=True)]
         else:
-            bn = []
+            batchnorm = []
 
         self.core_model = nn.Sequential(
             nn.AdaptiveAvgPool2d(pool_size),
-            *bn,
+            *batchnorm,
             nn.Conv2d(
                 input_dim, input_dim * var_per_mask, (pool_size, pool_size)
             ),
@@ -100,6 +100,7 @@ class PoolingModel(nn.Module):
             Predicted classes and segmentation maskes (if return_mask is True)
             in logit form.
         """
+        _ = kwargs  # Unused
         # Segmentation part
         logits_masks = self.segmenter(images)
         masks = self.feature_extactor(logits_masks)

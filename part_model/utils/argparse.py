@@ -243,6 +243,7 @@ def get_args_parser() -> argparse.ArgumentParser:
     parser.add_argument("--coco_panoptic_path", type=str)
     parser.add_argument("--remove_difficult", action="store_true")
     parser.add_argument("--fix_size", action="store_true")
+    parser.add_argument("--sample", action="store_true")
 
     # training parameters
     parser.add_argument(
