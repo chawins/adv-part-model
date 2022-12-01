@@ -206,9 +206,7 @@ def main() -> None:
                 epoch,
             )
 
-            # FIXME
-            # if (epoch + 1) % 2 == 0:
-            if True:
+            if (epoch + 1) % 2 == 0:
                 val_stats = _validate(val_loader, model, criterion, no_attack)
                 clean_acc1, acc1 = val_stats["acc1"], None
                 is_best = clean_acc1 > best_acc1
@@ -314,10 +312,6 @@ def _train(train_loader, model, criterion, attack, optimizer, scaler, epoch):
     for i, samples in enumerate(train_loader):
         # Measure data loading time
         data_time.update(time.time() - end)
-
-        # FIXME
-        if i == 100:
-            break
 
         if len(samples) == 2:
             images, targets = samples
