@@ -11,6 +11,8 @@ import os
 import pickle
 import sys
 import time
+import PIL
+from PIL import Image
 
 import numpy as np
 import torch
@@ -26,6 +28,7 @@ from torch.distributed.elastic.multiprocessing.errors import record
 # from torchmetrics import IoU as IoU   # Use this for older version of torchmetrics
 from torchmetrics import JaccardIndex as IoU
 from torchvision.utils import save_image
+from torchvision import transforms
 
 from part_model.attack import (
     setup_eval_attacker,
@@ -244,6 +247,12 @@ def _get_args_parser():
         help="Softmax temperature for part-seg model",
     )
     parser.add_argument("--save-all-epochs", action="store_true")
+    parser.add_argument(
+        "--prediction-path",
+        help="path of predicted masks",
+        default="/data/kornrapatp/test",
+        type=str,
+    )
     return parser
 
 
@@ -256,7 +265,6 @@ def main(args):
     init_distributed_mode(args)
 
     global best_acc1
-    print("start", args.seg_labels)
 
     # Fix the seed for reproducibility
     seed = args.seed + get_rank()
@@ -267,17 +275,14 @@ def main(args):
     print("=> creating dataset")
     loaders = load_dataset(args)
     train_loader, train_sampler, val_loader, test_loader = loaders
-    print("load data", args.seg_labels)
 
     # Create model
     print("=> creating model")
     model, optimizer, scaler = build_model(args)
     cudnn.benchmark = True
-    print("create model", args.seg_labels)
 
     # Define loss function
     criterion, train_criterion = get_train_criterion(args)
-    print("define loss", args.seg_labels)
 
     # Logging
     if is_main_process():
@@ -390,9 +395,7 @@ def main(args):
     for attack in eval_attack:
         # Use DataParallel (not distributed) model for AutoAttack.
         # Otherwise, DDP model can get timeout or c10d failure.
-        stats = _validate(
-            test_loader, model, criterion, attack[1], args
-        )  # TODO: change back to test_loader
+        stats = _validate(test_loader, model, criterion, attack[1], args)
         print(f"=> {attack[0]}: {stats}")
         stats["attack"] = str(attack[0])
         dist_barrier()
@@ -455,7 +458,7 @@ def _train(train_loader, model, criterion, attack, optimizer, scaler, epoch, arg
         batch_size = images.size(0)
 
         # Compute output
-        with amp.autocast(dtype=torch.float16, enabled=not args.full_precision):
+        with amp.autocast(enabled=not args.full_precision):
             if attack.use_mask:
                 # Attack for part models where both class and segmentation
                 # labels are used
@@ -540,28 +543,26 @@ def _validate(val_loader, model, criterion, attack, args):
 
     # switch to evaluate mode
     model.eval()
-
+    count = 0
     end = time.time()
     for i, samples in enumerate(val_loader):
-        if i < 100:
-            continue
         # measure data loading time
         data_time.update(time.time() - end)
-        if len(samples) == 2:
-            images, targets = samples
+        if len(samples) == 3:
+            images, targets, filenames = samples
             segs = None
         elif seg_only:
-            images, targets, _ = samples
+            images, targets, _, filenames = samples
             segs = None
         else:
-            images, segs, targets = samples
+            images, segs, targets, filenames = samples
             segs = segs.cuda(args.gpu, non_blocking=True)
-        # print(images.shape, segs, targets)
+
         # DEBUG
         if args.debug:
             save_image(COLORMAP[segs].permute(0, 3, 1, 2), "gt.png")
             save_image(images, "test.png")
-        save_image(COLORMAP[targets].permute(0, 3, 1, 2), "gt.png")
+        # save_image(COLORMAP[targets].permute(0, 3, 1, 2), "gt.png")
         save_image(images, "test.png")
 
         images = images.cuda(args.gpu, non_blocking=True)
@@ -571,6 +572,11 @@ def _validate(val_loader, model, criterion, attack, args):
         # DEBUG: fixed clean segmentation masks
         if "clean" in args.experiment:
             model(images, clean=True)
+
+        def save_pil_image(img, path):
+            image_path = os.path.join(path)
+            pil_img = PIL.Image.fromarray(img)
+            pil_img.save(image_path)
 
         # compute output
         with torch.no_grad():
@@ -589,6 +595,33 @@ def _validate(val_loader, model, criterion, attack, args):
 
             if segs is None or "normal" in args.experiment or seg_only:
                 outputs = model(images)
+                out_masks = outputs.argmax(1)
+                for j in range(len(filenames)):
+                    count += 1
+                    print(count)
+                    original_image = Image.open(
+                        f"{args.data}/JPEGImages/{filenames[j]}.JPEG"
+                    )
+                    original_image = transforms.ToTensor()(original_image)
+                    # print(original_image.shape)
+                    _, H, W = original_image.shape
+
+                    pseudo_mask = out_masks[j].unsqueeze(0)
+                    # print(pseudo_mask.shape)
+                    pseudo_mask = transforms.functional.resize(
+                        pseudo_mask,
+                        (H, W),
+                        interpolation=transforms.InterpolationMode.NEAREST,
+                    ).squeeze(0)
+                    # print(pseudo_mask.shape)
+
+                    name = f'{filenames[j].split("/")[1]}.tif'
+                    save_pil_image(
+                        pseudo_mask.detach().cpu().numpy().astype(np.int16),
+                        os.path.join(args.prediction_path, name),
+                    )
+                    continue
+
             elif "groundtruth" in args.experiment:
                 outputs = model(images, segs=segs)
                 loss = criterion(outputs, targets)
@@ -599,17 +632,14 @@ def _validate(val_loader, model, criterion, attack, args):
                 pixel_acc = pixel_accuracy(masks, segs)
                 pacc.update(pixel_acc.item(), batch_size)
             loss = criterion(outputs, targets)
+        # save_image(
+        #     COLORMAP[outputs.argmax(1)].permute(0, 3, 1, 2),
+        #     "pred_seg_clean.png",
+        # )
+        # 0 / 0
 
         # DEBUG
         # if args.debug and isinstance(attack, PGDAttackModule):
-        # print(outputs.shape)
-        save_image(
-            COLORMAP[outputs.argmax(1)].permute(0, 3, 1, 2),
-            "pred_seg_clean.png",
-        )
-        print(targets[0], outputs.argmax(1)[0])
-        0 / 0
-        print(targets == outputs.argmax(1))
         if args.debug:
             save_image(
                 COLORMAP[masks.argmax(1)].permute(0, 3, 1, 2),
