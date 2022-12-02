@@ -23,7 +23,7 @@ from torch.backends import cudnn
 from torch.cuda import amp
 
 # from torchmetrics import IoU as IoU   # Use this for older version of torchmetrics
-from torchmetrics import JaccardIndex as IoU
+from torchmetrics.classification import MulticlassJaccardIndex as IoU
 from torchvision.utils import save_image
 
 from DINO.util.utils import to_device
@@ -323,14 +323,19 @@ def _train(train_loader, model, criterion, attack, optimizer, scaler, epoch):
         else:
             # TODO(nab-126@): handling dino training
             if args.obj_det_arch == "dino":
-                try:
-                    need_tgt_for_training = args.use_dn
-                except:
-                    need_tgt_for_training = False
-                # need_tgt_for_training = False
+                # try:
+                #     need_tgt_for_training = args.use_dn
+                # except:
+                #     need_tgt_for_training = False
+                need_tgt_for_training = True
                 nested_tensors, target_bbox, targets = samples
                 images, masks = nested_tensors.decompose()
-                targets = torch.LongTensor(targets)
+                masks = masks.cuda(args.gpu, non_blocking=True)
+                targets = torch.tensor(targets, device=masks.device, dtype=torch.long)
+                target_bbox = [
+                    {k: v.cuda(args.gpu, non_blocking=True) for k, v in t.items()}
+                    for t in target_bbox
+                ]
             else:
                 images, segs, targets = samples
                 segs = segs.cuda(args.gpu, non_blocking=True)
@@ -338,12 +343,6 @@ def _train(train_loader, model, criterion, attack, optimizer, scaler, epoch):
         batch_size: int = targets.size(0)
         images = images.cuda(args.gpu, non_blocking=True)
         targets = targets.cuda(args.gpu, non_blocking=True)
-        if args.obj_det_arch == "dino":
-            masks = masks.cuda(args.gpu, non_blocking=True)
-            target_bbox = [
-                {k: to_device(v, images.device) for k, v in t.items()}
-                for t in target_bbox
-            ]
 
         with amp.autocast(enabled=not args.full_precision):
             if args.obj_det_arch == "dino":
@@ -465,18 +464,22 @@ def _validate(val_loader, model, criterion, attack):
         else:
             # handling dino validation
             if args.obj_det_arch == "dino":
-                try:
-                    need_tgt_for_training = args.use_dn
-                except:
-                    need_tgt_for_training = False
-                # need_tgt_for_training = False
+                # try:
+                #     need_tgt_for_training = args.use_dn
+                # except:
+                #     need_tgt_for_training = False
+                need_tgt_for_training = True
                 # images, target_bbox, targets = samples
                 # import pdb
                 # pdb.set_trace()
                 nested_tensors, target_bbox, targets = samples
                 images, masks = nested_tensors.decompose()
-                targets = torch.LongTensor(targets)
-
+                masks = masks.cuda(args.gpu, non_blocking=True)
+                targets = torch.tensor(targets, device=masks.device, dtype=torch.long)
+                target_bbox = [
+                    {k: v.cuda(args.gpu, non_blocking=True) for k, v in t.items()}
+                    for t in target_bbox
+                ]
             else:
                 images, segs, targets = samples
                 segs = segs.cuda(args.gpu, non_blocking=True)
@@ -503,12 +506,6 @@ def _validate(val_loader, model, criterion, attack):
         images = images.cuda(args.gpu, non_blocking=True)
         targets = targets.cuda(args.gpu, non_blocking=True)
         batch_size = targets.size(0)
-        if args.obj_det_arch == "dino":
-            masks = masks.cuda(args.gpu, non_blocking=True)
-            target_bbox = [
-                {k: to_device(v, images.device) for k, v in t.items()}
-                for t in target_bbox
-            ]
 
         # DEBUG: fixed clean segmentation masks
         if "clean" in args.experiment:
