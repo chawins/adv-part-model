@@ -21,32 +21,22 @@ import torch.utils.data.distributed
 import wandb
 from torch.backends import cudnn
 from torch.cuda import amp
-
 # from torchmetrics import IoU as IoU   # Use this for older version of torchmetrics
 from torchmetrics.classification import MulticlassJaccardIndex as IoU
 from torchvision.utils import save_image
 
+from DINO.util.slconfig import SLConfig
 from DINO.util.utils import to_device
-from part_model.attack import (
-    setup_eval_attacker,
-    setup_train_attacker,
-    setup_val_attacker,
-)
+from part_model.attack import (setup_eval_attacker, setup_train_attacker,
+                               setup_val_attacker)
 from part_model.dataloader import COLORMAP, load_dataset
 from part_model.models import build_model
-from part_model.utils import (
-    AverageMeter,
-    ProgressMeter,
-    adjust_learning_rate,
-    dist_barrier,
-    get_compute_acc,
-    get_rank,
-    init_distributed_mode,
-    is_main_process,
-    pixel_accuracy,
-    save_on_master,
-)
+from part_model.utils import (AverageMeter, ProgressMeter,
+                              adjust_learning_rate, dist_barrier,
+                              get_compute_acc, get_rank, init_distributed_mode,
+                              is_main_process, pixel_accuracy, save_on_master)
 from part_model.utils.argparse import get_args_parser
+from part_model.utils.dataloader_visualizer import debug_dino_dataloader
 from part_model.utils.loss import get_train_criterion
 
 best_acc1 = 0
@@ -69,7 +59,7 @@ def main() -> None:
     # handling dino args
     # TODO(nab-126@): Unify args, put this in argparser?
     if args.config_file:
-        from DINO.util.slconfig import SLConfig
+        
 
         cfg = SLConfig.fromfile(args.config_file)
 
@@ -96,57 +86,12 @@ def main() -> None:
     loaders = load_dataset(args)
     train_loader, train_sampler, val_loader, test_loader = loaders
 
-    # TODO(nab-126@): remove or put in util?
+    # Debugging dataloader
     debug = False
     if debug:
-        # DEBUGGING DATALOADER
-        for i, samples in enumerate(train_loader):
+        debug_dino_dataloader(train_loader)
 
-            import torchvision
-
-            images, target_bbox, targets = samples
-
-            images, mask = images.decompose()
-
-            debug_index = 0
-            torchvision.utils.save_image(
-                images[debug_index], f"example_images/img_{debug_index}.png"
-            )
-            torchvision.utils.save_image(
-                mask[debug_index] * 1.0,
-                f"example_images/mask_{debug_index}.png",
-            )
-            img_uint8 = torchvision.io.read_image(
-                f"example_images/img_{debug_index}.png"
-            )
-            shape = target_bbox[debug_index]["size"]
-            print(target_bbox[debug_index])
-
-            # xc, xy, w, h convert to xmin, ymin, xmax, ymax
-            boxes = target_bbox[debug_index]["boxes"]
-            boxes[:, ::2] = boxes[:, ::2] * shape[1]
-            boxes[:, 1::2] = boxes[:, 1::2] * shape[0]
-
-            box_width = boxes[:, 2]
-            box_height = boxes[:, 3]
-
-            boxes[:, 0] = boxes[:, 0] - box_width / 2
-            boxes[:, 2] = boxes[:, 0] + box_width
-            boxes[:, 1] = boxes[:, 1] - box_height / 2
-            boxes[:, 3] = boxes[:, 1] + box_height
-
-            boxes = torch.tensor(boxes, dtype=torch.int)
-            img_with_boxes = torchvision.utils.draw_bounding_boxes(
-                img_uint8, boxes=boxes, colors="red"
-            )
-            torchvision.utils.save_image(
-                img_with_boxes / 255,
-                f"example_images/img_{debug_index}_with_bbox.png",
-            )
-            import pdb
-
-            pdb.set_trace()
-
+    
     # Create model
     print("=> Creating model...")
     model, optimizer, scaler = build_model(args)

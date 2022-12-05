@@ -6,7 +6,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from DINO.main import build_model_main
 from DINO.models.dino.dino import (
     DINO,
     build_backbone,

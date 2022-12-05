@@ -1,31 +1,24 @@
 import json
 import os
 import random
-
-# from DINO.datasets.coco import ConvertCocoPolysToMask, dataset_hook_register
 from pathlib import Path
 
+import DINO.datasets.transforms as T
 import numpy as np
+import PIL
 import torch
 import torch.utils.data as data
 import torchvision
-from PIL import Image
-
 from DINO.datasets.coco import ConvertCocoPolysToMask
+from DINO.datasets.transforms import crop, resize
 from DINO.util.box_ops import box_cxcywh_to_xyxy, box_iou
+from DINO.util.misc import collate_fn
 from part_model.dataloader.util import COLORMAP
 from part_model.utils import get_seg_type, np_temp_seed
 from part_model.utils.eval_sampler import DistributedEvalSampler
 from part_model.utils.image import get_seg_type
-
-# from .segmentation_transforms import (
-#     CenterCrop,
-#     Compose,
-#     RandomHorizontalFlip,
-#     RandomResizedCrop,
-#     Resize,
-#     ToTensor,
-# )
+from PIL import Image
+from torchvision.transforms import RandomResizedCrop
 
 CLASSES = {
     "Quadruped": 4,
@@ -130,9 +123,7 @@ class label2compat:
             "89": 79,
             "90": 80,
         }
-        self.category_map = {
-            int(k): v for k, v in self.category_map_str.items()
-        }
+        self.category_map = {int(k): v for k, v in self.category_map_str.items()}
 
     def __call__(self, target, img=None):
         labels = target["labels"]
@@ -232,9 +223,7 @@ class RandomSelectBoxlabels:
     def set_state(
         self, prob_first_item, prob_random_item, prob_last_item, prob_stop_sign
     ):
-        sum_prob = (
-            prob_first_item + prob_random_item + prob_last_item + prob_stop_sign
-        )
+        sum_prob = prob_first_item + prob_random_item + prob_last_item + prob_stop_sign
         assert sum_prob - 1 < 1e-6, (
             f"Sum up all prob = {sum_prob}. prob_first_item:{prob_first_item}"
             + f"prob_random_item:{prob_random_item}, prob_last_item:{prob_last_item}"
@@ -350,9 +339,7 @@ class BboxPertuber:
     def generate_pertube_samples(self):
         import torch
 
-        samples = (
-            (torch.rand(self.generate_samples, 5) - 0.5) * 2 * self.max_ratio
-        )
+        samples = (torch.rand(self.generate_samples, 5) - 0.5) * 2 * self.max_ratio
         return samples
 
     def __call__(self, target, img):
@@ -394,14 +381,10 @@ class RandomCutout:
         known_box_add[:, :5] = unknown_box
         known_box_add[:, 5].uniform_(0.5, 1)
 
-        known_box_add[:, :2] += (
-            known_box_add[:, 2:4] * (torch.rand(Ku, 2) - 0.5) / 2
-        )
+        known_box_add[:, :2] += known_box_add[:, 2:4] * (torch.rand(Ku, 2) - 0.5) / 2
         known_box_add[:, 2:4] /= 2
 
-        target["box_label_known_pertube"] = torch.cat(
-            (known_box, known_box_add)
-        )
+        target["box_label_known_pertube"] = torch.cat((known_box, known_box_add))
         return target, img
 
 
@@ -420,8 +403,7 @@ class RandomSelectBoxes:
             label = labels[idx].item()
             boxs_list[label].append(item)
         boxs_list_tensor = [
-            torch.stack(i) if len(i) > 0 else torch.Tensor(0, 4)
-            for i in boxs_list
+            torch.stack(i) if len(i) > 0 else torch.Tensor(0, 4) for i in boxs_list
         ]
 
         # random selection
@@ -573,6 +555,33 @@ def get_aux_target_hacks_list(image_set, args):
     return aux_target_hacks_list
 
 
+##################################################################################
+
+
+class RandomCrop(object):
+    def __init__(
+        self,
+        scale=(0.08, 1.0),
+        ratio=(0.75, 1.333333),
+    ) -> None:
+        self.scale = scale
+        self.ratio = ratio
+
+    def __call__(self, img: PIL.Image.Image, target: dict):
+        region = RandomResizedCrop.get_params(img, self.scale, self.ratio)
+        img, target = crop(img, target, region)
+        return img, target
+
+
+class Resize(object):
+    def __init__(self, size) -> None:
+        self.size: int = size
+
+    def __call__(self, img: PIL.Image.Image, target: dict):
+        img, target = resize(img, target, self.size)
+        return img, target
+
+
 class PartImageNetBBOXDataset(torchvision.datasets.CocoDetection):
     def __init__(
         self,
@@ -636,41 +645,10 @@ class PartImageNetBBOXDataset(torchvision.datasets.CocoDetection):
         return img, target, class_label
 
 
-# from DINO.datasets.coco import CocoDetection
-
-# class PartImageNetBBOXDataset(CocoDetection):
-#     def __init__(
-#         self,
-#         img_folder,
-#         class_label_file,
-#         ann_file,
-#         transforms,
-#         aux_target_hacks=None
-#     ):
-#         super(PartImageNetBBOXDataset, self).__init__(img_folder, ann_file, transforms, False, aux_target_hacks)
-
-#         with open(class_label_file, 'r') as openfile:
-#             self.image_to_label = json.load(openfile)
-
-#         self.classes = list(sorted(set(self.image_to_label.values())))
-#         self.num_classes = len(self.classes)
-
-#     def __getitem__(self, index):
-#         img, target = super().__getitem__(index)
-#         # print(type(img))
-#         # qq
-#         class_label = self.image_to_label[str(index)]
-#         return img, target, class_label
-
-
 def get_loader_sampler_bbox(args, transforms, split):
     is_train = split == "train"
 
-    # TODO: add as arg
     root = Path(args.bbox_label_dir)
-    # root = Path('/data/shared/PartImageNet/PartBoxSegmentations')
-    # root = Path('/data1/chawins/PartImageNet/PartBoxSegmentations')
-    # root = Path('/global/scratch/users/nabeel126/PartImageNet/PartBoxSegmentations')
 
     if not args.sample:
         PATHS = {
@@ -711,14 +689,6 @@ def get_loader_sampler_bbox(args, transforms, split):
 
     img_folder, class_label_file, ann_file = PATHS[split]
 
-    # part_imagenet_dataset = PartImageNetBBOXDataset(
-    #     img_folder,
-    #     class_label_file,
-    #     ann_file,
-    #     transforms,
-    #     aux_target_hacks=None
-    # )
-
     # add some hooks to datasets
     aux_target_hacks_list = get_aux_target_hacks_list(split, args)
     part_imagenet_dataset = PartImageNetBBOXDataset(
@@ -748,8 +718,6 @@ def get_loader_sampler_bbox(args, transforms, split):
         # shuffle = is_train
         shuffle = True
 
-    from DINO.util.misc import collate_fn
-
     batch_size = args.batch_size
     loader = torch.utils.data.DataLoader(
         part_imagenet_dataset,
@@ -762,184 +730,37 @@ def get_loader_sampler_bbox(args, transforms, split):
         collate_fn=collate_fn,  # turns images into NestedTensors
     )
 
-    # from DINO.util.misc import collate_fn
-    # batch_size = args.batch_size
-    # loader = torch.utils.data.DataLoader(
-    #     part_imagenet_dataset,
-    #     batch_size=batch_size,
-    #     shuffle=shuffle,
-    #     num_workers=args.workers,
-    #     pin_memory=True,
-    #     sampler=sampler,
-    #     drop_last=is_train
-    # )
-
-    # TODO: can we make this cleaner?
-    # PART_IMAGENET["part_to_class"] = part_imagenet_dataset.part_to_class
     PART_IMAGENET_BBOX["num_classes"] = part_imagenet_dataset.num_classes
-    # PART_IMAGENET["num_seg_labels"] = part_imagenet_dataset.num_seg_labels
 
     setattr(args, "num_classes", part_imagenet_dataset.num_classes)
-    # pto = part_imagenet_dataset.part_to_object
-    # if seg_type == "part":
-    #     seg_labels = len(pto)
-    # elif seg_type == "fg":
-    #     seg_labels = 2
-    # else:
-    #     seg_labels = pto.max().item() + 1
-    # setattr(args, "seg_labels", seg_labels)
 
     return loader, sampler
 
 
-import DINO.datasets.transforms as T
-
-
-def make_coco_transforms(
-    image_set, fix_size=False, strong_aug=False, args=None
-):
-    normalize = T.Compose(
-        [
-            T.ToTensor(),
-            T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
-        ]
-    )
-
-    # config the params for data aug
-    scales = [480, 512, 544, 576, 608, 640, 672, 704, 736, 768, 800]
-    max_size = 1333
-    scales2_resize = [400, 500, 600]
-    scales2_crop = [384, 600]
-
-    # update args from config files
-    scales = getattr(args, "data_aug_scales", scales)
-    max_size = getattr(args, "data_aug_max_size", max_size)
-    scales2_resize = getattr(args, "data_aug_scales2_resize", scales2_resize)
-    scales2_crop = getattr(args, "data_aug_scales2_crop", scales2_crop)
-
-    # resize them
-    data_aug_scale_overlap = getattr(args, "data_aug_scale_overlap", None)
-    if data_aug_scale_overlap is not None and data_aug_scale_overlap > 0:
-        data_aug_scale_overlap = float(data_aug_scale_overlap)
-        scales = [int(i * data_aug_scale_overlap) for i in scales]
-        max_size = int(max_size * data_aug_scale_overlap)
-        scales2_resize = [
-            int(i * data_aug_scale_overlap) for i in scales2_resize
-        ]
-        scales2_crop = [int(i * data_aug_scale_overlap) for i in scales2_crop]
-    # else:
-    #     scales = getattr(args, 'data_aug_scales', scales)
-    #     max_size = getattr(args, 'data_aug_max_size', max_size)
-    #     scales2_resize = getattr(args, 'data_aug_scales2_resize', scales2_resize)
-    #     scales2_crop = getattr(args, 'data_aug_scales2_crop', scales2_crop)
-
-    datadict_for_print = {
-        "scales": scales,
-        "max_size": max_size,
-        "scales2_resize": scales2_resize,
-        "scales2_crop": scales2_crop,
-    }
-    print("data_aug_params:", json.dumps(datadict_for_print, indent=2))
-
-    if image_set == "train":
-        if fix_size:
-            return T.Compose(
-                [
-                    T.RandomHorizontalFlip(),
-                    T.RandomResize([(max_size, max(scales))]),
-                    # T.RandomResize([(512, 512)]),
-                    normalize,
-                ]
-            )
-
-        if strong_aug:
-            import DINO.datasets.sltransform as SLT
-
-            return T.Compose(
-                [
-                    T.RandomHorizontalFlip(),
-                    T.RandomSelect(
-                        T.RandomResize(scales, max_size=max_size),
-                        T.Compose(
-                            [
-                                T.RandomResize(scales2_resize),
-                                T.RandomSizeCrop(*scales2_crop),
-                                T.RandomResize(scales, max_size=max_size),
-                            ]
-                        ),
-                    ),
-                    SLT.RandomSelectMulti(
-                        [
-                            SLT.RandomCrop(),
-                            # SLT.Rotate(10),
-                            SLT.LightingNoise(),
-                            SLT.AdjustBrightness(2),
-                            SLT.AdjustContrast(2),
-                        ]
-                    ),
-                    # # for debug only
-                    # SLT.RandomCrop(),
-                    # SLT.LightingNoise(),
-                    # SLT.AdjustBrightness(2),
-                    # SLT.AdjustContrast(2),
-                    # SLT.Rotate(10),
-                    normalize,
-                ]
-            )
-
-        return T.Compose(
-            [
-                T.RandomHorizontalFlip(),
-                T.RandomSelect(
-                    T.RandomResize(scales, max_size=max_size),
-                    T.Compose(
-                        [
-                            T.RandomResize(scales2_resize),
-                            T.RandomSizeCrop(*scales2_crop),
-                            T.RandomResize(scales, max_size=max_size),
-                        ]
-                    ),
-                ),
-                normalize,
-            ]
-        )
-
-    if image_set in ["val", "eval_debug", "train_reg", "test"]:
-
-        if os.environ.get("GFLOPS_DEBUG_SHILONG", False) == "INFO":
-            print("Under debug mode for flops calculation only!!!!!!!!!!!!!!!!")
-            return T.Compose(
-                [
-                    T.ResizeDebug((1280, 800)),
-                    normalize,
-                ]
-            )
-
-        return T.Compose(
-            [
-                T.RandomResize([max(scales)], max_size=max_size),
-                normalize,
-            ]
-        )
-
-    raise ValueError(f"unknown {image_set}")
-
-
 def load_part_imagenet_bbox(args):
-    try:
-        strong_aug = args.strong_aug
-    except:
-        strong_aug = False
+    img_size = PART_IMAGENET_BBOX["input_dim"][1]
 
-    train_transforms = make_coco_transforms(
-        "train", fix_size=args.fix_size, strong_aug=strong_aug, args=args
+    train_transforms = T.Compose(
+        [
+            RandomCrop(),
+            Resize([img_size, img_size]),
+            T.RandomHorizontalFlip(),
+            T.ToTensor(),
+            T.Normalize([0, 0, 0], [1, 1, 1]),
+        ]
     )
+
+    val_transforms = T.Compose(
+        [
+            Resize([int(img_size * 256 / 224), int(img_size * 256 / 224)]),
+            T.CenterCrop([img_size, img_size]),
+            T.ToTensor(),
+            T.Normalize([0, 0, 0], [1, 1, 1]),
+        ]
+    )
+
     train_loader, train_sampler = get_loader_sampler_bbox(
         args, train_transforms, "train"
-    )
-
-    val_transforms = make_coco_transforms(
-        "val", fix_size=args.fix_size, strong_aug=False, args=args
     )
     val_loader, _ = get_loader_sampler_bbox(args, val_transforms, "val")
     test_loader, _ = get_loader_sampler_bbox(args, val_transforms, "test")
