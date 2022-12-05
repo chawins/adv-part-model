@@ -38,7 +38,7 @@ class HopSkipJump(AttackModule):
                                 starting_points=starting_points)
         delta = x_adv - x
         print(delta.view(x.size(0), -1).max(1))
-        delta.clamp_(- self.eps, self.eps)
+        delta.clamp_(- self._eps, self._eps)
         x_adv = x + delta
         x_adv.clamp_(0, 1)
         return x_adv

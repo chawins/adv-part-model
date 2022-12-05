@@ -1,33 +1,52 @@
+"""Model utility."""
+
+from __future__ import annotations
+
 import os
 
 import timm
 import torch
-import torch.cuda.amp as amp
-import torch.nn as nn
 import torchvision
+from torch import nn
+from torch.cuda import amp
 
-from ..dataloader import DATASET_DICT
-from ..utils.image import get_seg_type
-from .bbox_model import BoundingBoxModel
-from .clean_mask_model import CleanMaskModel
-from .common import Normalize
-from .groundtruth_mask_model import GroundtruthMaskModel
-from .part_fc_model import PartFCModel
-from .part_mask_model import PartMaskModel
-from .part_seg_cat_model import PartSegCatModel
-from .part_seg_model import PartSegModel
-from .pixel_count_model import PixelCountModel
-from .pooling_model import PoolingModel
-from .segmentation_model import SEGM_BUILDER
-from .two_head_model import TwoHeadModel
-from .weighted_bbox_model import WeightedBBoxModel
+from part_model.dataloader import DATASET_DICT
+from part_model.models.bbox_model import BoundingBoxModel
+from part_model.models.clean_mask_model import CleanMaskModel
+from part_model.models.common import Normalize
+from part_model.models.dino_bbox_model import DinoBoundingBoxModel
+from part_model.models.groundtruth_mask_model import GroundtruthMaskModel
+from part_model.models.multi_head_dino_bbox_model import (
+    MultiHeadDinoBoundingBoxModel,
+)
+from part_model.models.part_fc_model import PartFCModel
+from part_model.models.part_mask_model import PartMaskModel
+from part_model.models.part_seg_cat_model import PartSegCatModel
+from part_model.models.part_seg_model import PartSegModel
+from part_model.models.pixel_count_model import PixelCountModel
+from part_model.models.pooling_model import PoolingModel
+from part_model.models.segmentation_model import SEGM_BUILDER
+from part_model.models.two_head_model import TwoHeadModel
+from part_model.models.weighted_bbox_model import WeightedBBoxModel
+from part_model.utils.image import get_seg_type
 
 
 def wrap_distributed(args, model):
+    # TODO: When using efficientnet as backbone, pytorch's torchrun complains
+    # about unused parameters. This can be suppressed by setting
+    # find_unused_parameters to True.
+    find_unused_parameters: bool = any(
+        "efficientnet" in arch for arch in (args.seg_backbone, args.arch)
+    )
+
     if args.distributed:
         model.cuda(args.gpu)
         model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
-        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu])
+        model = torch.nn.parallel.DistributedDataParallel(
+            model,
+            device_ids=[args.gpu],
+            find_unused_parameters=find_unused_parameters,
+        )
     else:
         model.cuda()
         model = torch.nn.parallel.DataParallel(model)
@@ -41,7 +60,7 @@ def build_classifier(args):
     normalize = DATASET_DICT[args.dataset]["normalize"]
     if args.arch == "resnet101":
         # timm does not have pretrained resnet101
-        model = torchvision.models.resnet101(pretrained=args.pretrained, progress=True)
+        model = torchvision.models.resnet101(weights=args.pretrained, progress=True)
         rep_dim = 2048
     else:
         model = timm.create_model(args.arch, pretrained=args.pretrained, num_classes=0)
@@ -53,8 +72,12 @@ def build_classifier(args):
         tokens = args.experiment.split("-")
         model_token = tokens[1]
         exp_tokens = tokens[2:]
-        print("=> building segmentation model...")
-        segmenter = SEGM_BUILDER[args.seg_arch](args)
+
+        if args.seg_arch is not None:
+            print("=> Building segmentation model...")
+            segmenter = SEGM_BUILDER[args.seg_arch](args)
+        elif args.obj_det_arch is not None:
+            print("=> Building detection model...")
 
         if args.freeze_seg:
             # Froze all weights of the part segmentation model
@@ -121,8 +144,14 @@ def build_classifier(args):
             model = TwoHeadModel(args, segmenter, "e")
         elif model_token == "pixel":
             model = PixelCountModel(args, segmenter, None)
+        elif model_token == "bbox_2heads_d":
+            model = MultiHeadDinoBoundingBoxModel(args)
         elif model_token == "bbox":
-            model = BoundingBoxModel(args, segmenter)
+            # two options, either bbox model from object detection or bbox from segmentation model
+            if args.obj_det_arch == "dino":
+                model = DinoBoundingBoxModel(args)
+            else:
+                model = BoundingBoxModel(args, segmenter)
         elif model_token == "wbbox":
             model = WeightedBBoxModel(args, segmenter)
         elif model_token == "fc":
@@ -130,9 +159,9 @@ def build_classifier(args):
         elif model_token == "pooling":
             model = PoolingModel(args, segmenter)
 
-        n_seg = sum(p.numel() for p in segmenter.parameters()) / 1e6
-        nt_seg = sum(p.numel() for p in segmenter.parameters() if p.requires_grad) / 1e6
-        print(f"=> segmenter params (train/total): {nt_seg:.2f}M/{n_seg:.2f}M")
+        n_seg = sum(p.numel() for p in model.parameters()) / 1e6
+        nt_seg = sum(p.numel() for p in model.parameters() if p.requires_grad) / 1e6
+        print(f"=> model params (train/total): {nt_seg:.2f}M/{n_seg:.2f}M")
     else:
         print("=> building a normal classifier (no segmentation)")
         model.fc = nn.Linear(rep_dim, args.num_classes)
@@ -143,18 +172,37 @@ def build_classifier(args):
 
     model = wrap_distributed(args, model)
 
-    p_wd, p_non_wd = [], []
-    for n, p in model.named_parameters():
-        if p.requires_grad:
-            if "bias" in n or "ln" in n or "bn" in n:
-                p_non_wd.append(p)
-            else:
-                p_wd.append(p)
+    if args.obj_det_arch == "dino":
+        optim_params = [
+            {
+                "params": [
+                    p
+                    for n, p in model.named_parameters()
+                    if "backbone" not in n and p.requires_grad
+                ]
+            },
+            {
+                "params": [
+                    p
+                    for n, p in model.named_parameters()
+                    if "backbone" in n and p.requires_grad
+                ],
+                "lr": args.lr_backbone,
+            },
+        ]
+    else:
+        p_wd, p_non_wd = [], []
+        for n, p in model.named_parameters():
+            if p.requires_grad:
+                if "bias" in n or "ln" in n or "bn" in n:
+                    p_non_wd.append(p)
+                else:
+                    p_wd.append(p)
 
-    optim_params = [
-        {"params": p_wd, "weight_decay": args.wd},
-        {"params": p_non_wd, "weight_decay": 0},
-    ]
+        optim_params = [
+            {"params": p_wd, "weight_decay": args.wd},
+            {"params": p_non_wd, "weight_decay": 0},
+        ]
 
     if args.optim == "sgd":
         optimizer = torch.optim.SGD(
@@ -189,11 +237,11 @@ def build_classifier(args):
                 checkpoint = torch.load(model_path)
             else:
                 # Map model to be loaded to specified single gpu.
-                loc = "cuda:{}".format(args.gpu)
+                loc = f"cuda:{args.gpu}"
                 checkpoint = torch.load(model_path, map_location=loc)
 
             if args.load_from_segmenter:
-                print(f"=> loading segmenter weight only...")
+                print("=> Loading segmenter weight only...")
                 state_dict = {}
                 for name, params in checkpoint["state_dict"].items():
                     name.replace("module", "module.segmenter")
@@ -208,11 +256,11 @@ def build_classifier(args):
                 scaler.load_state_dict(checkpoint["scaler"])
             print(f'=> loaded resume checkpoint (epoch {checkpoint["epoch"]})')
         elif args.resume:
-            raise FileNotFoundError(f"=> no checkpoint found at {model_path}")
+            raise FileNotFoundError(f"=> No checkpoint found at {model_path}.")
         else:
-            print(f"=> Tried to resume if exist but found no checkpoint")
+            print("=> Tried to resume if exist but found no checkpoint.")
     else:
-        print(f"=> model is randomly initialized")
+        print("=> Loaded model without using resumed weights.")
 
     return model, optimizer, scaler
 
@@ -223,13 +271,6 @@ def build_segmentation(args):
 
     if args.distributed:
         model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
-
-    # model_without_ddp = model[1]
-    # if args.distributed:
-    #     model = torch.nn.parallel.DistributedDataParallel(
-    #         model, device_ids=[args.gpu]
-    #     )
-    #     model_without_ddp = model.module[1]
     model = wrap_distributed(args, model)
     model_without_ddp = model.module[1]
 
@@ -256,7 +297,7 @@ def build_segmentation(args):
                 checkpoint = torch.load(args.resume)
             else:
                 # Map model to be loaded to specified single gpu.
-                loc = "cuda:{}".format(args.gpu)
+                loc = f"cuda:{args.gpu}"
                 checkpoint = torch.load(args.resume, map_location=loc)
             model.load_state_dict(checkpoint["state_dict"])
 

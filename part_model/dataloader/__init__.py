@@ -1,9 +1,10 @@
-from .part_imagenet_corrupt import PART_IMAGENET_CORRUPT
-from .part_imagenet_mixed_next import PART_IMAGENET_MIXED
 from .cityscapes import CITYSCAPES
 from .part_imagenet import PART_IMAGENET
+from .part_imagenet_bbox import PART_IMAGENET_BBOX
+from .part_imagenet_corrupt import PART_IMAGENET_CORRUPT
 from .part_imagenet_geirhos import PART_IMAGENET_GEIRHOS
 from .part_imagenet_pseudo import PART_IMAGENET_PSEUDO
+from .part_imagenet_mixed_next import PART_IMAGENET_MIXED
 from .pascal_part import PASCAL_PART
 from .pascal_voc import PASCAL_VOC
 from .util import COLORMAP
@@ -17,6 +18,7 @@ DATASET_DICT = {
     "part-imagenet-mixed": PART_IMAGENET_MIXED,
     "part-imagenet-corrupt": PART_IMAGENET_CORRUPT,
     "part-imagenet-pseudo": PART_IMAGENET_PSEUDO,
+    "part-imagenet-bbox": PART_IMAGENET_BBOX,
 }
 
 

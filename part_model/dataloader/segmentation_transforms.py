@@ -1,16 +1,25 @@
-"""
-This code is copied from 
+"""Transforms that apply to both image and segmentation masks.
+
+This code is copied from
 https://github.com/pytorch/vision/blob/master/references/segmentation/transforms.py
 """
+
+from __future__ import annotations
+
 import random
+from typing import Any, Callable, Dict, Tuple, Union
 
 import numpy as np
 import torch
 from torchvision import transforms as T
 from torchvision.transforms import functional as F
+from PIL.Image import Image
 
 
-def pad_if_smaller(img, size, fill=0):
+_TransformOut = Union[Tuple[Image, Image], Tuple[Image, Image, Dict[str, Any]]]
+
+
+def _pad_if_smaller(img, size, fill=0):
     min_size = min(img.size)
     if min_size < size:
         ow, oh = img.size
@@ -21,13 +30,13 @@ def pad_if_smaller(img, size, fill=0):
 
 
 class Compose(object):
-    def __init__(self, transforms):
-        self.transforms = transforms
+    def __init__(self, transforms: list[Callable[..., _TransformOut]]):
+        self.transforms: list[Callable[..., _TransformOut]] = transforms
 
-    def __call__(self, image, target):
+    def __call__(self, *args) -> _TransformOut:
         for t in self.transforms:
-            image, target = t(image, target)
-        return image, target
+            args = t(*args)
+        return args
 
 
 class Resize(object):
@@ -62,23 +71,37 @@ class RandomResize(object):
 
 
 class RandomHorizontalFlip(object):
-    def __init__(self, flip_prob):
-        self.flip_prob = flip_prob
+    def __init__(self, flip_prob: float, return_params: bool = False) -> None:
+        self.flip_prob: float = flip_prob
+        self._return_params: bool = return_params
 
-    def __call__(self, image, target):
-        if random.random() < self.flip_prob:
+    def __call__(
+        self,
+        image: Image,
+        target: Image,
+        params: list[Any] | None = None,
+    ) -> _TransformOut:
+        is_flip = random.random() < self.flip_prob
+        if is_flip:
             image = F.hflip(image)
             target = F.hflip(target)
-        return image, target
+        if not self._return_params:
+            return image, target
+
+        if params is None:
+            params = [is_flip]
+        else:
+            params.append(is_flip)
+        return image, target, params
 
 
 class RandomCrop(object):
-    def __init__(self, size):
-        self.size = size
+    def __init__(self, size: int):
+        self.size: int = size
 
     def __call__(self, image, target):
-        image = pad_if_smaller(image, self.size)
-        target = pad_if_smaller(target, self.size, fill=0)
+        image = _pad_if_smaller(image, self.size)
+        target = _pad_if_smaller(target, self.size, fill=0)
         crop_params = T.RandomCrop.get_params(image, (self.size, self.size))
         image = F.crop(image, *crop_params)
         target = F.crop(target, *crop_params)
@@ -86,12 +109,24 @@ class RandomCrop(object):
 
 
 class RandomResizedCrop(object):
-    def __init__(self, size, scale=(0.08, 1.0), ratio=(0.75, 1.333333)):
-        self.size = size
-        self.ratio = ratio
-        self.scale = scale
+    def __init__(
+        self,
+        size: int,
+        scale: tuple[float, float] = (0.08, 1.0),
+        ratio: tuple[float, float] = (0.75, 1.333333),
+        return_params: bool = False,
+    ) -> None:
+        self.size: int = size
+        self.ratio: tuple[float, float] = ratio
+        self.scale: tuple[float, float] = scale
+        self.return_params: bool = return_params
 
-    def __call__(self, image, target):
+    def __call__(
+        self,
+        image: Image,
+        target: Image,
+        params: list[Any] | None = None,
+    ) -> _TransformOut:
         crop_params = T.RandomResizedCrop.get_params(
             image, self.scale, self.ratio
         )
@@ -103,11 +138,17 @@ class RandomResizedCrop(object):
             (self.size, self.size),
             interpolation=T.InterpolationMode.NEAREST,
         )
+        if self.return_params:
+            if params is None:
+                params = [crop_params]
+            else:
+                params.append(crop_params)
+            return image, target, params
         return image, target
 
 
 class CenterCrop(object):
-    def __init__(self, size):
+    def __init__(self, size: int):
         self.size = [size, size]
 
     def __call__(self, image, target):
@@ -117,18 +158,11 @@ class CenterCrop(object):
 
 
 class ToTensor(object):
-    def __call__(self, image, target):
+    """Custom ToTensor for image and segmentation mask."""
+
+    def __call__(self, image: Image, target: Image, *args) -> _TransformOut:
+        """Convert image and target to torch.Tensor."""
         image = F.pil_to_tensor(image)
         image = F.convert_image_dtype(image)
         target = torch.as_tensor(np.array(target), dtype=torch.int64)
-        return image, target
-
-
-class Normalize(object):
-    def __init__(self, mean, std):
-        self.mean = mean
-        self.std = std
-
-    def __call__(self, image, target):
-        image = F.normalize(image, mean=self.mean, std=self.std)
-        return image, target
+        return image, target, *args

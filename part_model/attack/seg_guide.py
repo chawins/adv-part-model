@@ -1,18 +1,21 @@
-from typing import Any, Optional, Tuple
+"""Adaptive attack on part models."""
+
+from __future__ import annotations
+
+from typing import Any
 
 import numpy as np
-import part_model.utils.loss as loss_lib
 import torch
 import torch.nn.functional as F
 from torchvision.utils import save_image
-import torch.nn.functional as F
 
-from .base import AttackModule
+import part_model.utils.loss as loss_lib
+from part_model.attack.pgd import PGDAttack
 
-EPS = 1e-6
+_EPS = 1e-6
 
 
-class SegGuidedAttackModule(AttackModule):
+class SegGuidedAttack(PGDAttack):
     def __init__(
         self,
         attack_config,
@@ -20,23 +23,19 @@ class SegGuidedAttackModule(AttackModule):
         loss_fn,
         norm,
         eps,
-        dataloader: Optional[Any] = None,
-        classifier: Optional[torch.nn.Module] = None,
+        dataloader: Any | None = None,
+        classifier: torch.nn.Module | None = None,
         no_bg: bool = False,
         seg_labels: int = 40,
         **kwargs,
-    ):
-        super(SegGuidedAttackModule, self).__init__(
+    ) -> None:
+        super().__init__(
             attack_config, core_model, loss_fn, norm, eps, **kwargs
         )
-        assert self.norm in ("L2", "Linf")
         if classifier is None:
             raise ValueError("classifier must be torch.Module and not None.")
         self.classifier = classifier
         self.seg_labels = seg_labels
-        self.num_steps = attack_config["pgd_steps"]
-        self.step_size = attack_config["pgd_step_size"]
-        self.num_restarts = attack_config["num_restarts"]
         self.use_mask = True
 
         # "opt": optimizes for worst-case mask.
@@ -135,7 +134,6 @@ class SegGuidedAttackModule(AttackModule):
 
     def _select_opt(self, y_2nd: torch.Tensor) -> torch.Tensor:
         raise NotImplementedError()
-        return
 
     def _select_random(self, y_sort: torch.Tensor) -> torch.Tensor:
         guide_masks = []
@@ -164,7 +162,7 @@ class SegGuidedAttackModule(AttackModule):
 
     def _select_2nd_pred_by_scores(
         self, y_sort: torch.Tensor
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         guide_masks = []
         idx_y = np.zeros(len(y_sort), dtype=np.int64)
         for i, cur_y_sort in enumerate(y_sort.cpu().numpy()):
@@ -189,8 +187,14 @@ class SegGuidedAttackModule(AttackModule):
         x: torch.Tensor,
         y: torch.Tensor,
         y_seg: torch.Tensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        """
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Selects guide masks and samples for second-stage attack.
+
+        Args:
+            x: Input images.
+            y: Ground-truth class labels.
+            y_seg: Ground-truth segmentation labels.
+
         Returns:
             guide_masks: shape [num_restarts, B, H, W]
         """
@@ -202,7 +206,7 @@ class SegGuidedAttackModule(AttackModule):
             return guide_masks.to(x.device), y_guides.to(x.device)
 
         with torch.no_grad():
-            logits, _ = self.core_model(x, return_mask=True)
+            logits, _ = self._core_model(x, return_mask=True)
 
         # Get 2nd-most confident class
         batch_size = logits.shape[0]
@@ -212,7 +216,6 @@ class SegGuidedAttackModule(AttackModule):
         y_sort = torch.argsort(copy_logits, dim=-1, descending=True)
         y_guides = y_2nd.unsqueeze(0).expand(self.num_restarts, -1)
 
-        # TODO
         if self.guide_selection == "2nd_pred_by_scores":
             guide_masks, y_guides = self._select_2nd_pred_by_scores(y_sort)
         elif self.guide_selection == "2nd_gt_random":
@@ -226,74 +229,21 @@ class SegGuidedAttackModule(AttackModule):
         return guide_masks.to(x.device), y_guides.to(x.device)
 
     def _project_l2(self, x, eps):
-        dims = [-1,] + [
-            1,
-        ] * (x.ndim - 1)
-        return x / (x.view(len(x), -1).norm(2, 1).view(dims) + EPS) * eps
+        dims = [-1] + [1] * (x.ndim - 1)
+        return x / (x.view(len(x), -1).norm(2, 1).view(dims) + _EPS) * eps
 
     def _forward_l2(self, x, y):
         raise NotImplementedError()
-        mode = self.core_model.training
-        self.core_model.eval()
-
-        # Initialize worst-case inputs
-        x_adv_worst = x.clone().detach()
-        worst_losses = torch.zeros(len(x), 1, 1, 1, device=x.device) - 1e9
-        guides, guide_masks = self._select_guide(x, y)
-
-        # Repeat PGD for specified number of restarts
-        for _ in range(self.num_restarts):
-            x_adv = x.clone().detach()
-
-            # Initialize adversarial inputs
-            x_adv += self._project_l2(torch.randn_like(x_adv), self.eps)
-            x_adv.clamp_(0, 1)
-
-            # Run PGD on inputs for specified number of steps
-            for _ in range(self.num_steps):
-                x_adv.requires_grad_()
-
-                # Compute logits, loss, gradients
-                with torch.enable_grad():
-                    logits = self.core_model(x_adv, return_mask=True)
-                    loss = self.loss_fn(logits, y).mean()
-                    grads = torch.autograd.grad(loss, x_adv)[0].detach()
-
-                with torch.no_grad():
-                    # Perform gradient update, project to norm ball
-                    delta = x_adv - x + self._project_l2(grads, self.step_size)
-                    x_adv = x + self._project_l2(delta, self.eps)
-                    # Clip perturbed inputs to image domain
-                    x_adv.clamp_(0, 1)
-
-            if self.num_restarts == 1:
-                x_adv_worst = x_adv
-            else:
-                # Update worst-case inputs with itemized final losses
-                fin_losses = self.loss_fn(self.core_model(x_adv), y).reshape(
-                    worst_losses.shape
-                )
-                up_mask = (fin_losses >= worst_losses).float()
-                x_adv_worst = x_adv * up_mask + x_adv_worst * (1 - up_mask)
-                worst_losses = fin_losses * up_mask + worst_losses * (
-                    1 - up_mask
-                )
-
-        # Return worst-case perturbed input logits
-        self.core_model.train(mode)
-        return x_adv_worst.detach()
 
     def _forward_linf(
         self,
         x: torch.Tensor,
         y: torch.Tensor,
         y_seg: torch.Tensor,
-        guides: Optional[
-            Tuple[torch.Tensor, torch.Tensor, torch.Tensor]
-        ] = None,
+        guides: tuple[torch.Tensor, torch.Tensor, torch.Tensor] | None = None,
     ) -> torch.Tensor:
-        mode = self.core_model.training
-        self.core_model.eval()
+        mode = self._core_model.training
+        self._core_model.eval()
         y_orig = y.clone()
 
         if guides is None:
@@ -318,7 +268,7 @@ class SegGuidedAttackModule(AttackModule):
 
             if x_init.ndim == x.ndim:
                 # Randomly initialize adversarial inputs
-                x_adv = x + torch.zeros_like(x).uniform_(-self.eps, self.eps)
+                x_adv = x + torch.zeros_like(x).uniform_(-self._eps, self._eps)
                 x_adv = torch.clamp(x_adv, 0, 1)
             else:
                 x_adv = x_init[i % num_guides].clone().detach()
@@ -332,7 +282,7 @@ class SegGuidedAttackModule(AttackModule):
 
                 # Compute logits, loss, gradients
                 with torch.enable_grad():
-                    logits = self.core_model(x_adv, return_mask=True)
+                    logits = self._core_model(x_adv, return_mask=True)
                     loss = loss_fn(logits, y, guide_mask).mean()
                     if self.targeted:
                         loss *= -1
@@ -342,7 +292,7 @@ class SegGuidedAttackModule(AttackModule):
                     # Perform gradient update, project to norm ball
                     x_adv = x_adv.detach() + self.step_size * torch.sign(grads)
                     x_adv = torch.min(
-                        torch.max(x_adv, x - self.eps), x + self.eps
+                        torch.max(x_adv, x - self._eps), x + self._eps
                     )
                     # Clip perturbed inputs to image domain
                     x_adv = torch.clamp(x_adv, 0, 1)
@@ -365,7 +315,7 @@ class SegGuidedAttackModule(AttackModule):
                 # Update worst-case inputs with itemized final losses only in
                 # 2nd stage.
                 fin_losses = self.clf_loss_fn(
-                    self.core_model(x_adv, return_mask=True), y_orig, None
+                    self._core_model(x_adv, return_mask=True), y_orig, None
                 ).reshape(worst_losses.shape)
                 up_mask = (fin_losses >= worst_losses).float()
                 x_adv_worst = x_adv * up_mask + x_adv_worst * (1 - up_mask)
@@ -389,18 +339,19 @@ class SegGuidedAttackModule(AttackModule):
         # pdb.set_trace()
 
         # Return worst-case perturbed input logits
-        self.core_model.train(mode)
+        self._core_model.train(mode)
 
         if in_1st_stage:
             return guide_masks, guide_labels, x_adv_worst.detach()
         return x_adv_worst.detach()
 
     def _forward(self, *args, **kwargs):
-        if self.norm == "L2":
+        if self._norm == "L2":
             return self._forward_l2(*args, **kwargs)
         return self._forward_linf(*args, **kwargs)
 
     def forward(self, *args, **kwargs):
+        """Run attack."""
         if not self.use_two_stages:
             return self._forward(*args, **kwargs)
 

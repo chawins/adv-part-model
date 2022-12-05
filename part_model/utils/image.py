@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import numpy as np
 
 
@@ -51,7 +53,7 @@ def get_part_box(mask, pad):
 
 
 def compute_padding(img, box):
-    """Compute extra padding in case the bounding box extends beyond image"""
+    """Compute extra padding in case the bounding box extends beyond image."""
     ymin, ymax, xmin, xmax = box
     height, width = img.shape[0], img.shape[1]
     pad_size = (
