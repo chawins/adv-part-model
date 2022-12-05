@@ -212,7 +212,7 @@ def get_args_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--save-all-epochs", action="store_true")
 
-    # Detection model args
+
     parser.add_argument(
         "--bbox-label-dir",
         default="",
@@ -224,43 +224,45 @@ def get_args_parser() -> argparse.ArgumentParser:
         type=str,
         help="Architecture of object detection model.",
     )
-    # TODO(nab-126@): clean
-    from DINO.util.slconfig import DictAction
-
-    parser.add_argument("--config_file", "-c", type=str, required=False)
-    parser.add_argument(
-        "--options",
-        nargs="+",
-        action=DictAction,
-        help=(
-            "override some settings in the used config, the key-value pair "
-            "in xxx=yyy format will be merged into config file."
-        ),
-    )
-
-    # dataset parameters
-    parser.add_argument("--dataset_file", default="coco")
-    parser.add_argument("--coco_panoptic_path", type=str)
-    parser.add_argument("--remove_difficult", action="store_true")
-    parser.add_argument("--fix_size", action="store_true")
     parser.add_argument("--sample", action="store_true")
+    # TODO: remove
+    # # TODO(nab-126@): clean
+    # from DINO.util.slconfig import DictAction
 
-    # training parameters
-    parser.add_argument(
-        "--note", default="", help="add some notes to the experiment"
-    )
-    parser.add_argument(
-        "--pretrain_model_path", help="load from other checkpoint"
-    )
-    parser.add_argument("--finetune_ignore", type=str, nargs="+")
-    parser.add_argument(
-        "--start_epoch", default=0, type=int, metavar="N", help="start epoch"
-    )
-    parser.add_argument("--eval", action="store_true")
-    parser.add_argument("--num_workers", default=10, type=int)
-    parser.add_argument("--test", action="store_true")
-    parser.add_argument("--find_unused_params", action="store_true")
-    parser.add_argument("--save_results", action="store_true")
-    parser.add_argument("--save_log", action="store_true")
+    # parser.add_argument("--config_file", "-c", type=str, required=False)
+    # parser.add_argument(
+    #     "--options",
+    #     nargs="+",
+    #     action=DictAction,
+    #     help=(
+    #         "override some settings in the used config, the key-value pair "
+    #         "in xxx=yyy format will be merged into config file."
+    #     ),
+    # )
+
+    # # dataset parameters
+    # parser.add_argument("--dataset_file", default="coco")
+    # parser.add_argument("--coco_panoptic_path", type=str)
+    # parser.add_argument("--remove_difficult", action="store_true")
+    # parser.add_argument("--fix_size", action="store_true")
+    
+
+    # # training parameters
+    # parser.add_argument(
+    #     "--note", default="", help="add some notes to the experiment"
+    # )
+    # parser.add_argument(
+    #     "--pretrain_model_path", help="load from other checkpoint"
+    # )
+    # parser.add_argument("--finetune_ignore", type=str, nargs="+")
+    # parser.add_argument(
+    #     "--start_epoch", default=0, type=int, metavar="N", help="start epoch"
+    # )
+    # parser.add_argument("--eval", action="store_true")
+    # parser.add_argument("--num_workers", default=10, type=int)
+    # parser.add_argument("--test", action="store_true")
+    # parser.add_argument("--find_unused_params", action="store_true")
+    # parser.add_argument("--save_results", action="store_true")
+    # parser.add_argument("--save_log", action="store_true")
 
     return parser

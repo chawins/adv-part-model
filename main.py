@@ -26,7 +26,6 @@ from torch.cuda import amp
 from torchmetrics.classification import MulticlassJaccardIndex as IoU
 from torchvision.utils import save_image
 
-from DINO.util.utils import to_device
 from part_model.attack import (
     setup_eval_attacker,
     setup_train_attacker,
@@ -66,24 +65,6 @@ def main() -> None:
 
     global best_acc1
 
-    # handling dino args
-    # TODO(nab-126@): Unify args, put this in argparser?
-    if args.config_file:
-        from DINO.util.slconfig import SLConfig
-
-        cfg = SLConfig.fromfile(args.config_file)
-
-        if args.options is not None:
-            cfg.merge_from_dict(args.options)
-
-        cfg_dict = cfg._cfg_dict.to_dict()
-        args_vars = vars(args)
-        for k, v in cfg_dict.items():
-            if k not in args_vars:
-                setattr(args, k, v)
-            else:
-                raise ValueError("Key {} can used by args only".format(k))
-
     # Fix the seed for reproducibility
     seed: int = args.seed + get_rank()
     random.seed(seed)
@@ -101,39 +82,65 @@ def main() -> None:
     if debug:
         # DEBUGGING DATALOADER
         for i, samples in enumerate(train_loader):
-
+            os.makedirs('example_images', exist_ok=True)
             import torchvision
+            from detectron2.config import LazyConfig, instantiate
 
-            images, target_bbox, targets = samples
+            # user's own config.py
+            import pdb
+            pdb.set_trace()
 
-            images, mask = images.decompose()
+            # with open(class_label_file, "r") as openfile:
+            #     self.image_to_label = json.load(openfile)
+            #         class_label = self.image_to_label[str(idx)]
+
+
+            # cfg = LazyConfig.load('detrex/projects/dab_detr/configs/models/dab_detr_r50.py')
+            cfg = LazyConfig.load('detrex/projects/dino/configs/models/dino_r50.py')
+            model = instantiate(cfg.model)
+            # cfg = LazyConfig.load(args.config_file)
+            # model = instantiate('../detrex/projects/dab_detr/configs/models/dab_detr_r50.py')
+            # model = instantiate(dab_detr_r50.py)
+            # from projects.dino.configs.models.dino_r50 import model
+            # import .detrex.projects.dino.configs.models.dino_r50.model as model
+
+            # # check the loaded model config
+            # assert model.embed_dim == 256
+
+            # # modify model config according to your own needs
+            # model.embed_dim = 512
+
+            model = model.cuda()
+            loss_dict = model(samples)
+            print(loss_dict)
+
+            import pdb
+            pdb.set_trace()
 
             debug_index = 0
-            torchvision.utils.save_image(
-                images[debug_index], f"example_images/img_{debug_index}.png"
-            )
-            torchvision.utils.save_image(
-                mask[debug_index] * 1.0,
-                f"example_images/mask_{debug_index}.png",
-            )
+            torchvision.utils.save_image((samples[debug_index]['image']/255), f"example_images/img_{debug_index}.png")
+
+            # target_bbox = samples[debug_index]['instances']['']
+            boxes = samples[debug_index]['instances'].get('gt_boxes').tensor
+
             img_uint8 = torchvision.io.read_image(
                 f"example_images/img_{debug_index}.png"
             )
-            shape = target_bbox[debug_index]["size"]
-            print(target_bbox[debug_index])
+            # shape = target_bbox[debug_index]["size"]
+            # print(target_bbox[debug_index])
 
-            # xc, xy, w, h convert to xmin, ymin, xmax, ymax
-            boxes = target_bbox[debug_index]["boxes"]
-            boxes[:, ::2] = boxes[:, ::2] * shape[1]
-            boxes[:, 1::2] = boxes[:, 1::2] * shape[0]
+            # # xc, xy, w, h convert to xmin, ymin, xmax, ymax
+            # boxes = target_bbox[debug_index]["boxes"]
+            # boxes[:, ::2] = boxes[:, ::2] * shape[1]
+            # boxes[:, 1::2] = boxes[:, 1::2] * shape[0]
 
-            box_width = boxes[:, 2]
-            box_height = boxes[:, 3]
+            # box_width = boxes[:, 2]
+            # box_height = boxes[:, 3]
 
-            boxes[:, 0] = boxes[:, 0] - box_width / 2
-            boxes[:, 2] = boxes[:, 0] + box_width
-            boxes[:, 1] = boxes[:, 1] - box_height / 2
-            boxes[:, 3] = boxes[:, 1] + box_height
+            # boxes[:, 0] = boxes[:, 0] - box_width / 2
+            # boxes[:, 2] = boxes[:, 0] + box_width
+            # boxes[:, 1] = boxes[:, 1] - box_height / 2
+            # boxes[:, 3] = boxes[:, 1] + box_height
 
             boxes = torch.tensor(boxes, dtype=torch.int)
             img_with_boxes = torchvision.utils.draw_bounding_boxes(
@@ -144,7 +151,6 @@ def main() -> None:
                 f"example_images/img_{debug_index}_with_bbox.png",
             )
             import pdb
-
             pdb.set_trace()
 
     # Create model

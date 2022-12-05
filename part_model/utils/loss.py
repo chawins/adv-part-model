@@ -9,8 +9,8 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 
-from DINO.models.dino.dino import SetCriterion
-from DINO.models.dino.matcher import build_matcher
+# from DINO.models.dino.dino import SetCriterion
+# from DINO.models.dino.matcher import build_matcher
 
 _EPS = 1e-6
 _LARGE_NUM = 1e8
@@ -440,213 +440,213 @@ def get_train_criterion(args):
             train_criterion = SemiKeypointLoss(seg_const=args.seg_const_trn)
 
         if args.obj_det_arch == "dino":
-            losses = ["labels", "boxes", "cardinality"]
+            # losses = ["labels", "boxes", "cardinality"]
 
-            matcher = build_matcher(args)
-            # prepare weight dict
-            weight_dict = {
-                "loss_ce": args.cls_loss_coef,
-                "loss_bbox": args.bbox_loss_coef,
-            }
-            weight_dict["loss_giou"] = args.giou_loss_coef
-            clean_weight_dict_wo_dn = copy.deepcopy(weight_dict)
+            # matcher = build_matcher(args)
+            # # prepare weight dict
+            # weight_dict = {
+            #     "loss_ce": args.cls_loss_coef,
+            #     "loss_bbox": args.bbox_loss_coef,
+            # }
+            # weight_dict["loss_giou"] = args.giou_loss_coef
+            # clean_weight_dict_wo_dn = copy.deepcopy(weight_dict)
 
-            # for DN training
-            if args.use_dn:
-                weight_dict["loss_ce_dn"] = args.cls_loss_coef
-                weight_dict["loss_bbox_dn"] = args.bbox_loss_coef
-                weight_dict["loss_giou_dn"] = args.giou_loss_coef
+            # # for DN training
+            # if args.use_dn:
+            #     weight_dict["loss_ce_dn"] = args.cls_loss_coef
+            #     weight_dict["loss_bbox_dn"] = args.bbox_loss_coef
+            #     weight_dict["loss_giou_dn"] = args.giou_loss_coef
 
-            if args.masks:
-                weight_dict["loss_mask"] = args.mask_loss_coef
-                weight_dict["loss_dice"] = args.dice_loss_coef
-            clean_weight_dict = copy.deepcopy(weight_dict)
+            # if args.masks:
+            #     weight_dict["loss_mask"] = args.mask_loss_coef
+            #     weight_dict["loss_dice"] = args.dice_loss_coef
+            # clean_weight_dict = copy.deepcopy(weight_dict)
 
-            # TODO(nab-126@): this is a hack
-            if args.aux_loss:
-                aux_weight_dict = {}
-                for i in range(args.dec_layers - 1):
-                    aux_weight_dict.update(
-                        {k + f"_{i}": v for k, v in clean_weight_dict.items()}
-                    )
-                weight_dict.update(aux_weight_dict)
+            # # TODO(nab-126@): this is a hack
+            # if args.aux_loss:
+            #     aux_weight_dict = {}
+            #     for i in range(args.dec_layers - 1):
+            #         aux_weight_dict.update(
+            #             {k + f"_{i}": v for k, v in clean_weight_dict.items()}
+            #         )
+            #     weight_dict.update(aux_weight_dict)
 
-            if args.two_stage_type != "no":
-                interm_weight_dict = {}
-                try:
-                    no_interm_box_loss = args.no_interm_box_loss
-                except:
-                    no_interm_box_loss = False
-                _coeff_weight_dict = {
-                    "loss_ce": 1.0,
-                    "loss_bbox": 1.0 if not no_interm_box_loss else 0.0,
-                    "loss_giou": 1.0 if not no_interm_box_loss else 0.0,
-                }
-                try:
-                    interm_loss_coef = args.interm_loss_coef
-                except:
-                    interm_loss_coef = 1.0
-                interm_weight_dict.update(
-                    {
-                        f"{k}_interm": v
-                        * interm_loss_coef
-                        * _coeff_weight_dict[k]
-                        for k, v in clean_weight_dict_wo_dn.items()
-                    }
-                )
-                weight_dict.update(interm_weight_dict)
+            # if args.two_stage_type != "no":
+            #     interm_weight_dict = {}
+            #     try:
+            #         no_interm_box_loss = args.no_interm_box_loss
+            #     except:
+            #         no_interm_box_loss = False
+            #     _coeff_weight_dict = {
+            #         "loss_ce": 1.0,
+            #         "loss_bbox": 1.0 if not no_interm_box_loss else 0.0,
+            #         "loss_giou": 1.0 if not no_interm_box_loss else 0.0,
+            #     }
+            #     try:
+            #         interm_loss_coef = args.interm_loss_coef
+            #     except:
+            #         interm_loss_coef = 1.0
+            #     interm_weight_dict.update(
+            #         {
+            #             f"{k}_interm": v
+            #             * interm_loss_coef
+            #             * _coeff_weight_dict[k]
+            #             for k, v in clean_weight_dict_wo_dn.items()
+            #         }
+            #     )
+            #     weight_dict.update(interm_weight_dict)
 
-            if args.adv_train == "trades":
-                train_criterion = SemiBBOXTRADESLoss(
-                    args.num_classes,
-                    matcher=matcher,
-                    weight_dict=weight_dict,
-                    focal_alpha=args.focal_alpha,
-                    losses=losses,
-                    seg_const=args.seg_const_trn,
-                    const=args.seg_const_trn,
-                    beta=args.adv_beta,
-                )
-            else:
-                train_criterion = SemiBBOXLoss(
-                    args.num_classes,
-                    matcher=matcher,
-                    weight_dict=weight_dict,
-                    focal_alpha=args.focal_alpha,
-                    losses=losses,
-                    seg_const=args.seg_const_trn,
-                )
-
+            # if args.adv_train == "trades":
+            #     train_criterion = SemiBBOXTRADESLoss(
+            #         args.num_classes,
+            #         matcher=matcher,
+            #         weight_dict=weight_dict,
+            #         focal_alpha=args.focal_alpha,
+            #         losses=losses,
+            #         seg_const=args.seg_const_trn,
+            #         const=args.seg_const_trn,
+            #         beta=args.adv_beta,
+            #     )
+            # else:
+            #     train_criterion = SemiBBOXLoss(
+            #         args.num_classes,
+            #         matcher=matcher,
+            #         weight_dict=weight_dict,
+            #         focal_alpha=args.focal_alpha,
+            #         losses=losses,
+            #         seg_const=args.seg_const_trn,
+            #     )
+            return qqq
         else:
             train_criterion = SemiSumLoss(seg_const=args.seg_const_trn)
     train_criterion = train_criterion.cuda(args.gpu)
     return criterion, train_criterion
 
 
-class SemiBBOXLoss(SetCriterion):
-    def __init__(
-        self,
-        num_classes,
-        matcher,
-        weight_dict,
-        focal_alpha,
-        losses,
-        seg_const: float = 0.5,
-        reduction: str = "mean",
-    ):
-        super().__init__(num_classes, matcher, weight_dict, focal_alpha, losses)
-        assert 0 <= seg_const <= 1
-        self.seg_const = seg_const
-        self.reduction = reduction
-        self.weight_dict = weight_dict
+# class SemiBBOXLoss(SetCriterion):
+#     def __init__(
+#         self,
+#         num_classes,
+#         matcher,
+#         weight_dict,
+#         focal_alpha,
+#         losses,
+#         seg_const: float = 0.5,
+#         reduction: str = "mean",
+#     ):
+#         super().__init__(num_classes, matcher, weight_dict, focal_alpha, losses)
+#         assert 0 <= seg_const <= 1
+#         self.seg_const = seg_const
+#         self.reduction = reduction
+#         self.weight_dict = weight_dict
 
-    def forward(
-        self,
-        logits: Union[list, tuple],
-        dino_outputs: dict,
-        dino_targets: list,
-        targets: torch.Tensor,
-        return_indices=False,
-        **kwargs,
-    ):
-        """This performs the loss computation.
-        Parameters:
-            outputs: dict of tensors, see the output specification of the model for the format
-            targets: list of dicts, such that len(targets) == batch_size.
-                    The expected keys in each dict depends on the losses applied, see each loss' doc
+#     def forward(
+#         self,
+#         logits: Union[list, tuple],
+#         dino_outputs: dict,
+#         dino_targets: list,
+#         targets: torch.Tensor,
+#         return_indices=False,
+#         **kwargs,
+#     ):
+#         """This performs the loss computation.
+#         Parameters:
+#             outputs: dict of tensors, see the output specification of the model for the format
+#             targets: list of dicts, such that len(targets) == batch_size.
+#                     The expected keys in each dict depends on the losses applied, see each loss' doc
 
-            return_indices: used for vis. if True, the layer0-5 indices will be returned as well.
+#             return_indices: used for vis. if True, the layer0-5 indices will be returned as well.
 
-        """
-        loss = 0
-        if self.seg_const < 1:
-            clf_loss = F.cross_entropy(logits, targets, reduction="none")
-            loss += (1 - self.seg_const) * clf_loss
-        if self.seg_const > 0:
-            loss_dict = super().forward(
-                dino_outputs, dino_targets, return_indices
-            )
-            bbox_loss = sum(
-                loss_dict[k] * self.weight_dict[k]
-                for k in loss_dict.keys()
-                if k in self.weight_dict
-            )
-            loss += self.seg_const * bbox_loss
-        if self.reduction == "mean":
-            return loss.mean()
+#         """
+#         loss = 0
+#         if self.seg_const < 1:
+#             clf_loss = F.cross_entropy(logits, targets, reduction="none")
+#             loss += (1 - self.seg_const) * clf_loss
+#         if self.seg_const > 0:
+#             loss_dict = super().forward(
+#                 dino_outputs, dino_targets, return_indices
+#             )
+#             bbox_loss = sum(
+#                 loss_dict[k] * self.weight_dict[k]
+#                 for k in loss_dict.keys()
+#                 if k in self.weight_dict
+#             )
+#             loss += self.seg_const * bbox_loss
+#         if self.reduction == "mean":
+#             return loss.mean()
 
-        return loss
+#         return loss
 
 
-class SemiBBOXTRADESLoss(SetCriterion):
-    def __init__(
-        self,
-        num_classes,
-        matcher,
-        weight_dict,
-        focal_alpha,
-        losses,
-        seg_const: float = 0.5,
-        reduction: str = "mean",
-        const: float = 1.0,
-        beta: float = 1.0,
-    ):
-        super().__init__(num_classes, matcher, weight_dict, focal_alpha, losses)
-        self.seg_const = seg_const
-        self.reduction = reduction
-        self.weight_dict = weight_dict
+# class SemiBBOXTRADESLoss(SetCriterion):
+#     def __init__(
+#         self,
+#         num_classes,
+#         matcher,
+#         weight_dict,
+#         focal_alpha,
+#         losses,
+#         seg_const: float = 0.5,
+#         reduction: str = "mean",
+#         const: float = 1.0,
+#         beta: float = 1.0,
+#     ):
+#         super().__init__(num_classes, matcher, weight_dict, focal_alpha, losses)
+#         self.seg_const = seg_const
+#         self.reduction = reduction
+#         self.weight_dict = weight_dict
 
-        # TRADES
-        self.const = const
-        self.beta = beta
-        self.adv_only = True
+#         # TRADES
+#         self.const = const
+#         self.beta = beta
+#         self.adv_only = True
 
-    def truncate_dictionary(self, dictionary, k):
-        for key, value in dictionary.items():
-            if isinstance(value, list) or torch.is_tensor(value):
-                dictionary[key] = value[k:]
-            elif isinstance(value, dict):
-                dictionary[key] = self.truncate_dictionary(value, k)
-        return dictionary
+#     def truncate_dictionary(self, dictionary, k):
+#         for key, value in dictionary.items():
+#             if isinstance(value, list) or torch.is_tensor(value):
+#                 dictionary[key] = value[k:]
+#             elif isinstance(value, dict):
+#                 dictionary[key] = self.truncate_dictionary(value, k)
+#         return dictionary
 
-    def forward(
-        self,
-        logits: Union[list, tuple],
-        dino_outputs: dict,
-        dino_targets: list,
-        targets: torch.Tensor,
-        return_indices=False,
-        **kwargs,
-    ):
-        """This performs the loss computation.
-        Parameters:
-            outputs: dict of tensors, see the output specification of the model for the format
-            targets: list of dicts, such that len(targets) == batch_size.
-                    The expected keys in each dict depends on the losses applied, see each loss' doc
+#     def forward(
+#         self,
+#         logits: Union[list, tuple],
+#         dino_outputs: dict,
+#         dino_targets: list,
+#         targets: torch.Tensor,
+#         return_indices=False,
+#         **kwargs,
+#     ):
+#         """This performs the loss computation.
+#         Parameters:
+#             outputs: dict of tensors, see the output specification of the model for the format
+#             targets: list of dicts, such that len(targets) == batch_size.
+#                     The expected keys in each dict depends on the losses applied, see each loss' doc
 
-            return_indices: used for vis. if True, the layer0-5 indices will be returned as well.
+#             return_indices: used for vis. if True, the layer0-5 indices will be returned as well.
 
-        """
-        batch_size = logits.size(0) // 2
-        cl_logits, adv_logits = logits[:batch_size], logits[batch_size:]
-        if self.adv_only:
-            dino_outputs = self.truncate_dictionary(dino_outputs, batch_size)
-            dino_targets = dino_targets[batch_size:]
-        loss_dict = super().forward(dino_outputs, dino_targets, return_indices)
-        bbox_loss = sum(
-            loss_dict[k] * self.weight_dict[k]
-            for k in loss_dict.keys()
-            if k in self.weight_dict
-        )
+#         """
+#         batch_size = logits.size(0) // 2
+#         cl_logits, adv_logits = logits[:batch_size], logits[batch_size:]
+#         if self.adv_only:
+#             dino_outputs = self.truncate_dictionary(dino_outputs, batch_size)
+#             dino_targets = dino_targets[batch_size:]
+#         loss_dict = super().forward(dino_outputs, dino_targets, return_indices)
+#         bbox_loss = sum(
+#             loss_dict[k] * self.weight_dict[k]
+#             for k in loss_dict.keys()
+#             if k in self.weight_dict
+#         )
 
-        clf_loss = F.cross_entropy(cl_logits, targets, reduction="mean")
-        cl_probs = F.softmax(cl_logits, dim=1)
-        adv_lprobs = F.log_softmax(adv_logits, dim=1)
-        adv_loss = F.kl_div(adv_lprobs, cl_probs, reduction="batchmean")
-        loss = (
-            (1 - self.const) * clf_loss
-            + self.const * bbox_loss
-            + self.beta * adv_loss
-        )
+#         clf_loss = F.cross_entropy(cl_logits, targets, reduction="mean")
+#         cl_probs = F.softmax(cl_logits, dim=1)
+#         adv_lprobs = F.log_softmax(adv_logits, dim=1)
+#         adv_loss = F.kl_div(adv_lprobs, cl_probs, reduction="batchmean")
+#         loss = (
+#             (1 - self.const) * clf_loss
+#             + self.const * bbox_loss
+#             + self.beta * adv_loss
+#         )
 
-        return loss
+#         return loss

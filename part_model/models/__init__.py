@@ -16,9 +16,9 @@ from part_model.models.clean_mask_model import CleanMaskModel
 from part_model.models.common import Normalize
 from part_model.models.dino_bbox_model import DinoBoundingBoxModel
 from part_model.models.groundtruth_mask_model import GroundtruthMaskModel
-from part_model.models.multi_head_dino_bbox_model import (
-    MultiHeadDinoBoundingBoxModel,
-)
+# from part_model.models.multi_head_dino_bbox_model import (
+#     MultiHeadDinoBoundingBoxModel,
+# )
 from part_model.models.part_fc_model import PartFCModel
 from part_model.models.part_mask_model import PartMaskModel
 from part_model.models.part_seg_cat_model import PartSegCatModel
@@ -151,11 +151,16 @@ def build_classifier(args):
         elif model_token == "pixel":
             model = PixelCountModel(args, segmenter, None)
         elif model_token == "bbox_2heads_d":
+            # TODO: implement two headed model for bounding box
             model = MultiHeadDinoBoundingBoxModel(args)
         elif model_token == "bbox":
             # two options, either bbox model from object detection or bbox from segmentation model
             if args.obj_det_arch == "dino":
-                model = DinoBoundingBoxModel(args)
+                from detectron2.config import LazyConfig, instantiate
+                # model = instantiate
+                cfg = LazyConfig.load('part_model/models/configs/models/dino_r50.py')
+                model = instantiate(cfg.model)
+                # model = DinoBoundingBoxModel(args)
             else:
                 model = BoundingBoxModel(args, segmenter)
         elif model_token == "wbbox":
