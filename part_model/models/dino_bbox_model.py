@@ -18,8 +18,9 @@ class DinoBoundingBoxModel(nn.Module):
         print("=> Initializing DinoBoundingBoxModel...")
         super().__init__()
 
-        # TODO: load weights if args.load_from_segmenter
+        self.use_conv1d = "conv1d" in args.experiment
 
+        # TODO: load weights if args.load_from_segmenter
         backbone = build_backbone(args)
 
         transformer = build_deformable_transformer(args)
@@ -69,14 +70,14 @@ class DinoBoundingBoxModel(nn.Module):
             dn_labelbook_size=dn_labelbook_size,
         )
 
-        # setattr(args, 'num_classes', tmp_num_classes)
-        # logits for part labels and 4 for bounding box coords
-        input_dim = args.num_queries * (args.seg_labels + 4)
-        print("input_dim", input_dim)
+        input_dim = (
+            args.num_queries * (args.seg_labels + 4)
+            if not self.use_conv1d
+            else 10 * (args.seg_labels)
+        )
 
-        # how did we get 50 here
         self.core_model = nn.Sequential(
-            nn.Identity(),
+            nn.Conv1d(args.num_queries, 10, 5) if self.use_conv1d else nn.Identity(),
             nn.Flatten(),
             nn.BatchNorm1d(input_dim),
             nn.Linear(input_dim, 50),
@@ -92,7 +93,7 @@ class DinoBoundingBoxModel(nn.Module):
         dino_targets,
         need_tgt_for_training,
         return_mask=False,
-        **kwargs
+        **kwargs,
     ):
         # Object Detection part
         nested_tensors = NestedTensor(images, masks)
@@ -110,6 +111,7 @@ class DinoBoundingBoxModel(nn.Module):
             ],
             dim=2,
         )
+
         out = self.core_model(features)
 
         if return_mask:

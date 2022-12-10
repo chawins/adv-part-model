@@ -68,7 +68,6 @@ class MultiHeadDinoBoundingBoxModel(nn.Module):
             dn_labelbook_size=dn_labelbook_size,
         )
 
-        # TODO: don't hardcode
         self.classifier_head = nn.Sequential(
             nn.AdaptiveAvgPool2d(output_size=(1, 1)),
             nn.Flatten(),

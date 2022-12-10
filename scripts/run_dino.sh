@@ -1,8 +1,8 @@
 #!/bin/bash
 ID=9
-GPU=1
+GPU=0
 NUM_GPU=1
-BS=1
+BS=2
 AA_BS=32
 PORT=1000$ID
 BACKEND=nccl
