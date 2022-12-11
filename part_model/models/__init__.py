@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from argparse import Namespace
 
 import timm
 import torch
@@ -11,23 +12,25 @@ from torch import nn
 from torch.cuda import amp
 
 from part_model.dataloader import DATASET_DICT
-from part_model.models.bbox_model import BoundingBoxModel
-from part_model.models.clean_mask_model import CleanMaskModel
-from part_model.models.common import Normalize
-from part_model.models.dino_bbox_model import DinoBoundingBoxModel
-from part_model.models.groundtruth_mask_model import GroundtruthMaskModel
-from part_model.models.multi_head_dino_bbox_model import (
-    MultiHeadDinoBoundingBoxModel,
+from part_model.models.det_part_models import (
+    dino_bbox_model,
+    multi_head_dino_bbox_model,
 )
-from part_model.models.part_fc_model import PartFCModel
-from part_model.models.part_mask_model import PartMaskModel
-from part_model.models.part_seg_cat_model import PartSegCatModel
-from part_model.models.part_seg_model import PartSegModel
-from part_model.models.pixel_count_model import PixelCountModel
-from part_model.models.pooling_model import PoolingModel
-from part_model.models.segmentation_model import SEGM_BUILDER
-from part_model.models.two_head_model import TwoHeadModel
-from part_model.models.weighted_bbox_model import WeightedBBoxModel
+from part_model.models.model import Classifier
+from part_model.models.seg_part_models import (
+    bbox_model,
+    clean_mask_model,
+    groundtruth_mask_model,
+    part_fc_model,
+    part_mask_model,
+    part_seg_cat_model,
+    part_seg_model,
+    pixel_count_model,
+    pooling_model,
+    two_head_model,
+    weighted_bbox_model,
+)
+from part_model.models.seg_part_models.util import SEGM_BUILDER, SegClassifier
 from part_model.utils.image import get_seg_type
 
 
@@ -51,6 +54,50 @@ def wrap_distributed(args, model):
         model.cuda()
         model = torch.nn.parallel.DataParallel(model)
     return model
+
+
+def load_checkpoint(
+    args: Namespace,
+    model: nn.Module,
+    model_path: str | None = None,
+    resume_opt_state: bool = True,
+    optimizer: torch.optim.Optimizer | None = None,
+    scaler: amp.GradScaler | None = None,
+) -> None:
+    print(f"=> Loading resume checkpoint {model_path}...")
+    if args.gpu is None:
+        checkpoint = torch.load(model_path)
+    else:
+        # Map model to be loaded to specified single gpu.
+        checkpoint = torch.load(model_path, map_location=f"cuda:{args.gpu}")
+
+    if args.load_from_segmenter:
+        print("=> Loading segmenter weight only...")
+        state_dict = {}
+        for name, params in checkpoint["state_dict"].items():
+            name.replace("module", "module.segmenter")
+            state_dict[name] = params
+        model.load_state_dict(state_dict, strict=False)
+    else:
+        # Rename state_dict for backward compatibility with old
+        # interface (before using Classifier/SegClassifier).
+        state_dict = checkpoint["state_dict"]
+        new_state_dict = {}
+        for name, weights in state_dict.items():
+            if "._model." in name:
+                new_state_dict[name] = weights
+                continue
+            new_name = name.replace("module.1.", "module.")
+            new_name = new_name.replace("module.", "module._model.")
+            new_name = new_name.replace(".segmenter.1.", ".segmenter.")
+            new_state_dict[new_name] = weights
+        model.load_state_dict(new_state_dict, strict=False)
+
+    if not args.load_weight_only or resume_opt_state:
+        args.start_epoch = checkpoint["epoch"]
+        optimizer.load_state_dict(checkpoint["optimizer"])
+        scaler.load_state_dict(checkpoint["scaler"])
+    print(f'=> Loaded resume checkpoint (epoch {checkpoint["epoch"]})')
 
 
 def build_classifier(args):
@@ -81,7 +128,7 @@ def build_classifier(args):
 
         if args.seg_arch is not None:
             print("=> Building segmentation model...")
-            segmenter = SEGM_BUILDER[args.seg_arch](args)
+            segmenter = SEGM_BUILDER[args.seg_arch](args, normalize=False)
         elif args.obj_det_arch is not None:
             print("=> Building detection model...")
 
@@ -102,7 +149,7 @@ def build_classifier(args):
                 bias=False,
             )
             model.fc = nn.Linear(rep_dim, args.num_classes)
-            model = PartMaskModel(args, segmenter, model)
+            model = part_mask_model.PartMaskModel(args, segmenter, model)
         elif model_token == "seg_cat":
             model.conv1 = nn.Conv2d(
                 (args.seg_labels - 1) * 3
@@ -115,9 +162,13 @@ def build_classifier(args):
                 bias=False,
             )
             model.fc = nn.Linear(rep_dim, args.num_classes)
-            model = PartSegCatModel(args, segmenter, model, rep_dim)
+            model = part_seg_cat_model.PartSegCatModel(
+                args, segmenter, model, rep_dim
+            )
         elif model_token == "seg":
-            model = PartSegModel(args, segmenter, model, rep_dim, topk=None)
+            model = part_seg_model.PartSegModel(
+                args, segmenter, model, rep_dim, topk=None
+            )
         elif model_token == "clean":
             model.conv1 = nn.Conv2d(
                 args.seg_labels
@@ -130,7 +181,7 @@ def build_classifier(args):
                 bias=False,
             )
             model.fc = nn.Linear(rep_dim, args.num_classes)
-            model = CleanMaskModel(args, segmenter, model)
+            model = clean_mask_model.CleanMaskModel(args, segmenter, model)
         elif model_token == "groundtruth":
             model.conv1 = nn.Conv2d(
                 args.seg_labels
@@ -143,70 +194,69 @@ def build_classifier(args):
                 bias=False,
             )
             model.fc = nn.Linear(rep_dim, args.num_classes)
-            model = GroundtruthMaskModel(args, segmenter, model)
+            model = groundtruth_mask_model.GroundtruthMaskModel(
+                args, segmenter, model
+            )
         elif model_token == "2heads_d":
-            model = TwoHeadModel(args, segmenter, "d")
+            model = two_head_model.TwoHeadModel(args, segmenter, "d")
         elif model_token == "2heads_e":
-            model = TwoHeadModel(args, segmenter, "e")
+            model = two_head_model.TwoHeadModel(args, segmenter, "e")
         elif model_token == "pixel":
-            model = PixelCountModel(args, segmenter, None)
+            model = pixel_count_model.PixelCountModel(args, segmenter, None)
         elif model_token == "bbox_2heads_d":
-            model = MultiHeadDinoBoundingBoxModel(args)
+            model = multi_head_dino_bbox_model.MultiHeadDinoBoundingBoxModel(
+                args
+            )
         elif model_token == "bbox":
             # two options, either bbox model from object detection or bbox from segmentation model
             if args.obj_det_arch == "dino":
-                model = DinoBoundingBoxModel(args)
+                model = dino_bbox_model.DinoBoundingBoxModel(args)
             else:
-                model = BoundingBoxModel(args, segmenter)
+                model = bbox_model.BoundingBoxModel(args, segmenter)
         elif model_token == "wbbox":
-            model = WeightedBBoxModel(args, segmenter)
+            model = weighted_bbox_model.WeightedBBoxModel(args, segmenter)
         elif model_token == "fc":
-            model = PartFCModel(args, segmenter)
+            model = part_fc_model.PartFCModel(args, segmenter)
         elif model_token == "pooling":
-            model = PoolingModel(args, segmenter)
+            model = pooling_model.PoolingModel(args, segmenter)
 
+        model = SegClassifier(model, normalize=normalize)
         n_seg = sum(p.numel() for p in model.parameters()) / 1e6
         nt_seg = (
             sum(p.numel() for p in model.parameters() if p.requires_grad) / 1e6
         )
-        print(f"=> model params (train/total): {nt_seg:.2f}M/{n_seg:.2f}M")
+        print(f"=> Model params (train/total): {nt_seg:.2f}M/{n_seg:.2f}M")
     else:
-        print("=> building a normal classifier (no segmentation)")
+        print("=> Building a normal classifier...")
         model.fc = nn.Linear(rep_dim, args.num_classes)
-        model = nn.Sequential(Normalize(**normalize), model)
+        model = Classifier(model, normalize=normalize)
+        n_model = sum(p.numel() for p in model.parameters()) / 1e6
+        print(f"=> Total params: {n_model:.2f}M")
 
-    n_model = sum(p.numel() for p in model.parameters()) / 1e6
-    print(f"=> total params: {n_model:.2f}M")
-
+    # Wrap model again under DistributedDataParallel or just DataParallel
     model = wrap_distributed(args, model)
 
     if args.obj_det_arch == "dino":
+        backbone_params, non_backbone_params = [], []
+        for name, param in model.named_parameters():
+            if not param.requires_grad:
+                continue
+            if "backbone" in name:
+                backbone_params.append(param)
+            else:
+                non_backbone_params.append(param)
         optim_params = [
-            {
-                "params": [
-                    p
-                    for n, p in model.named_parameters()
-                    if "backbone" not in n and p.requires_grad
-                ]
-            },
-            {
-                "params": [
-                    p
-                    for n, p in model.named_parameters()
-                    if "backbone" in n and p.requires_grad
-                ],
-                "lr": args.lr_backbone,
-            },
+            {"params": non_backbone_params},
+            {"params": backbone_params, "lr": args.lr_backbone},
         ]
     else:
         p_wd, p_non_wd = [], []
-        for n, p in model.named_parameters():
-            if p.requires_grad:
-                if "bias" in n or "ln" in n or "bn" in n:
-                    p_non_wd.append(p)
+        for name, param in model.named_parameters():
+            if param.requires_grad:
+                if any(kword in name for kword in ["bias", "ln", "bn"]):
+                    p_non_wd.append(param)
                 else:
-                    p_wd.append(p)
-
+                    p_wd.append(param)
         optim_params = [
             {"params": p_wd, "weight_decay": args.wd},
             {"params": p_non_wd, "weight_decay": 0},
@@ -231,44 +281,36 @@ def build_classifier(args):
     scaler = amp.GradScaler(enabled=not args.full_precision)
 
     # Optionally resume from a checkpoint
-    if args.resume and not args.evaluate or args.resume_if_exist:
+    if not (args.evaluate or args.resume or args.resume_if_exist):
+        print("=> Model is randomly initialized.")
+        return model, optimizer, scaler
 
+    if args.evaluate:
+        model_path = f"{args.output_dir}/checkpoint_best.pt"
+        resume_opt_state = False
+    else:
         model_path = f"{args.output_dir}/checkpoint_last.pt"
-        resume_exists = True
+        resume_opt_state = True
         if not args.resume_if_exist or not os.path.isfile(model_path):
             model_path = args.resume
-            resume_exists = False
+            resume_opt_state = False
 
-        if os.path.isfile(model_path):
-            print(f"=> loading resume checkpoint {model_path}...")
-            if args.gpu is None:
-                checkpoint = torch.load(model_path)
-            else:
-                # Map model to be loaded to specified single gpu.
-                loc = f"cuda:{args.gpu}"
-                checkpoint = torch.load(model_path, map_location=loc)
-
-            if args.load_from_segmenter:
-                print("=> Loading segmenter weight only...")
-                state_dict = {}
-                for name, params in checkpoint["state_dict"].items():
-                    name.replace("module", "module.segmenter")
-                    state_dict[name] = params
-                model.load_state_dict(state_dict, strict=False)
-            else:
-                model.load_state_dict(checkpoint["state_dict"], strict=True)
-
-            if not args.load_weight_only or resume_exists:
-                args.start_epoch = checkpoint["epoch"]
-                optimizer.load_state_dict(checkpoint["optimizer"])
-                scaler.load_state_dict(checkpoint["scaler"])
-            print(f'=> loaded resume checkpoint (epoch {checkpoint["epoch"]})')
-        elif args.resume:
-            raise FileNotFoundError(f"=> No checkpoint found at {model_path}.")
-        else:
-            print("=> Tried to resume if exist but found no checkpoint.")
+    if os.path.isfile(model_path):
+        load_checkpoint(
+            args,
+            model,
+            model_path=model_path,
+            resume_opt_state=resume_opt_state,
+            optimizer=optimizer,
+            scaler=scaler,
+        )
+    elif args.resume:
+        raise FileNotFoundError(f"=> No checkpoint found at {model_path}.")
     else:
-        print("=> Loaded model without using resumed weights.")
+        print(
+            "=> resume_if_exist is True, but no checkpoint found at "
+            f"{model_path}."
+        )
 
     return model, optimizer, scaler
 
