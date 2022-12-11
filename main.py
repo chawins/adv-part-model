@@ -381,12 +381,7 @@ def main() -> None:
 
     print(args)
 
-    if args.evaluate:
-        if args.resume:
-            load_path = args.resume
-        else:
-            load_path = f"{args.output_dir}/checkpoint_best.pt"
-    else:
+    if not args.evaluate:
         print("=> Beginning training...")
         val_stats = {}
         for epoch in range(args.start_epoch, args.epochs):
@@ -464,13 +459,13 @@ def main() -> None:
         # Compute stats of best model after training
         dist_barrier()
         load_path = f"{args.output_dir}/checkpoint_best.pt"
-
-    print(f"=> Loading checkpoint from {load_path}...")
-    # Map model to be loaded to specified single gpu.
-    checkpoint = torch.load(
-        load_path, map_location=None if args.gpu is None else f"cuda:{args.gpu}"
-    )
-    model.load_state_dict(checkpoint["state_dict"])
+        print(f"=> Loading checkpoint from {load_path}...")
+        # Map model to be loaded to specified single gpu.
+        checkpoint = torch.load(
+            load_path,
+            map_location=None if args.gpu is None else f"cuda:{args.gpu}",
+        )
+        model.load_state_dict(checkpoint["state_dict"])
 
     # Running evaluation
     for attack in eval_attack:
@@ -540,9 +535,14 @@ def _train(train_loader, model, criterion, attack, optimizer, scaler, epoch):
                 nested_tensors, target_bbox, targets = samples
                 images, masks = nested_tensors.decompose()
                 masks = masks.cuda(args.gpu, non_blocking=True)
-                targets = torch.tensor(targets, device=masks.device, dtype=torch.long)
+                targets = torch.tensor(
+                    targets, device=masks.device, dtype=torch.long
+                )
                 target_bbox = [
-                    {k: v.cuda(args.gpu, non_blocking=True) for k, v in t.items()}
+                    {
+                        k: v.cuda(args.gpu, non_blocking=True)
+                        for k, v in t.items()
+                    }
                     for t in target_bbox
                 ]
             else:
@@ -698,9 +698,14 @@ def _validate(val_loader, model, criterion, attack):
                 nested_tensors, target_bbox, targets = samples
                 images, masks = nested_tensors.decompose()
                 masks = masks.cuda(args.gpu, non_blocking=True)
-                targets = torch.tensor(targets, device=masks.device, dtype=torch.long)
+                targets = torch.tensor(
+                    targets, device=masks.device, dtype=torch.long
+                )
                 target_bbox = [
-                    {k: v.cuda(args.gpu, non_blocking=True) for k, v in t.items()}
+                    {
+                        k: v.cuda(args.gpu, non_blocking=True)
+                        for k, v in t.items()
+                    }
                     for t in target_bbox
                 ]
             else:

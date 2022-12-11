@@ -1,7 +1,6 @@
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
-from part_model.dataloader import DATASET_DICT
+from torch import nn
 
 
 class PartFCModel(nn.Module):

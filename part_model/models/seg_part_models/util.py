@@ -1,16 +1,20 @@
+"""Segmentation models."""
+
+from __future__ import annotations
+
 from collections import OrderedDict
 
 import segmentation_models_pytorch as smp
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
+from torch import nn
 from torchvision.models.segmentation.deeplabv3 import DeepLabHead
 
-from ..dataloader import DATASET_DICT
-from .common import Normalize
+from part_model.dataloader import DATASET_DICT
+from part_model.models.common import Normalize
+from part_model.models.model import Classifier
 
 
-def build_deeplabv3(args):
+def build_deeplabv3(args, normalize: bool = True):
     # FIXME: DeepLabV3 is pretrained on COCO (not ImageNet)
     model = torch.hub.load(
         "pytorch/vision:v0.10.0",
@@ -20,8 +24,9 @@ def build_deeplabv3(args):
     model.classifier = DeepLabHead(2048, args.seg_labels)
     model.aux_classifier = None
 
-    normalize = DATASET_DICT[args.dataset]["normalize"]
-    model = nn.Sequential(Normalize(**normalize), model)
+    if normalize:
+        normalize = DATASET_DICT[args.dataset]["normalize"]
+        model = nn.Sequential(Normalize(**normalize), model)
 
     if args.seg_dir != "":
         best_path = f"{args.seg_dir}/checkpoint_best.pt"
@@ -30,8 +35,7 @@ def build_deeplabv3(args):
             checkpoint = torch.load(best_path)
         else:
             # Map model to be loaded to specified single gpu.
-            loc = "cuda:{}".format(args.gpu)
-            checkpoint = torch.load(best_path, map_location=loc)
+            checkpoint = torch.load(best_path, map_location=f"cuda:{args.gpu}")
 
         new_state_dict = OrderedDict()
         for k, v in checkpoint["state_dict"].items():
@@ -43,8 +47,7 @@ def build_deeplabv3(args):
     return model
 
 
-def build_deeplabv3plus(args):
-
+def build_deeplabv3plus(args, normalize: bool = True):
     model = smp.DeepLabV3Plus(
         encoder_name=args.seg_backbone,
         encoder_weights="imagenet" if args.pretrained else None,
@@ -58,8 +61,9 @@ def build_deeplabv3plus(args):
         upsampling=4,
         aux_params=None,
     )
-    normalize = DATASET_DICT[args.dataset]["normalize"]
-    model = nn.Sequential(Normalize(**normalize), model)
+    if normalize:
+        normalize = DATASET_DICT[args.dataset]["normalize"]
+        model = nn.Sequential(Normalize(**normalize), model)
 
     if args.seg_dir != "":
         best_path = f"{args.seg_dir}/checkpoint_best.pt"
@@ -68,8 +72,7 @@ def build_deeplabv3plus(args):
             checkpoint = torch.load(best_path)
         else:
             # Map model to be loaded to specified single gpu.
-            loc = "cuda:{}".format(args.gpu)
-            checkpoint = torch.load(best_path, map_location=loc)
+            checkpoint = torch.load(best_path, map_location=f"cuda:{args.gpu}")
 
         new_state_dict = OrderedDict()
         for k, v in checkpoint["state_dict"].items():
@@ -85,3 +88,26 @@ SEGM_BUILDER = {
     "deeplabv3": build_deeplabv3,
     "deeplabv3plus": build_deeplabv3plus,
 }
+
+
+class SegClassifier(Classifier):
+    """Base Classifier interface."""
+
+    def forward(
+        self, inputs: torch.Tensor, return_mask: bool = False, **kwargs
+    ):
+        """Forward pass.
+
+        Args:
+            inputs: Input images.
+            return_mask: If True, returns predicted segmentation mask together
+                with the outputs. Defaults to False.
+
+        Returns:
+            Output logits.
+        """
+        _ = kwargs  # Unused
+        if self._normalize is None:
+            return inputs
+        inputs = (inputs - self.mean) / self.std
+        return self._model(inputs, return_mask=return_mask)
