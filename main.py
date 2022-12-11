@@ -180,12 +180,6 @@ def main() -> None:
 
     print(args)
 
-    # if args.evaluate:
-    #     if args.resume:
-    #         load_path = args.resume
-    #     else:
-    #         load_path = f"{args.output_dir}/checkpoint_best.pt"
-    # else:
     if not args.evaluate:
         print("=> Beginning training...")
         val_stats = {}
