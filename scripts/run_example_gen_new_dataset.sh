@@ -20,7 +20,7 @@ NUM_WORKERS=2  # Number of workers per GPU
 # ============================== Part-ImageNet ============================== #
 DATASET=part-imagenet-pseudo
 DATAPATH=/data/kornrapatp/PartImageNet
-SEGPATH=$DATAPATH/PartSegmentations/All/
+SEGPATH=$DATAPATH/PartSegmentations/All-seg/ # Path to train seg model (Check new_partition.py script)
 
 OLD_DATASET=$DATAPATH/PartSegmentations/All
 NEW_DATASET=$DATAPATH/PartSegmentations/test2
@@ -32,6 +32,8 @@ PREDICTION_MODEL_PATH=/data/kornrapatp/results/MetaClassAll-new
 
 EPS=0.03137254901  # Set epsilon for adversarial training and evaluation
 MODEL=part-seg-only  # Define model to create (see naming in README)
+
+
 
 # train a segmenter using this command (use main.py and part-imagenet-pseudo as dataset)
 CUDA_VISIBLE_DEVICES=$GPU torchrun \
