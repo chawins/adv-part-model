@@ -107,18 +107,12 @@ def build_classifier(args):
     normalize = DATASET_DICT[args.dataset]["normalize"]
     if args.arch == "resnet101":
         # timm does not have pretrained resnet101
-        model = torchvision.models.resnet101(
-            weights=args.pretrained, progress=True
-        )
+        model = torchvision.models.resnet101(weights=args.pretrained, progress=True)
         rep_dim = 2048
     else:
-        model = timm.create_model(
-            args.arch, pretrained=args.pretrained, num_classes=0
-        )
+        model = timm.create_model(args.arch, pretrained=args.pretrained, num_classes=0)
         with torch.no_grad():
-            dummy_input = torch.zeros(
-                (2,) + DATASET_DICT[args.dataset]["input_dim"]
-            )
+            dummy_input = torch.zeros((2,) + DATASET_DICT[args.dataset]["input_dim"])
             rep_dim = model(dummy_input).size(-1)
 
     if get_seg_type(args) is not None:
@@ -162,9 +156,7 @@ def build_classifier(args):
                 bias=False,
             )
             model.fc = nn.Linear(rep_dim, args.num_classes)
-            model = part_seg_cat_model.PartSegCatModel(
-                args, segmenter, model, rep_dim
-            )
+            model = part_seg_cat_model.PartSegCatModel(args, segmenter, model, rep_dim)
         elif model_token == "seg":
             model = part_seg_model.PartSegModel(
                 args, segmenter, model, rep_dim, topk=None
@@ -194,9 +186,7 @@ def build_classifier(args):
                 bias=False,
             )
             model.fc = nn.Linear(rep_dim, args.num_classes)
-            model = groundtruth_mask_model.GroundtruthMaskModel(
-                args, segmenter, model
-            )
+            model = groundtruth_mask_model.GroundtruthMaskModel(args, segmenter, model)
         elif model_token == "2heads_d":
             model = two_head_model.TwoHeadModel(args, segmenter, "d")
         elif model_token == "2heads_e":
@@ -204,9 +194,7 @@ def build_classifier(args):
         elif model_token == "pixel":
             model = pixel_count_model.PixelCountModel(args, segmenter, None)
         elif model_token == "bbox_2heads_d":
-            model = multi_head_dino_bbox_model.MultiHeadDinoBoundingBoxModel(
-                args
-            )
+            model = multi_head_dino_bbox_model.MultiHeadDinoBoundingBoxModel(args)
         elif model_token == "bbox":
             # two options, either bbox model from object detection or bbox from segmentation model
             if args.obj_det_arch == "dino":
@@ -222,9 +210,7 @@ def build_classifier(args):
 
         model = SegClassifier(model, normalize=normalize)
         n_seg = sum(p.numel() for p in model.parameters()) / 1e6
-        nt_seg = (
-            sum(p.numel() for p in model.parameters() if p.requires_grad) / 1e6
-        )
+        nt_seg = sum(p.numel() for p in model.parameters() if p.requires_grad) / 1e6
         print(f"=> Model params (train/total): {nt_seg:.2f}M/{n_seg:.2f}M")
     else:
         print("=> Building a normal classifier...")
@@ -308,8 +294,7 @@ def build_classifier(args):
         raise FileNotFoundError(f"=> No checkpoint found at {model_path}.")
     else:
         print(
-            "=> resume_if_exist is True, but no checkpoint found at "
-            f"{model_path}."
+            "=> resume_if_exist is True, but no checkpoint found at " f"{model_path}."
         )
 
     return model, optimizer, scaler

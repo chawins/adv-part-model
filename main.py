@@ -65,6 +65,7 @@ def main() -> None:
     init_distributed_mode(args)
 
     global best_acc1
+    print("start", args.seg_labels)
 
     # handling dino args
     # TODO(nab-126@): Unify args, put this in argparser?
@@ -95,6 +96,7 @@ def main() -> None:
     print("=> Creating dataset...")
     loaders = load_dataset(args)
     train_loader, train_sampler, val_loader, test_loader = loaders
+    print("load data", args.seg_labels)
 
     # TODO(nab-126@): remove or put in util?
     debug = False
@@ -152,9 +154,11 @@ def main() -> None:
     model, optimizer, scaler = build_model(args)
 
     cudnn.benchmark = True
+    print("create model", args.seg_labels)
 
     # Define loss function
     criterion, train_criterion = get_train_criterion(args)
+    print("define loss", args.seg_labels)
 
     # Logging
     if is_main_process():
@@ -164,9 +168,7 @@ def main() -> None:
         logfile.flush()
         if args.wandb:
             wandb_id = os.path.split(args.output_dir)[-1]
-            wandb.init(
-                project="part-model", id=wandb_id, config=args, resume="allow"
-            )
+            wandb.init(project="part-model", id=wandb_id, config=args, resume="allow")
             print("wandb step:", wandb.run.step)
 
     eval_attack = setup_eval_attacker(args, model)
@@ -207,9 +209,7 @@ def main() -> None:
                 is_best = clean_acc1 > best_acc1
 
                 if args.adv_train != "none":
-                    adv_val_stats = _validate(
-                        val_loader, model, criterion, val_attack
-                    )
+                    adv_val_stats = _validate(val_loader, model, criterion, val_attack)
                     acc1 = adv_val_stats["acc1"]
                     val_stats["adv_acc1"] = acc1
                     val_stats["adv_loss"] = adv_val_stats["loss"]
@@ -326,14 +326,9 @@ def _train(train_loader, model, criterion, attack, optimizer, scaler, epoch):
                 nested_tensors, target_bbox, targets = samples
                 images, masks = nested_tensors.decompose()
                 masks = masks.cuda(args.gpu, non_blocking=True)
-                targets = torch.tensor(
-                    targets, device=masks.device, dtype=torch.long
-                )
+                targets = torch.tensor(targets, device=masks.device, dtype=torch.long)
                 target_bbox = [
-                    {
-                        k: v.cuda(args.gpu, non_blocking=True)
-                        for k, v in t.items()
-                    }
+                    {k: v.cuda(args.gpu, non_blocking=True) for k, v in t.items()}
                     for t in target_bbox
                 ]
             else:
@@ -475,14 +470,9 @@ def _validate(val_loader, model, criterion, attack):
                 nested_tensors, target_bbox, targets = samples
                 images, masks = nested_tensors.decompose()
                 masks = masks.cuda(args.gpu, non_blocking=True)
-                targets = torch.tensor(
-                    targets, device=masks.device, dtype=torch.long
-                )
+                targets = torch.tensor(targets, device=masks.device, dtype=torch.long)
                 target_bbox = [
-                    {
-                        k: v.cuda(args.gpu, non_blocking=True)
-                        for k, v in t.items()
-                    }
+                    {k: v.cuda(args.gpu, non_blocking=True) for k, v in t.items()}
                     for t in target_bbox
                 ]
             else:
@@ -541,13 +531,9 @@ def _validate(val_loader, model, criterion, attack):
                 # image corruption attack
                 if images.shape[0] != targets.shape[0]:
                     ratio = images.shape[0] // targets.shape[0]
-                    targets = targets.repeat(
-                        (ratio,) + (1,) * (len(targets.shape) - 1)
-                    )
+                    targets = targets.repeat((ratio,) + (1,) * (len(targets.shape) - 1))
                     if segs:
-                        segs = segs.repeat(
-                            (ratio,) + (1,) * (len(segs.shape) - 1)
-                        )
+                        segs = segs.repeat((ratio,) + (1,) * (len(segs.shape) - 1))
 
                 if segs is None or "normal" in args.experiment or seg_only:
                     outputs = model(images)
@@ -601,9 +587,7 @@ def _validate(val_loader, model, criterion, attack):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        "Part Classification", parents=[get_args_parser()]
-    )
+    parser = argparse.ArgumentParser("Part Classification", parents=[get_args_parser()])
     args = parser.parse_args()
     os.makedirs(args.output_dir, exist_ok=True)
     main()
