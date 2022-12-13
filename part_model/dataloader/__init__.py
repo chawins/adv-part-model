@@ -7,6 +7,8 @@ from .part_imagenet_pseudo import PART_IMAGENET_PSEUDO
 from .pascal_part import PASCAL_PART
 from .pascal_voc import PASCAL_VOC
 from .util import COLORMAP
+from .part_imagenet_pseudo_imagenet_class import PART_IMAGENET_PSEUDO_IMAGENET_CLASS
+
 
 DATASET_DICT = {
     "cityscapes": CITYSCAPES,
@@ -17,6 +19,7 @@ DATASET_DICT = {
     "part-imagenet-mixed": PART_IMAGENET_MIXED,
     "part-imagenet-corrupt": PART_IMAGENET_CORRUPT,
     "part-imagenet-pseudo": PART_IMAGENET_PSEUDO,
+    "part-imagenet-pseudo-imagenet-class": PART_IMAGENET_PSEUDO_IMAGENET_CLASS,
 }
 
 
