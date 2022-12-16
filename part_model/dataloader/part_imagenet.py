@@ -6,11 +6,10 @@ import os
 from typing import Any, Callable, Optional
 
 import numpy as np
-import json
 import torch
-from torch.utils import data
 from PIL import Image
 from PIL.Image import Image as _ImageType
+from torch.utils import data
 
 from part_model.dataloader.segmentation_transforms import (
     CenterCrop,
@@ -26,23 +25,22 @@ from part_model.utils.eval_sampler import DistributedEvalSampler
 from part_model.utils.image import get_seg_type
 
 
-CLASSES = {
-    "Quadruped": 4,
-    "Biped": 5,
-    "Fish": 4,
-    "Bird": 5,
-    "Snake": 2,
-    "Reptile": 4,
-    "Car": 3,
-    "Bicycle": 4,
-    "Boat": 2,
-    "Aeroplane": 5,
-    "Bottle": 2,
-}
-
-
 class PartImageNetSegDataset(data.Dataset):
     """PartImageNet Dataset."""
+
+    CLASSES = {
+        "Quadruped": 4,
+        "Biped": 5,
+        "Fish": 4,
+        "Bird": 5,
+        "Snake": 2,
+        "Reptile": 4,
+        "Car": 3,
+        "Bicycle": 4,
+        "Boat": 2,
+        "Aeroplane": 5,
+        "Bottle": 2,
+    }
 
     def __init__(
         self,
@@ -59,7 +57,8 @@ class PartImageNetSegDataset(data.Dataset):
         """Load our processed Part-ImageNet dataset.
 
         Args:
-            root: Path to root directory
+            root: Path to root directory.
+            seg_path: Path to segmentation labels.
             split: Data split to load. Defaults to "train".
             transform: Transformations to apply to the images (and
                 the segmentation masks if applicable). Defaults to None.
@@ -82,7 +81,7 @@ class PartImageNetSegDataset(data.Dataset):
 
         self.classes: list[str] = self._list_classes()
         self.num_classes: int = len(self.classes)
-        self.num_seg_labels: int = sum([CLASSES[c] for c in self.classes])
+        self.num_seg_labels: int = sum(self.CLASSES[c] for c in self.classes)
 
         # Load data from specified path
         self.images, self.labels, self.masks = self._get_data()
@@ -98,10 +97,10 @@ class PartImageNetSegDataset(data.Dataset):
         self.part_to_class = [[0] * (self.num_classes + 1)]
         self.part_to_class[0][0] = 1
         for i, label in enumerate(self.classes):
-            part_to_object.extend([i + 1] * CLASSES[label])
+            part_to_object.extend([i + 1] * self.CLASSES[label])
             base = [0] * (self.num_classes + 1)
             base[i + 1] = 1
-            self.part_to_class.extend([base] * CLASSES[label])
+            self.part_to_class.extend([base] * self.CLASSES[label])
         self.part_to_object = torch.tensor(part_to_object, dtype=torch.long)
 
     def __getitem__(self, index: int) -> tuple[torch.Tensor, ...]:
@@ -158,7 +157,9 @@ class PartImageNetSegDataset(data.Dataset):
             img_path = os.path.join(self._root, "JPEGImages")
             part_path = os.path.join(self._seg_path, label)
             # Read file names
-            with open(f"{self._seg_path}/{label}.txt", "r") as fns:
+            with open(
+                f"{self._seg_path}/{label}.txt", "r", encoding="utf-8"
+            ) as fns:
                 filenames = sorted([f.strip() for f in fns.readlines()])
             images.extend([f"{img_path}/{f}.JPEG" for f in filenames])
             masks.extend(
@@ -223,7 +224,7 @@ def get_loader_sampler(args, transform, split: str):
         drop_last=is_train,
     )
 
-    # TODO: can we make this cleaner?
+    # TODO(chawins@): can we make this cleaner?
     PART_IMAGENET["part_to_class"] = part_imagenet_dataset.part_to_class
     PART_IMAGENET["num_classes"] = part_imagenet_dataset.num_classes
     PART_IMAGENET["num_seg_labels"] = part_imagenet_dataset.num_seg_labels
