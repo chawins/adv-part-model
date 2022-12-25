@@ -2,6 +2,7 @@ from .part_imagenet_corrupt import PART_IMAGENET_CORRUPT
 from .part_imagenet_mixed_next import PART_IMAGENET_MIXED
 from .cityscapes import CITYSCAPES
 from .part_imagenet import PART_IMAGENET
+from .part_imagenet_imagenet_class import PART_IMAGENET_IMAGENET_CLASS
 from .part_imagenet_geirhos import PART_IMAGENET_GEIRHOS
 from .part_imagenet_pseudo import PART_IMAGENET_PSEUDO
 from .pascal_part import PASCAL_PART
@@ -20,6 +21,7 @@ DATASET_DICT = {
     "part-imagenet-corrupt": PART_IMAGENET_CORRUPT,
     "part-imagenet-pseudo": PART_IMAGENET_PSEUDO,
     "part-imagenet-pseudo-imagenet-class": PART_IMAGENET_PSEUDO_IMAGENET_CLASS,
+    "part-imagenet-imagenet-class": PART_IMAGENET_IMAGENET_CLASS,
 }
 
 

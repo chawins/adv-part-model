@@ -34,9 +34,8 @@ metaclass_to_class = {
     "Bottle": set([]),
 }
 
-
 for path, subdirs, files in os.walk(
-    "/data/kornrapatp/PartImageNet/PartSegmentations/All-class-specific"
+    "/data/kornrapatp/PartImageNet/PartSegmentations/All-imagenetclass-segtrain"
 ):
     for name in files:
         if ".tif" in name:
@@ -44,19 +43,51 @@ for path, subdirs, files in os.walk(
             imagenet_class = name.split("_")[0]
             metaclass_to_class[metaclass].add(imagenet_class)
 
-# numclass = 1
-# for k, v in metaclass_to_class.items():
-#     numclass += CLASSES[k] * len(v)
-# print(numclass)
-# 0 / 0
+
+numpart = 1
+imagenet_classes_part_num = {}
+for k, v in metaclass_to_class.items():
+    numpart += CLASSES[k] * len(v)
+    for imagenet_class in v:
+        imagenet_classes_part_num[imagenet_class] = CLASSES[k]
+imagenet_classes_part_num = dict(sorted(imagenet_classes_part_num.items()))
+print(f"Total part in new dataset: {numpart}")
 # print(metaclass_to_class)
 # for k, v in metaclass_to_class.items():
 #     print(k, len(v))
 
 
+# # make directories
+# os.mkdir(
+#     "/data/kornrapatp/PartImageNet/PartSegmentations/All-imagenetclass-segtrain-processed"
+# )
+# for partition in ["train", "val", "test"]:
+#     os.mkdir(
+#         "/data/kornrapatp/PartImageNet/PartSegmentations/All-imagenetclass-segtrain-processed"
+#         + "/"
+#         + partition
+#     )
+#     for c in imagenet_classes_part_num.keys():
+#         os.mkdir(
+#             "/data/kornrapatp/PartImageNet/PartSegmentations/All-imagenetclass-segtrain-processed"
+#             + "/"
+#             + partition
+#             + "/"
+#             + c
+#         )
+#         with open(
+#             "/data/kornrapatp/PartImageNet/PartSegmentations/All-imagenetclass-segtrain-processed"
+#             + "/"
+#             + partition
+#             + "/"
+#             + c
+#             + ".txt",
+#             "w",
+#         ) as f:
+#             f.write("")
+
 classes = sorted(CLASSES.keys())
 print(classes)
-
 class_starting_index = {}
 curid = 1
 
@@ -68,17 +99,19 @@ print(class_starting_index)
 
 
 imagenet_class_starting_index = {}
+imagenet_indices = {}
 curid = 1
-imagenet_classes_part_num = {}
 
-for c in classes:
-    imagenet_classes = metaclass_to_class[c]
-    for imagenet_class in imagenet_classes:
-        imagenet_class_starting_index[imagenet_class] = curid
-        curid += CLASSES[c]
-        imagenet_classes_part_num[imagenet_class] = CLASSES[c]
+for c in imagenet_classes_part_num.keys():
+    imagenet_class_starting_index[c] = curid
+    imagenet_indices[c] = [
+        i for i in range(curid, curid + imagenet_classes_part_num[c])
+    ]
+    curid += imagenet_classes_part_num[c]
+print(imagenet_indices)
+0 / 0
 
-print(imagenet_class_starting_index)
+# print(len(imagenet_class_starting_index.keys()))
 
 
 def save_pil_image(img, path):
@@ -87,36 +120,61 @@ def save_pil_image(img, path):
     pil_img.save(image_path)
 
 
-# # Rewrite segmentation labels
-# for path, subdirs, files in os.walk(
-#     "/data/kornrapatp/PartImageNet/PartSegmentations/All-class-specific"
-# ):
-#     for name in files:
-#         className = path.split("/")[-1]
-#         if ".tif" in name:
-#             img = np.asarray(Image.open(os.path.join(path, name)))
-#             imagenet_className = name.split("_")[0]
-#             new_img = np.where(
-#                 img != 0,
-#                 img
-#                 - (
-#                     class_starting_index[className]
-#                     - imagenet_class_starting_index[imagenet_className]
-#                 ),
-#                 np.zeros(img.shape),
-#             ).astype(np.int32)
-#             print(img.dtype, new_img.dtype, np.amax(new_img), className)
-#             save_pil_image(
-#                 new_img,
-#                 os.path.join(
-#                     "/data/kornrapatp/PartImageNet/PartSegmentations/All-class-specific-processed",
-#                     path.split("/")[-2],
-#                     path.split("/")[-1],
-#                     name,
-#                 ),
-#             )
+fileList = {}
+# Rewrite segmentation labels
+for path, subdirs, files in os.walk(
+    "/data/kornrapatp/PartImageNet/PartSegmentations/All-imagenetclass-segtrain"
+):
+    for name in files:
+        className = path.split("/")[-1]
+        if ".tif" in name:
+            img = np.asarray(Image.open(os.path.join(path, name)))
+            imagenet_className = name.split("_")[0]
+            np_min = np.amin(
+                np.where(
+                    img != 0,
+                    img,
+                    999,
+                ).astype(np.int32)
+            )
+            if np_min != class_starting_index[className]:
+                print(np_min, class_starting_index[className])
+            new_img = np.where(
+                img != 0,
+                img
+                - (
+                    class_starting_index[className]
+                    - imagenet_class_starting_index[imagenet_className]
+                ),
+                np.zeros(img.shape),
+            ).astype(np.int32)
+            # print(img.dtype, new_img.dtype, np.amax(new_img), className)
+            save_pil_image(
+                new_img,
+                os.path.join(
+                    "/data/kornrapatp/PartImageNet/PartSegmentations/All-imagenetclass-segtrain-processed",
+                    path.split("/")[-2],
+                    imagenet_className,
+                    name,
+                ),
+            )
+            if path.split("/")[-2] + "/" + imagenet_className not in fileList:
+                fileList[path.split("/")[-2] + "/" + imagenet_className] = []
+            fileList[path.split("/")[-2] + "/" + imagenet_className].append(
+                imagenet_className + "/" + name.split(".")[0] + "\n"
+            )
 
-
+for k, v in fileList.items():
+    v = sorted(v)
+    with open(
+        "/data/kornrapatp/PartImageNet/PartSegmentations/All-imagenetclass-segtrain-processed"
+        + "/"
+        + k
+        + ".txt",
+        "w",
+    ) as f:
+        for name in v:
+            f.write(name)
 # # Copy over remaining imagenet images to partimagenet
 # seen = set([])
 # for path, subdirs, files in os.walk(
