@@ -11,6 +11,6 @@ for path, subdirs, files in os.walk(
         className = path.split("/")[-1]
         if ".tif" in name:
             img = np.asarray(Image.open(os.path.join(path, name)))
-            cumPer += np.sum(np.where(img == 0, 1, 0)) / (img.shape[0] * img.shape[1])
+            cumPer += np.sum(img == 0) / (img.shape[0] * img.shape[1])
             num += 1
 print(cumPer / num)

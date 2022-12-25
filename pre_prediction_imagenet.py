@@ -5,6 +5,15 @@ import numpy as np
 import shutil
 import argparse
 
+"""
+This script preprocess the data before generating the masks by creating a new dataset with mock masks in the test set.
+1. Read filenames of the ground truth masks(for filtering out in the mock dataset) and the imagenet folder names(for retrieving all relevent filenames)
+2. Make the mock dataset directories 
+3. Get 'candidate list' (relevant filenames that are not already in the groundtruth masks used to train segmentation model)
+4. Sample num_samples from the candidate list
+5. Put all of the sampled masks to the test partition for pseudo label generation
+6. make directory to put the predicted masks in
+"""
 
 # Initialize parser
 parser = argparse.ArgumentParser()
@@ -54,23 +63,24 @@ prediction_path = args.prediction_path
 
 
 # classes = {
-#     "Aeroplane": set([]),
-#     "Quadruped": set([]),
-#     "Biped": set([]),
-#     "Fish": set([]),
-#     "Bird": set([]),
-#     "Snake": set([]),
-#     "Reptile": set([]),
-#     "Car": set([]),
-#     "Bicycle": set([]),
-#     "Boat": set([]),
-#     "Bottle": set([]),
+#     "Aeroplane": set(),
+#     "Quadruped": set(),
+#     "Biped": set(),
+#     "Fish": set(),
+#     "Bird": set(),
+#     "Snake": set(),
+#     "Reptile": set(),
+#     "Car": set(),
+#     "Bicycle": set(),
+#     "Boat": set(),
+#     "Bottle": set(),
 # }
 
-classes = set([])
+# Step 1
+classes = set()
 
 # Get all samples from current 1x dataset to ignore during sample generation
-old_dataset = set([])
+old_dataset = set()
 count = 0
 tran_val_count = 0
 for path, subdirs, files in os.walk(old_dataset_path):
@@ -83,9 +93,7 @@ for path, subdirs, files in os.walk(old_dataset_path):
             metaclass = path.split("/")[-1]
             classes.add(name.split("_")[0])
 
-# print(len(old_dataset))
-# 0 / 0
-
+# Step 2
 # Make directories
 os.mkdir(new_temp_mask_dataset_path)
 for partition in ["train", "val", "test"]:
@@ -95,7 +103,7 @@ for partition in ["train", "val", "test"]:
             new_temp_mask_dataset_path + "/" + partition + "/" + imagenetClass
         )
 
-
+# Step 3
 # Get candidate list
 count = 0
 candidates = []
@@ -109,13 +117,14 @@ for folder in classes:
             else:
                 pass
 
-
+# Step 4
 # randomly shuffle candidates and pick only num_new_samples samples to include
 random.shuffle(candidates)
 print(len(candidates))
 candidates = candidates[:num_new_samples]
 print(len(candidates))
 
+# Step 5
 # Put all of our candidates into test set to generate masks in the next step
 for c in classes:
     for partition in ["train", "val", "test"]:
@@ -153,4 +162,5 @@ for c in classes:
             tif, f"{new_temp_mask_dataset_path}/test/{c}/{name[:-1]}.tif"
         )
 
+# Step 6
 os.mkdir(prediction_path)

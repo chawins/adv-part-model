@@ -5,6 +5,15 @@ import numpy as np
 import shutil
 import argparse
 
+"""
+This script postprocesses the data after generating the pseudo label masks by merging the groundtruth masks used to train the segmentation model with the generated masks.
+1. Get filenames for all of the groundtruth masks used to train the segmentation model and the imagenet class.
+2. Make the directories for the dataset
+3. Get filenames for all of the generated pseudo label masks
+4. Randomly partition the generated masks into train/val/test
+5. Create training set by symlink the groundtruth masks over, and copy generated masks.
+6. Create val/test set by copying over generated masks
+"""
 
 # Initialize parser
 parser = argparse.ArgumentParser()
@@ -58,10 +67,11 @@ prediction_path = args.prediction_path
 # relative path is hard-coded
 relative_path_old_to_new = "../../../" + old_dataset_path.split("/")[-1]
 
-classes = set([])
+# Step 1
+classes = set()
 
 # Get all samples from current 1x dataset to get folder-to-class mapping
-old_dataset = set([])
+old_dataset = set()
 count = 0
 tran_val_count = 0
 for path, subdirs, files in os.walk(old_dataset_path):
@@ -76,7 +86,7 @@ for path, subdirs, files in os.walk(old_dataset_path):
 
 print(len(old_dataset))
 
-
+# Step 2
 # Make directories
 os.mkdir(new_dataset_path)
 for partition in ["train", "val", "test"]:
@@ -86,6 +96,7 @@ for partition in ["train", "val", "test"]:
 
 
 # Create dataset by merging old dataset and newly generated masks TODO: Dont forget to change target dir
+# Step 3
 # read generated masks name
 mask_names = []
 for root, dirs, files in os.walk(prediction_path):
@@ -94,6 +105,8 @@ for root, dirs, files in os.walk(prediction_path):
             mask_names.append(file.split(".")[0])
 
 print(len(mask_names), len(set(mask_names)))
+
+# Step 4
 import random
 
 mask_names = list(set(mask_names))
@@ -114,6 +127,8 @@ partition_generated = {"val": val_masks, "test": test_masks}
 num_train = 0
 num_val = 0
 num_test = 0
+
+# Step 5
 # create training set
 for c in classes:
     class_train_masks = [name for name in train_masks if c in name]
@@ -161,6 +176,7 @@ for c in classes:
             f"{new_dataset_path}/train/{c}/{fileName}.tif",
         )
 
+# Step 6
 for c in classes:
     for partition in ["val", "test"]:
         new_partition_list = [

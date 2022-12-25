@@ -21,17 +21,17 @@ CLASSES = {
 }
 
 metaclass_to_class = {
-    "Aeroplane": set([]),
-    "Quadruped": set([]),
-    "Biped": set([]),
-    "Fish": set([]),
-    "Bird": set([]),
-    "Snake": set([]),
-    "Reptile": set([]),
-    "Car": set([]),
-    "Bicycle": set([]),
-    "Boat": set([]),
-    "Bottle": set([]),
+    "Aeroplane": set(),
+    "Quadruped": set(),
+    "Biped": set(),
+    "Fish": set(),
+    "Bird": set(),
+    "Snake": set(),
+    "Reptile": set(),
+    "Car": set(),
+    "Bicycle": set(),
+    "Boat": set(),
+    "Bottle": set(),
 }
 
 for path, subdirs, files in os.walk(
@@ -52,39 +52,36 @@ for k, v in metaclass_to_class.items():
         imagenet_classes_part_num[imagenet_class] = CLASSES[k]
 imagenet_classes_part_num = dict(sorted(imagenet_classes_part_num.items()))
 print(f"Total part in new dataset: {numpart}")
-# print(metaclass_to_class)
-# for k, v in metaclass_to_class.items():
-#     print(k, len(v))
 
 
-# # make directories
-# os.mkdir(
-#     "/data/kornrapatp/PartImageNet/PartSegmentations/All-imagenetclass-segtrain-processed"
-# )
-# for partition in ["train", "val", "test"]:
-#     os.mkdir(
-#         "/data/kornrapatp/PartImageNet/PartSegmentations/All-imagenetclass-segtrain-processed"
-#         + "/"
-#         + partition
-#     )
-#     for c in imagenet_classes_part_num.keys():
-#         os.mkdir(
-#             "/data/kornrapatp/PartImageNet/PartSegmentations/All-imagenetclass-segtrain-processed"
-#             + "/"
-#             + partition
-#             + "/"
-#             + c
-#         )
-#         with open(
-#             "/data/kornrapatp/PartImageNet/PartSegmentations/All-imagenetclass-segtrain-processed"
-#             + "/"
-#             + partition
-#             + "/"
-#             + c
-#             + ".txt",
-#             "w",
-#         ) as f:
-#             f.write("")
+# make directories
+os.mkdir(
+    "/data/kornrapatp/PartImageNet/PartSegmentations/All-imagenetclass-segtrain-processed"
+)
+for partition in ["train", "val", "test"]:
+    os.mkdir(
+        "/data/kornrapatp/PartImageNet/PartSegmentations/All-imagenetclass-segtrain-processed"
+        + "/"
+        + partition
+    )
+    for c in imagenet_classes_part_num.keys():
+        os.mkdir(
+            "/data/kornrapatp/PartImageNet/PartSegmentations/All-imagenetclass-segtrain-processed"
+            + "/"
+            + partition
+            + "/"
+            + c
+        )
+        with open(
+            "/data/kornrapatp/PartImageNet/PartSegmentations/All-imagenetclass-segtrain-processed"
+            + "/"
+            + partition
+            + "/"
+            + c
+            + ".txt",
+            "w",
+        ) as f:
+            f.write("")
 
 classes = sorted(CLASSES.keys())
 print(classes)
@@ -108,10 +105,6 @@ for c in imagenet_classes_part_num.keys():
         i for i in range(curid, curid + imagenet_classes_part_num[c])
     ]
     curid += imagenet_classes_part_num[c]
-print(imagenet_indices)
-0 / 0
-
-# print(len(imagenet_class_starting_index.keys()))
 
 
 def save_pil_image(img, path):
@@ -175,51 +168,3 @@ for k, v in fileList.items():
     ) as f:
         for name in v:
             f.write(name)
-# # Copy over remaining imagenet images to partimagenet
-# seen = set([])
-# for path, subdirs, files in os.walk(
-#     "/data/kornrapatp/PartImageNet/PartSegmentations/All-class-specific/processed"
-# ):
-#     for name in files:
-#         if ".tif" in name:
-#             seen.add(name.split(".")[0])
-
-# for k, v in metaclass_to_class.items():
-#     classes = list(v)
-#     copy_dir = "/data/kornrapatp/PartImageNet/JPEGImagesImageNet"
-#     copy_dir = pathlib.Path(copy_dir)
-#     copy_dir.mkdir(exist_ok=True)
-
-#     file_list = []
-#     print(k)
-
-#     for c in classes:
-#         path = pathlib.Path("/data/shared/train_blurred/Images/" + c)
-#         images = list(path.glob("*.jpg"))
-#         # print(images)
-#         # random.shuffle(images)
-#         (copy_dir / c).mkdir(exist_ok=True)
-#         for img in images:
-#             if img.name.split(".")[0] not in seen:
-#                 n = img.name.split(".")[0]
-#                 file_list.append(n.split("_")[0] + "/" + n)
-#                 imgNP = np.asarray(Image.open(img))
-#                 seg = np.zeros(imgNP.shape[:2])
-#                 save_pil_image(
-#                     seg,
-#                     "/data/kornrapatp/PartImageNet/PartSegmentations/All-class-specific-processed/test/"
-#                     + k
-#                     + "/"
-#                     + img.name.split(".")[0]
-#                     + ".tif",
-#                 )
-#             shutil.copyfile(img, str(copy_dir / c / img.name))
-#     with open(
-#         "/data/kornrapatp/PartImageNet/PartSegmentations/All-class-specific-processed/test/"
-#         + k
-#         + ".txt",
-#         "w",
-#     ) as f:
-#         for line in file_list:
-#             f.write(line)
-#             f.write("\n")

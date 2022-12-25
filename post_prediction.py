@@ -5,6 +5,15 @@ import numpy as np
 import shutil
 import argparse
 
+"""
+This script postprocesses the data after generating the pseudo label masks by merging the groundtruth masks used to train the segmentation model with the generated masks.
+1. Make the directories for the dataset
+2. Get filenames for all of the groundtruth masks used to train the segmentation model and the folder name to metaclass mapping.
+3. Get filenames for all of the generated pseudo label masks
+4. For each class, partition the generated pseudo label masks
+5. Symlink the groundtruth masks over
+6. Copy the generated pseudo label masks over
+"""
 
 # Initialize parser
 parser = argparse.ArgumentParser()
@@ -59,19 +68,20 @@ prediction_path = args.prediction_path
 relative_path_old_to_new = "../../../" + old_dataset_path.split("/")[-1]
 
 classes = {
-    "Aeroplane": set([]),
-    "Quadruped": set([]),
-    "Biped": set([]),
-    "Fish": set([]),
-    "Bird": set([]),
-    "Snake": set([]),
-    "Reptile": set([]),
-    "Car": set([]),
-    "Bicycle": set([]),
-    "Boat": set([]),
-    "Bottle": set([]),
+    "Aeroplane": set(),
+    "Quadruped": set(),
+    "Biped": set(),
+    "Fish": set(),
+    "Bird": set(),
+    "Snake": set(),
+    "Reptile": set(),
+    "Car": set(),
+    "Bicycle": set(),
+    "Boat": set(),
+    "Bottle": set(),
 }
 
+# Step 1
 # Make directories
 os.mkdir(new_dataset_path)
 for partition in ["train", "val", "test"]:
@@ -79,8 +89,9 @@ for partition in ["train", "val", "test"]:
     for c in classes.keys():
         os.mkdir(new_dataset_path + "/" + partition + "/" + c)
 
+# Step 2
 # Get all samples from current 1x dataset to get folder-to-class mapping
-old_dataset = set([])
+old_dataset = set()
 count = 0
 tran_val_count = 0
 for path, subdirs, files in os.walk(old_dataset_path):
@@ -102,6 +113,7 @@ for k, v in classes.items():
         folder_to_class[folder] = k
 
 
+# Step 3
 # Create dataset by merging old dataset and newly generated masks TODO: Dont forget to change target dir
 # read generated masks name
 mask_names = []
@@ -110,7 +122,7 @@ for root, dirs, files in os.walk(prediction_path):
         if ".tif" in file:
             mask_names.append(file.split(".")[0])
 
-
+# Step 4
 for c in classes.keys():
     # read and partition newly generated masks
     filenames = [
@@ -139,12 +151,16 @@ for c in classes.keys():
         )
         new_partition_list = list(set(new_partition_list))
         new_partition_list.sort()
+
+        # Step 5
         # symlink original masks from old dataset
         for fileName in step_all_list:
             os.symlink(
                 f"{relative_path_old_to_new}/{partition}/{c}/{fileName}.tif",  # calculate relative path
                 f"{new_dataset_path}/{partition}/{c}/{fileName}.tif",
             )
+
+        # Step 6
         # copy newly generated masks over
         for fileName in partition_generated[partition]:
             shutil.copyfile(
