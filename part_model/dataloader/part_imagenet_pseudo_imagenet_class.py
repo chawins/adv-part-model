@@ -272,7 +272,9 @@ class PartImageNetSegDataset(data.Dataset):
             with open(f"{self.path}/{label}.txt", "r") as fns:
                 filenames = sorted([f.strip() for f in fns.readlines()])
             images.extend([f"{img_path}/{f}.JPEG" for f in filenames])
-            masks.extend([f'{part_path}/{f.split("/")[1]}.tif' for f in filenames])
+            masks.extend(
+                [f'{part_path}/{f.split("/")[1]}.tif' for f in filenames]
+            )
             labels.extend([l] * len(filenames))
             files.extend(filenames)
         labels = torch.tensor(labels, dtype=torch.long)
@@ -378,7 +380,9 @@ def load_part_imagenet(args):
         ]
     )
 
-    train_loader, train_sampler = get_loader_sampler(args, train_transforms, "train")
+    train_loader, train_sampler = get_loader_sampler(
+        args, train_transforms, "train"
+    )
     val_loader, _ = get_loader_sampler(args, val_transforms, "val")
     test_loader, _ = get_loader_sampler(args, val_transforms, "test")
 

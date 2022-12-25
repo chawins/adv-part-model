@@ -91,7 +91,9 @@ os.mkdir(new_temp_mask_dataset_path)
 for partition in ["train", "val", "test"]:
     os.mkdir(new_temp_mask_dataset_path + "/" + partition)
     for imagenetClass in classes:
-        os.mkdir(new_temp_mask_dataset_path + "/" + partition + "/" + imagenetClass)
+        os.mkdir(
+            new_temp_mask_dataset_path + "/" + partition + "/" + imagenetClass
+        )
 
 
 # Get candidate list
@@ -120,12 +122,16 @@ for c in classes:
         if partition == "test":
             class_candidate = [candi for candi in candidates if c in candi]
             class_candidate.sort()
-            with open(f"{new_temp_mask_dataset_path}/{partition}/{c}.txt", "w") as f:
+            with open(
+                f"{new_temp_mask_dataset_path}/{partition}/{c}.txt", "w"
+            ) as f:
                 for candi in class_candidate:
                     f.write(candi.split("_")[0] + "/" + candi)
                     f.write("\n")
         else:
-            with open(f"{new_temp_mask_dataset_path}/{partition}/{c}.txt", "w") as f:
+            with open(
+                f"{new_temp_mask_dataset_path}/{partition}/{c}.txt", "w"
+            ) as f:
                 pass
 
 # Create .tif file of correct dimensions inside test dir
@@ -143,6 +149,8 @@ for c in classes:
         img = Image.open(f'{jpeg_path}/{name.split("_")[0]}/{name[:-1]}.JPEG')
         tif = np.zeros(img.size)
         print(img.size)
-        save_pil_image(tif, f"{new_temp_mask_dataset_path}/test/{c}/{name[:-1]}.tif")
+        save_pil_image(
+            tif, f"{new_temp_mask_dataset_path}/test/{c}/{name[:-1]}.tif"
+        )
 
 os.mkdir(prediction_path)

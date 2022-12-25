@@ -8,7 +8,9 @@ from .part_imagenet_pseudo import PART_IMAGENET_PSEUDO
 from .pascal_part import PASCAL_PART
 from .pascal_voc import PASCAL_VOC
 from .util import COLORMAP
-from .part_imagenet_pseudo_imagenet_class import PART_IMAGENET_PSEUDO_IMAGENET_CLASS
+from .part_imagenet_pseudo_imagenet_class import (
+    PART_IMAGENET_PSEUDO_IMAGENET_CLASS,
+)
 
 
 DATASET_DICT = {

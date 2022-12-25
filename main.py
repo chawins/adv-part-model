@@ -51,7 +51,9 @@ from part_model.utils.loss import get_train_criterion
 
 
 def _get_args_parser():
-    parser = argparse.ArgumentParser(description="Part classification", add_help=False)
+    parser = argparse.ArgumentParser(
+        description="Part classification", add_help=False
+    )
     parser.add_argument("--data", default="~/data/shared/", type=str)
     parser.add_argument("--arch", default="resnet18", type=str)
     parser.add_argument(
@@ -59,7 +61,9 @@ def _get_args_parser():
         action="store_true",
         help="Load pretrained model on ImageNet-1k",
     )
-    parser.add_argument("--output-dir", default="./", type=str, help="output dir")
+    parser.add_argument(
+        "--output-dir", default="./", type=str, help="output dir"
+    )
     parser.add_argument(
         "-j",
         "--workers",
@@ -84,7 +88,9 @@ def _get_args_parser():
     parser.add_argument("--optim", default="sgd", type=str)
     parser.add_argument("--betas", default=(0.9, 0.999), nargs=2, type=float)
     parser.add_argument("--eps", default=1e-8, type=float)
-    parser.add_argument("--print-freq", default=10, type=int, help="print frequency")
+    parser.add_argument(
+        "--print-freq", default=10, type=int, help="print frequency"
+    )
     parser.add_argument(
         "--resume", default="", type=str, help="path to latest checkpoint"
     )
@@ -124,10 +130,14 @@ def _get_args_parser():
             "current best checkpoint in the same dir if exists"
         ),
     )
-    parser.add_argument("--debug", action="store_true", help="Enable debug mode")
+    parser.add_argument(
+        "--debug", action="store_true", help="Enable debug mode"
+    )
     # TODO
     parser.add_argument("--dataset", required=True, type=str, help="Dataset")
-    parser.add_argument("--num-classes", default=10, type=int, help="Number of classes")
+    parser.add_argument(
+        "--num-classes", default=10, type=int, help="Number of classes"
+    )
     parser.add_argument(
         "--experiment",
         required=True,
@@ -286,7 +296,9 @@ def main(args):
         logfile.flush()
         if args.wandb:
             wandb_id = os.path.split(args.output_dir)[-1]
-            wandb.init(project="part-model", id=wandb_id, config=args, resume="allow")
+            wandb.init(
+                project="part-model", id=wandb_id, config=args, resume="allow"
+            )
             print("wandb step:", wandb.run.step)
 
     eval_attack = setup_eval_attacker(args, model)
@@ -328,7 +340,9 @@ def main(args):
             )
 
             if (epoch + 1) % 2 == 0:
-                val_stats = _validate(val_loader, model, criterion, no_attack, args)
+                val_stats = _validate(
+                    val_loader, model, criterion, no_attack, args
+                )
                 clean_acc1, acc1 = val_stats["acc1"], None
                 is_best = clean_acc1 > best_acc1
                 if args.adv_train != "none":
@@ -415,7 +429,9 @@ def main(args):
         logfile.close()
 
 
-def _train(train_loader, model, criterion, attack, optimizer, scaler, epoch, args):
+def _train(
+    train_loader, model, criterion, attack, optimizer, scaler, epoch, args
+):
     batch_time = AverageMeter("Time", ":6.3f")
     data_time = AverageMeter("Data", ":6.3f")
     losses = AverageMeter("Loss", ":.4e")
@@ -577,7 +593,9 @@ def _validate(val_loader, model, criterion, attack, args):
             # image corruption attack
             if images.shape[0] != targets.shape[0]:
                 ratio = images.shape[0] // targets.shape[0]
-                targets = targets.repeat((ratio,) + (1,) * (len(targets.shape) - 1))
+                targets = targets.repeat(
+                    (ratio,) + (1,) * (len(targets.shape) - 1)
+                )
                 if segs:
                     segs = segs.repeat((ratio,) + (1,) * (len(segs.shape) - 1))
 

@@ -128,7 +128,12 @@ for c in classes:
     new_partition_list = list(set(old_list + class_train_masks))
     new_partition_list.sort()
 
-    print(c, len(set(old_list)), len(set(class_train_masks)), len(new_partition_list))
+    print(
+        c,
+        len(set(old_list)),
+        len(set(class_train_masks)),
+        len(new_partition_list),
+    )
     num_train += len(new_partition_list)
 
     # .txt files
@@ -158,7 +163,9 @@ for c in classes:
 
 for c in classes:
     for partition in ["val", "test"]:
-        new_partition_list = [f for f in partition_generated[partition] if c in f]
+        new_partition_list = [
+            f for f in partition_generated[partition] if c in f
+        ]
         print(
             len(partition_generated[partition]),
             len(new_partition_list),
