@@ -5,6 +5,20 @@ import pathlib
 import random
 import shutil
 
+""" 
+This script converts metaclass dataset into imagenet class dataset.
+1. Fetch the mapping from metaclass to imagenet foldername list (to be used during reading the masks to be relabeled)
+2. Fetch the mapping from imagenet foldernames to number of part (to be used to get the part starting index of each class)
+3. Make the imagenet dataset directory
+4. Get the metaclass mask starting indices and imagenet class mask starting indices (to be used during mask relabel)
+5. Relabel each mask, for each non-bg pixel, subtract the metaclass starting index and add the imagenet class starting index.
+6. Write the .txt file for the new dataset
+"""
+
+metaclass_dataset_dir = (
+    "/data/kornrapatp/PartImageNet/PartSegmentations/All-imagenetclass-segtrain"
+)
+imagenetclass_dataset_dir = "/data/kornrapatp/PartImageNet/PartSegmentations/All-imagenetclass-segtrain-processed"
 
 CLASSES = {
     "Quadruped": 4,
@@ -34,16 +48,15 @@ metaclass_to_class = {
     "Bottle": set(),
 }
 
-for path, subdirs, files in os.walk(
-    "/data/kornrapatp/PartImageNet/PartSegmentations/All-imagenetclass-segtrain"
-):
+# Step 1
+for path, subdirs, files in os.walk(metaclass_dataset_dir):
     for name in files:
         if ".tif" in name:
             metaclass = path.split("/")[-1]
             imagenet_class = name.split("_")[0]
             metaclass_to_class[metaclass].add(imagenet_class)
 
-
+# Step 2
 numpart = 1
 imagenet_classes_part_num = {}
 for k, v in metaclass_to_class.items():
@@ -53,36 +66,20 @@ for k, v in metaclass_to_class.items():
 imagenet_classes_part_num = dict(sorted(imagenet_classes_part_num.items()))
 print(f"Total part in new dataset: {numpart}")
 
-
+# Step 3
 # make directories
-os.mkdir(
-    "/data/kornrapatp/PartImageNet/PartSegmentations/All-imagenetclass-segtrain-processed"
-)
+os.mkdir(imagenetclass_dataset_dir)
 for partition in ["train", "val", "test"]:
-    os.mkdir(
-        "/data/kornrapatp/PartImageNet/PartSegmentations/All-imagenetclass-segtrain-processed"
-        + "/"
-        + partition
-    )
+    os.mkdir(imagenetclass_dataset_dir + "/" + partition)
     for c in imagenet_classes_part_num.keys():
-        os.mkdir(
-            "/data/kornrapatp/PartImageNet/PartSegmentations/All-imagenetclass-segtrain-processed"
-            + "/"
-            + partition
-            + "/"
-            + c
-        )
+        os.mkdir(f"{imagenetclass_dataset_dir}/{partition}/{c}")
         with open(
-            "/data/kornrapatp/PartImageNet/PartSegmentations/All-imagenetclass-segtrain-processed"
-            + "/"
-            + partition
-            + "/"
-            + c
-            + ".txt",
+            f"{imagenetclass_dataset_dir}/{partition}/{c}.txt",
             "w",
         ) as f:
             f.write("")
 
+# Step 4
 classes = sorted(CLASSES.keys())
 print(classes)
 class_starting_index = {}
@@ -106,7 +103,7 @@ for c in imagenet_classes_part_num.keys():
     ]
     curid += imagenet_classes_part_num[c]
 
-
+# Step 5
 def save_pil_image(img, path):
     image_path = os.path.join(path)
     pil_img = Image.fromarray(img)
@@ -115,23 +112,13 @@ def save_pil_image(img, path):
 
 fileList = {}
 # Rewrite segmentation labels
-for path, subdirs, files in os.walk(
-    "/data/kornrapatp/PartImageNet/PartSegmentations/All-imagenetclass-segtrain"
-):
+for path, subdirs, files in os.walk(metaclass_dataset_dir):
     for name in files:
         className = path.split("/")[-1]
         if ".tif" in name:
             img = np.asarray(Image.open(os.path.join(path, name)))
             imagenet_className = name.split("_")[0]
-            np_min = np.amin(
-                np.where(
-                    img != 0,
-                    img,
-                    999,
-                ).astype(np.int32)
-            )
-            if np_min != class_starting_index[className]:
-                print(np_min, class_starting_index[className])
+
             new_img = np.where(
                 img != 0,
                 img
@@ -141,29 +128,28 @@ for path, subdirs, files in os.walk(
                 ),
                 np.zeros(img.shape),
             ).astype(np.int32)
-            # print(img.dtype, new_img.dtype, np.amax(new_img), className)
+
             save_pil_image(
                 new_img,
                 os.path.join(
-                    "/data/kornrapatp/PartImageNet/PartSegmentations/All-imagenetclass-segtrain-processed",
+                    imagenetclass_dataset_dir,
                     path.split("/")[-2],
                     imagenet_className,
                     name,
                 ),
             )
+            # Save filenames for .txt file
             if path.split("/")[-2] + "/" + imagenet_className not in fileList:
                 fileList[path.split("/")[-2] + "/" + imagenet_className] = []
             fileList[path.split("/")[-2] + "/" + imagenet_className].append(
                 imagenet_className + "/" + name.split(".")[0] + "\n"
             )
 
+# Step 6
 for k, v in fileList.items():
     v = sorted(v)
     with open(
-        "/data/kornrapatp/PartImageNet/PartSegmentations/All-imagenetclass-segtrain-processed"
-        + "/"
-        + k
-        + ".txt",
+        f"{imagenetclass_dataset_dir}/{k}.txt",
         "w",
     ) as f:
         for name in v:
