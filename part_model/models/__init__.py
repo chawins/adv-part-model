@@ -15,6 +15,7 @@ from part_model.models.bbox_model import BoundingBoxModel
 from part_model.models.clean_mask_model import CleanMaskModel
 from part_model.models.common import Normalize
 from part_model.models.dino_bbox_model import DinoBoundingBoxModel
+from part_model.models.dino_resnet import ResNet
 from part_model.models.groundtruth_mask_model import GroundtruthMaskModel
 from part_model.models.multi_head_dino_bbox_model import (
     MultiHeadDinoBoundingBoxModel,
@@ -103,6 +104,11 @@ def build_classifier(args):
             )
             model.fc = nn.Linear(rep_dim, args.num_classes)
             model = PartMaskModel(args, segmenter, model)
+        elif model_token == "dino_resnet":
+            model = ResNet(args)
+            for param in model.parameters():
+                param.requires_grad = True
+
         elif model_token == "seg_cat":
             model.conv1 = nn.Conv2d(
                 (args.seg_labels - 1) * 3
@@ -156,6 +162,8 @@ def build_classifier(args):
             # two options, either bbox model from object detection or bbox from segmentation model
             if args.obj_det_arch == "dino":
                 model = DinoBoundingBoxModel(args)
+                for param in model.parameters():
+                    param.requires_grad = True
             else:
                 model = BoundingBoxModel(args, segmenter)
         elif model_token == "wbbox":
