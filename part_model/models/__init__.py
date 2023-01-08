@@ -74,7 +74,7 @@ def build_classifier(args):
                 (2,) + DATASET_DICT[args.dataset]["input_dim"]
             )
             rep_dim = model(dummy_input).size(-1)
-
+            
     if get_seg_type(args) is not None:
         tokens = args.experiment.split("-")
         model_token = tokens[1]
@@ -188,6 +188,7 @@ def build_classifier(args):
 
     model = wrap_distributed(args, model)
 
+    print('args.lr_backbone', args.lr_backbone)
     if args.obj_det_arch == "dino":
         optim_params = [
             {
