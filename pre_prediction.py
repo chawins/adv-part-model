@@ -91,7 +91,7 @@ count = 0
 tran_val_count = 0
 for path, subdirs, files in os.walk(old_dataset_path):
     for name in files:
-        if ".tif" in name:
+        if ".png" in name:
             if "train" in path or "val" in path:
                 tran_val_count += 1
             count += 1
@@ -152,7 +152,7 @@ for c in classes.keys():
                 pass
 
 
-# Create .tif file of correct dimensions inside test dir
+# Create .png file of correct dimensions inside test dir
 def save_pil_image(img, path):
     image_path = os.path.join(path)
     pil_img = Image.fromarray(img)
@@ -168,7 +168,7 @@ for c in classes.keys():
         tif = np.zeros(img.size)
         print(img.size)
         save_pil_image(
-            tif, f"{new_temp_mask_dataset_path}/test/{c}/{name[:-1]}.tif"
+            tif, f"{new_temp_mask_dataset_path}/test/{c}/{name[:-1]}.png"
         )
 
 # Step 6

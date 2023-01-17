@@ -96,7 +96,7 @@ count = 0
 tran_val_count = 0
 for path, subdirs, files in os.walk(old_dataset_path):
     for name in files:
-        if ".tif" in name:
+        if ".png" in name:
             if "train" in path or "val" in path:
                 tran_val_count += 1
             count += 1
@@ -119,7 +119,7 @@ for k, v in classes.items():
 mask_names = []
 for root, dirs, files in os.walk(prediction_path):
     for file in files:
-        if ".tif" in file:
+        if ".png" in file:
             mask_names.append(file.split(".")[0])
 
 # Step 4
@@ -156,16 +156,16 @@ for c in classes.keys():
         # symlink original masks from old dataset
         for fileName in step_all_list:
             os.symlink(
-                f"{relative_path_old_to_new}/{partition}/{c}/{fileName}.tif",  # calculate relative path
-                f"{new_dataset_path}/{partition}/{c}/{fileName}.tif",
+                f"{relative_path_old_to_new}/{partition}/{c}/{fileName}.png",  # calculate relative path
+                f"{new_dataset_path}/{partition}/{c}/{fileName}.png",
             )
 
         # Step 6
         # copy newly generated masks over
         for fileName in partition_generated[partition]:
             shutil.copyfile(
-                f"{prediction_path}/{fileName}.tif",
-                f"{new_dataset_path}/{partition}/{c}/{fileName}.tif",
+                f"{prediction_path}/{fileName}.png",
+                f"{new_dataset_path}/{partition}/{c}/{fileName}.png",
             )
         # write .txt file
         with open(f"{new_dataset_path}/{partition}/{c}.txt", "w") as f:

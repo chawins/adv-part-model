@@ -51,7 +51,7 @@ metaclass_to_class = {
 # Step 1
 for path, subdirs, files in os.walk(metaclass_dataset_dir):
     for name in files:
-        if ".tif" in name:
+        if ".png" in name:
             metaclass = path.split("/")[-1]
             imagenet_class = name.split("_")[0]
             metaclass_to_class[metaclass].add(imagenet_class)
@@ -115,7 +115,7 @@ fileList = {}
 for path, subdirs, files in os.walk(metaclass_dataset_dir):
     for name in files:
         className = path.split("/")[-1]
-        if ".tif" in name:
+        if ".png" in name:
             img = np.asarray(Image.open(os.path.join(path, name)))
             imagenet_className = name.split("_")[0]
 

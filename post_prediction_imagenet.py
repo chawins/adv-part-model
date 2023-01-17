@@ -76,7 +76,7 @@ count = 0
 tran_val_count = 0
 for path, subdirs, files in os.walk(old_dataset_path):
     for name in files:
-        if ".tif" in name:
+        if ".png" in name:
             if "train" in path or "val" in path:
                 tran_val_count += 1
             count += 1
@@ -101,7 +101,7 @@ for partition in ["train", "val", "test"]:
 mask_names = []
 for root, dirs, files in os.walk(prediction_path):
     for file in files:
-        if ".tif" in file:
+        if ".png" in file:
             mask_names.append(file.split(".")[0])
 
 print(len(mask_names), len(set(mask_names)))
@@ -160,20 +160,20 @@ for c in classes:
     # symlink
     for fileName in train_lines:
         os.symlink(
-            f"{relative_path_old_to_new}/train/{c}/{fileName}.tif",  # calculate relative path
-            f"{new_dataset_path}/train/{c}/{fileName}.tif",
+            f"{relative_path_old_to_new}/train/{c}/{fileName}.png",  # calculate relative path
+            f"{new_dataset_path}/train/{c}/{fileName}.png",
         )
     for fileName in val_lines:
         os.symlink(
-            f"{relative_path_old_to_new}/val/{c}/{fileName}.tif",  # calculate relative path
-            f"{new_dataset_path}/train/{c}/{fileName}.tif",
+            f"{relative_path_old_to_new}/val/{c}/{fileName}.png",  # calculate relative path
+            f"{new_dataset_path}/train/{c}/{fileName}.png",
         )
 
     # copy newly generated masks over
     for fileName in class_train_masks:
         shutil.copyfile(
-            f"{prediction_path}/{fileName}.tif",
-            f"{new_dataset_path}/train/{c}/{fileName}.tif",
+            f"{prediction_path}/{fileName}.png",
+            f"{new_dataset_path}/train/{c}/{fileName}.png",
         )
 
 # Step 6
@@ -192,8 +192,8 @@ for c in classes:
         # copy newly generated masks over
         for fileName in new_partition_list:
             shutil.copyfile(
-                f"{prediction_path}/{fileName}.tif",
-                f"{new_dataset_path}/{partition}/{c}/{fileName}.tif",
+                f"{prediction_path}/{fileName}.png",
+                f"{new_dataset_path}/{partition}/{c}/{fileName}.png",
             )
         # write .txt file
         with open(f"{new_dataset_path}/{partition}/{c}.txt", "w") as f:

@@ -9,7 +9,7 @@ for path, subdirs, files in os.walk(
 ):
     for name in files:
         className = path.split("/")[-1]
-        if ".tif" in name:
+        if ".png" in name:
             img = np.asarray(Image.open(os.path.join(path, name)))
             cumPer += np.sum(img == 0) / (img.shape[0] * img.shape[1])
             num += 1

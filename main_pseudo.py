@@ -810,7 +810,7 @@ def _validate(val_loader, model, criterion, attack, args):
                     ).squeeze(0)
                     # print(pseudo_mask.shape)
 
-                    name = f'{filenames[j].split("/")[1]}.tif'
+                    name = f'{filenames[j].split("/")[1]}.png'
                     save_pil_image(
                         pseudo_mask.detach().cpu().numpy().astype(np.int16),
                         os.path.join(args.prediction_path, name),

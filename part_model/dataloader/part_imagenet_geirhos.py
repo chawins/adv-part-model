@@ -123,7 +123,9 @@ class PartImageNetGeirhosSegDataset(data.Dataset):
             with open(f"{self.path}/{label}.txt", "r") as fns:
                 filenames = sorted([f.strip() for f in fns.readlines()])
             images.extend([f"{img_path}/{f}.png" for f in filenames])
-            masks.extend([f'{part_path}/{f.split("/")[1]}.tif' for f in filenames])
+            masks.extend(
+                [f'{part_path}/{f.split("/")[1]}.png' for f in filenames]
+            )
             labels.extend([l] * len(filenames))
         labels = torch.tensor(labels, dtype=torch.long)
         return images, labels, masks
@@ -173,8 +175,12 @@ def get_loader_sampler(args, transform, split, distributed_sampler=True):
     )
 
     # TODO: can we make this cleaner?
-    PART_IMAGENET_GEIRHOS["part_to_class"] = part_imagenet_geirhos_dataset.part_to_class
-    PART_IMAGENET_GEIRHOS["num_classes"] = part_imagenet_geirhos_dataset.num_classes
+    PART_IMAGENET_GEIRHOS[
+        "part_to_class"
+    ] = part_imagenet_geirhos_dataset.part_to_class
+    PART_IMAGENET_GEIRHOS[
+        "num_classes"
+    ] = part_imagenet_geirhos_dataset.num_classes
     PART_IMAGENET_GEIRHOS[
         "num_seg_labels"
     ] = part_imagenet_geirhos_dataset.num_seg_labels
@@ -211,7 +217,9 @@ def load_part_imagenet_geirhos(args):
         ]
     )
 
-    train_loader, train_sampler = get_loader_sampler(args, train_transforms, "train")
+    train_loader, train_sampler = get_loader_sampler(
+        args, train_transforms, "train"
+    )
     val_loader, _ = get_loader_sampler(args, val_transforms, "val")
     test_loader, _ = get_loader_sampler(args, val_transforms, "test")
 
