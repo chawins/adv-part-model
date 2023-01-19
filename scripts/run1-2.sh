@@ -16,13 +16,13 @@ NUM_WORKERS=2
 # DATAPATH=~/data/pascal_part/PartImages/aeroplane_bird_car_cat_dog/
 # SEGPATH=$DATAPATH/panoptic-parts/train
 # =============================== Cityscapes ================================ #
-# DATASET=cityscapes
-# DATAPATH=~/data/cityscapes/PartImages/square_rand_pad0.2/
-# SEGPATH=$DATAPATH
+DATASET=cityscapes
+DATAPATH=~/data/cityscapes/PartImages/square_rand_pad0.2/
+SEGPATH=$DATAPATH
 # ============================== Part-ImageNet ============================== #
-DATASET=part-imagenet
-DATAPATH=/global/scratch/users/kornrapatp/PartImageNet/
-SEGPATH=$DATAPATH/PartSegmentations/All-pseudo-masks-rand/
+# DATASET=part-imagenet
+# DATAPATH=/global/scratch/users/kornrapatp/PartImageNet/
+# SEGPATH=$DATAPATH/PartSegmentations/All/
 # SEGPATH=$DATAPATH/BoxSegmentations/All/
 
 # 0.0156862745, 0.03137254901, 0.06274509803

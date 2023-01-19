@@ -266,7 +266,6 @@ def main(args):
     init_distributed_mode(args)
 
     global best_acc1
-    print("start", args.seg_labels)
 
     # Fix the seed for reproducibility
     seed = args.seed + get_rank()
@@ -277,17 +276,14 @@ def main(args):
     print("=> creating dataset")
     loaders = load_dataset(args)
     train_loader, train_sampler, val_loader, test_loader = loaders
-    print("load data", args.seg_labels)
 
     # Create model
     print("=> creating model")
     model, optimizer, scaler = build_model(args)
     cudnn.benchmark = True
-    print("create model", args.seg_labels)
 
     # Define loss function
     criterion, train_criterion = get_train_criterion(args)
-    print("define loss", args.seg_labels)
 
     # Logging
     if is_main_process():
@@ -469,7 +465,7 @@ def _train(
         batch_size = images.size(0)
 
         # Compute output
-        with amp.autocast(dtype=torch.float16, enabled=not args.full_precision):
+        with amp.autocast(enabled=not args.full_precision):
             if attack.use_mask:
                 # Attack for part models where both class and segmentation
                 # labels are used
@@ -568,7 +564,7 @@ def _validate(val_loader, model, criterion, attack, args):
         else:
             images, segs, targets = samples
             segs = segs.cuda(args.gpu, non_blocking=True)
-        # print(images.shape, segs, targets)
+
         # DEBUG
         if args.debug:
             save_image(COLORMAP[segs].permute(0, 3, 1, 2), "gt.png")
