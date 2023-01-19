@@ -1,43 +1,57 @@
-from autoattack_modified import AutoAttack
+"""Wrapped AutoAttack."""
 
-from .base import AttackModule
+from __future__ import annotations
+
+from typing import Any, Callable
+
+import torch
+from torch import nn
+
+from autoattack_modified import AutoAttack
+from part_model.attack.base import AttackModule
 
 
 class AutoAttackModule(AttackModule):
+    """AutoAttack."""
+
     def __init__(
         self,
-        attack_config,
-        core_model,
-        loss_fn,
-        norm,
-        eps,
-        verbose=False,
-        num_classes=10,
+        attack_config: dict[str, Any],
+        core_model: nn.Module,
+        loss_fn: Callable[..., torch.Tensor],
+        norm: str = "Linf",
+        eps: float = 8 / 255,
+        num_classes: int = 10,
         **kwargs,
     ):
-        super(AutoAttackModule, self).__init__(
-            attack_config,
+        """Initialize AutoAttackModule. For args, see AttackModule."""
+        super().__init__(
             core_model,
             loss_fn,
             norm,
             eps,
-            verbose=verbose,
             **kwargs,
         )
-        self.num_classes = num_classes
-
-    def forward(self, x, y):
-        mode = self.core_model.training
-        self.core_model.eval()
-        # TODO: Try to init adversary only once
-        adversary = AutoAttack(
-            self.core_model,
-            norm=self.norm,
-            eps=self.eps,
+        _ = attack_config  # Unused
+        self._num_classes: int = num_classes
+        self._adversary = AutoAttack(
+            self._core_model,
+            norm=self._norm,
+            eps=self._eps,
             version="standard",
-            verbose=self.verbose,
-            num_classes=self.num_classes,
+            verbose=self._verbose,
+            num_classes=self._num_classes,
         )
-        x_adv = adversary.run_standard_evaluation(x, y, bs=x.size(0))
-        self.core_model.train(mode)
+
+    def forward(
+        self, inputs: torch.Tensor, targets: torch.Tensor, **kwargs
+    ) -> torch.Tensor:
+        """Run AutoAttack."""
+        _ = kwargs  # Unused
+        mode = self._core_model.training
+        self._core_model.eval()
+        x_adv = self._adversary.run_standard_evaluation(
+            inputs, targets, bs=inputs.size(0)
+        )
+        self._core_model.train(mode)
         return x_adv

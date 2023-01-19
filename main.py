@@ -1,38 +1,37 @@
-"""Main script for both training and evaluation.
+"""Main script for both training and evaluation."""
 
-The template of this code is generously provided by Norman Mu (@normster).
-The original version is from https://github.com/pytorch/examples/blob/master/imagenet/main.py
-"""
+from __future__ import annotations
 
 import argparse
 import json
 import math
 import os
 import pickle
+import random
 import sys
 import time
+from typing import Any
 
 import numpy as np
 import torch
-import torch.backends.cudnn as cudnn
-import torch.cuda.amp as amp
 import torch.nn.parallel
 import torch.optim
 import torch.utils.data
 import torch.utils.data.distributed
 import wandb
-from torch.distributed.elastic.multiprocessing.errors import record
+from torch.backends import cudnn
+from torch.cuda import amp
 
 # from torchmetrics import IoU as IoU   # Use this for older version of torchmetrics
-from torchmetrics import JaccardIndex as IoU
+from torchmetrics.classification import MulticlassJaccardIndex as IoU
 from torchvision.utils import save_image
 
+from DINO.util.utils import to_device
 from part_model.attack import (
     setup_eval_attacker,
     setup_train_attacker,
     setup_val_attacker,
 )
-from part_model.attack.pgd import PGDAttackModule
 from part_model.dataloader import COLORMAP, load_dataset
 from part_model.models import build_model
 from part_model.utils import (
@@ -47,239 +46,111 @@ from part_model.utils import (
     pixel_accuracy,
     save_on_master,
 )
+from part_model.utils.argparse import get_args_parser
 from part_model.utils.loss import get_train_criterion
-
-
-def _get_args_parser():
-    parser = argparse.ArgumentParser(
-        description="Part classification", add_help=False
-    )
-    parser.add_argument("--data", default="~/data/shared/", type=str)
-    parser.add_argument("--arch", default="resnet18", type=str)
-    parser.add_argument(
-        "--pretrained",
-        action="store_true",
-        help="Load pretrained model on ImageNet-1k",
-    )
-    parser.add_argument(
-        "--output-dir", default="./", type=str, help="output dir"
-    )
-    parser.add_argument(
-        "-j",
-        "--workers",
-        default=10,
-        type=int,
-        metavar="N",
-        help="number of data loading workers per process",
-    )
-    parser.add_argument("--epochs", default=200, type=int)
-    parser.add_argument("--start-epoch", default=0, type=int)
-    parser.add_argument(
-        "--batch-size",
-        default=256,
-        type=int,
-        help="mini-batch size per device.",
-    )
-    parser.add_argument("--full-precision", action="store_true")
-    parser.add_argument("--warmup-epochs", default=0, type=int)
-    parser.add_argument("--lr", default=0.1, type=float)
-    parser.add_argument("--momentum", default=0.9, type=float)
-    parser.add_argument("--wd", default=1e-4, type=float)
-    parser.add_argument("--optim", default="sgd", type=str)
-    parser.add_argument("--betas", default=(0.9, 0.999), nargs=2, type=float)
-    parser.add_argument("--eps", default=1e-8, type=float)
-    parser.add_argument(
-        "--print-freq", default=10, type=int, help="print frequency"
-    )
-    parser.add_argument(
-        "--resume", default="", type=str, help="path to latest checkpoint"
-    )
-    parser.add_argument(
-        "--load-weight-only",
-        action="store_true",
-        help="Resume checkpoint by loading model weights only",
-    )
-    parser.add_argument("--evaluate", action="store_true", help="Evaluate only")
-    parser.add_argument(
-        "--world-size",
-        default=1,
-        type=int,
-        help="number of nodes for distributed training",
-    )
-    parser.add_argument(
-        "--rank", default=0, type=int, help="node rank for distributed training"
-    )
-    parser.add_argument(
-        "--dist-url",
-        default="tcp://localhost:10001",
-        type=str,
-        help="url used to set up distributed training",
-    )
-    parser.add_argument(
-        "--no-distributed", action="store_true", help="Disable distributed mode"
-    )
-    parser.add_argument("--dist-backend", default="nccl", type=str)
-    parser.add_argument("--seed", default=0, type=int)
-    parser.add_argument("--gpu", default=None, type=int, help="GPU id to use.")
-    parser.add_argument("--wandb", action="store_true", help="Enable WandB")
-    parser.add_argument(
-        "--resume-if-exist",
-        action="store_true",
-        help=(
-            "Override --resume option and resume from the "
-            "current best checkpoint in the same dir if exists"
-        ),
-    )
-    parser.add_argument(
-        "--debug", action="store_true", help="Enable debug mode"
-    )
-    # TODO
-    parser.add_argument("--dataset", required=True, type=str, help="Dataset")
-    parser.add_argument(
-        "--num-classes", default=10, type=int, help="Number of classes"
-    )
-    parser.add_argument(
-        "--experiment",
-        required=True,
-        type=str,
-        help="Type of experiment to run",
-    )
-    parser.add_argument(
-        "--parts",
-        default=0,
-        type=int,
-        help="Number of parts (default: 0 = use full images)",
-    )
-    parser.add_argument(
-        "--use-part-idx",
-        action="store_true",
-        help="Model also takes part indices as input",
-    )
-    parser.add_argument(
-        "--seg-label-dir",
-        default="",
-        type=str,
-        help="Path to segmentation labels",
-    )
-    parser.add_argument(
-        "--seg-labels",
-        default=10,
-        type=int,
-        help="Number of segmentation classes including background",
-    )
-    parser.add_argument(
-        "--seg-dir",
-        default="",
-        type=str,
-        help="Path to weight of segmentation model",
-    )
-    parser.add_argument(
-        "--freeze-seg",
-        action="store_true",
-        help="Freeze weights in segmentation model",
-    )
-    parser.add_argument(
-        "--seg-arch",
-        default="deeplabv3plus",
-        type=str,
-        help="Architecture of segmentation model",
-    )
-    parser.add_argument(
-        "--seg-backbone",
-        default="resnet18",
-        type=str,
-        help="Architecture of backbone model",
-    )
-    parser.add_argument(
-        "--epsilon",
-        default=8 / 255,
-        type=float,
-        help="Perturbation norm for attacks (default: 8/255)",
-    )
-    # Adversarial training
-    parser.add_argument(
-        "--adv-train",
-        default="none",
-        type=str,
-        help="Use adversarial training (default: none = normal training)",
-    )
-    parser.add_argument(
-        "--atk-steps", default=10, type=int, help="Number of attack iterations"
-    )
-    parser.add_argument(
-        "--atk-norm",
-        default="Linf",
-        type=str,
-        help="Lp-norm of adversarial perturbation (default: Linf)",
-    )
-    parser.add_argument(
-        "--adv-beta",
-        default=6.0,
-        type=float,
-        help="Beta parameter for TRADES or MAT (default: 6)",
-    )
-    parser.add_argument(
-        "--eval-attack",
-        default="",
-        type=str,
-        help="Attacks to evaluate with, comma-separated (default: pgd,aa)",
-    )
-    parser.add_argument(
-        "--seg-const-trn",
-        default=0,
-        type=float,
-        help="Constant in front of seg loss used during training (default: 0)",
-    )
-    parser.add_argument(
-        "--seg-const-atk",
-        default=0,
-        type=float,
-        help="Constant in front of seg loss used during attack (default: 0)",
-    )
-    parser.add_argument(
-        "--semi-label",
-        default=1.0,
-        type=float,
-        help="Fraction of segmentation labels to use in semi-supervised training (default: 1)",
-    )
-    parser.add_argument(
-        "--load-from-segmenter",
-        action="store_true",
-        help="Resume checkpoint by loading only segmenter weights",
-    )
-    parser.add_argument(
-        "--temperature",
-        default=1,
-        type=float,
-        help="Softmax temperature for part-seg model",
-    )
-    parser.add_argument("--save-all-epochs", action="store_true")
-    return parser
-
 
 best_acc1 = 0
 
 
-@record
-def main(args):
+def _write_metrics(save_metrics: Any) -> None:
+    if is_main_process():
+        # Save metrics to pickle file if not exists else append
+        pkl_path = os.path.join(args.output_dir, "metrics.pkl")
+        with open(pkl_path, "wb") as file:
+            pickle.dump([save_metrics], file)
+
+
+def main() -> None:
     """Main function."""
     init_distributed_mode(args)
 
     global best_acc1
 
+    # handling dino args
+    # TODO(nab-126@): Unify args, put this in argparser?
+    if args.config_file:
+        from DINO.util.slconfig import SLConfig
+
+        cfg = SLConfig.fromfile(args.config_file)
+
+        if args.options is not None:
+            cfg.merge_from_dict(args.options)
+
+        cfg_dict = cfg._cfg_dict.to_dict()
+        args_vars = vars(args)
+        for k, v in cfg_dict.items():
+            if k not in args_vars:
+                setattr(args, k, v)
+            else:
+                raise ValueError("Key {} can used by args only".format(k))
+
     # Fix the seed for reproducibility
-    seed = args.seed + get_rank()
+    seed: int = args.seed + get_rank()
+    random.seed(seed)
     torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
     np.random.seed(seed)
 
     # Data loading code
-    print("=> creating dataset")
+    print("=> Creating dataset...")
     loaders = load_dataset(args)
     train_loader, train_sampler, val_loader, test_loader = loaders
 
+    # TODO(nab-126@): remove or put in util?
+    debug = False
+    if debug:
+        # DEBUGGING DATALOADER
+        for i, samples in enumerate(train_loader):
+
+            import torchvision
+
+            images, target_bbox, targets = samples
+
+            images, mask = images.decompose()
+
+            debug_index = 0
+            torchvision.utils.save_image(
+                images[debug_index], f"example_images/img_{debug_index}.png"
+            )
+            torchvision.utils.save_image(
+                mask[debug_index] * 1.0,
+                f"example_images/mask_{debug_index}.png",
+            )
+            img_uint8 = torchvision.io.read_image(
+                f"example_images/img_{debug_index}.png"
+            )
+            shape = target_bbox[debug_index]["size"]
+            print(target_bbox[debug_index])
+
+            # xc, xy, w, h convert to xmin, ymin, xmax, ymax
+            boxes = target_bbox[debug_index]["boxes"]
+            boxes[:, ::2] = boxes[:, ::2] * shape[1]
+            boxes[:, 1::2] = boxes[:, 1::2] * shape[0]
+
+            box_width = boxes[:, 2]
+            box_height = boxes[:, 3]
+
+            boxes[:, 0] = boxes[:, 0] - box_width / 2
+            boxes[:, 2] = boxes[:, 0] + box_width
+            boxes[:, 1] = boxes[:, 1] - box_height / 2
+            boxes[:, 3] = boxes[:, 1] + box_height
+
+            boxes = torch.tensor(boxes, dtype=torch.int)
+            img_with_boxes = torchvision.utils.draw_bounding_boxes(
+                img_uint8, boxes=boxes, colors="red"
+            )
+            torchvision.utils.save_image(
+                img_with_boxes / 255,
+                f"example_images/img_{debug_index}_with_bbox.png",
+            )
+            import pdb
+
+            pdb.set_trace()
+
     # Create model
-    print("=> creating model")
+    print("=> Creating model...")
     model, optimizer, scaler = build_model(args)
+
     cudnn.benchmark = True
 
     # Define loss function
@@ -287,7 +158,8 @@ def main(args):
 
     # Logging
     if is_main_process():
-        logfile = open(os.path.join(args.output_dir, "log.txt"), "a")
+        log_path: str = os.path.join(args.output_dir, "log.txt")
+        logfile = open(log_path, "a", encoding="utf-8")
         logfile.write(str(args) + "\n")
         logfile.flush()
         if args.wandb:
@@ -308,20 +180,15 @@ def main(args):
 
     print(args)
 
-    if args.evaluate:
-        if args.resume:
-            load_path = args.resume
-        else:
-            load_path = f"{args.output_dir}/checkpoint_best.pt"
-    else:
-        print("=> beginning training")
+    if not args.evaluate:
+        print("=> Beginning training...")
         val_stats = {}
         for epoch in range(args.start_epoch, args.epochs):
             is_best = False
             if args.distributed:
                 train_sampler.set_epoch(epoch)
-            lr = adjust_learning_rate(optimizer, epoch, args)
-            print(f"=> lr @ epoch {epoch}: {lr:.2e}")
+            learning_rate = adjust_learning_rate(optimizer, epoch, args)
+            print(f"=> lr @ epoch {epoch}: {learning_rate:.2e}")
 
             # Train for one epoch
             train_stats = _train(
@@ -332,21 +199,21 @@ def main(args):
                 optimizer,
                 scaler,
                 epoch,
-                args,
             )
 
             if (epoch + 1) % 2 == 0:
-                val_stats = _validate(
-                    val_loader, model, criterion, no_attack, args
-                )
+                val_stats = _validate(val_loader, model, criterion, no_attack)
                 clean_acc1, acc1 = val_stats["acc1"], None
                 is_best = clean_acc1 > best_acc1
+
                 if args.adv_train != "none":
-                    val_stats = _validate(
-                        val_loader, model, criterion, val_attack, args
+                    adv_val_stats = _validate(
+                        val_loader, model, criterion, val_attack
                     )
-                    acc1 = val_stats["acc1"]
-                    is_best = acc1 > best_acc1 and clean_acc1 >= acc1
+                    acc1 = adv_val_stats["acc1"]
+                    val_stats["adv_acc1"] = acc1
+                    val_stats["adv_loss"] = adv_val_stats["loss"]
+                    is_best = clean_acc1 >= acc1 > best_acc1
 
                 save_dict = {
                     "epoch": epoch + 1,
@@ -358,7 +225,7 @@ def main(args):
                 }
 
                 if is_best:
-                    print("=> Saving new best checkpoint")
+                    print("=> Saving new best checkpoint...")
                     save_on_master(save_dict, args.output_dir, is_best=True)
                     best_acc1 = (
                         max(clean_acc1, best_acc1)
@@ -372,12 +239,13 @@ def main(args):
 
             log_stats = {
                 **{f"train_{k}": v for k, v in train_stats.items()},
-                **{f"test_{k}": v for k, v in val_stats.items()},
+                **{f"val_{k}": v for k, v in val_stats.items()},
                 "epoch": epoch,
             }
 
             if is_main_process():
                 save_metrics["train"].append(log_stats)
+                _write_metrics(save_metrics)
                 if args.wandb:
                     wandb.log(log_stats)
                 logfile.write(json.dumps(log_stats) + "\n")
@@ -386,48 +254,39 @@ def main(args):
         # Compute stats of best model after training
         dist_barrier()
         load_path = f"{args.output_dir}/checkpoint_best.pt"
-
-    print(f"=> loading checkpoint from {load_path}...")
-    if args.gpu is None:
-        checkpoint = torch.load(load_path)
-    else:
+        print(f"=> Loading checkpoint from {load_path}...")
         # Map model to be loaded to specified single gpu.
-        loc = "cuda:{}".format(args.gpu)
-        checkpoint = torch.load(load_path, map_location=loc)
-    model.load_state_dict(checkpoint["state_dict"])
+        checkpoint = torch.load(
+            load_path,
+            map_location=None if args.gpu is None else f"cuda:{args.gpu}",
+        )
+        model.load_state_dict(checkpoint["state_dict"])
 
     # Running evaluation
     for attack in eval_attack:
         # Use DataParallel (not distributed) model for AutoAttack.
         # Otherwise, DDP model can get timeout or c10d failure.
-        stats = _validate(test_loader, model, criterion, attack[1], args)
+        stats = _validate(test_loader, model, criterion, attack[1])
         print(f"=> {attack[0]}: {stats}")
         stats["attack"] = str(attack[0])
         dist_barrier()
         if is_main_process():
             save_metrics["test"].append(stats)
+            _write_metrics(save_metrics)
             if args.wandb:
                 wandb.log(stats)
             logfile.write(json.dumps(stats) + "\n")
 
     if is_main_process():
         # Save metrics to pickle file if not exists else append
-        pkl_path = os.path.join(args.output_dir, "metrics.pkl")
-        if os.path.exists(pkl_path):
-            metrics = pickle.load(open(pkl_path, "rb"))
-            metrics.append(save_metrics)
-        else:
-            pickle.dump([save_metrics], open(pkl_path, "wb"))
-
+        _write_metrics(save_metrics)
         last_path = f"{args.output_dir}/checkpoint_last.pt"
         if os.path.exists(last_path):
             os.remove(last_path)
         logfile.close()
 
 
-def _train(
-    train_loader, model, criterion, attack, optimizer, scaler, epoch, args
-):
+def _train(train_loader, model, criterion, attack, optimizer, scaler, epoch):
     batch_time = AverageMeter("Time", ":6.3f")
     data_time = AverageMeter("Data", ":6.3f")
     losses = AverageMeter("Loss", ":.4e")
@@ -436,7 +295,7 @@ def _train(
     progress = ProgressMeter(
         len(train_loader),
         [batch_time, data_time, losses, top1, mem],
-        prefix="Epoch: [{}]".format(epoch),
+        prefix=f"Epoch: [{epoch}]",
     )
     compute_acc = get_compute_acc(args)
     seg_only = "seg-only" in args.experiment
@@ -457,42 +316,83 @@ def _train(
             images, targets, _ = samples
             segs = None
         else:
-            images, segs, targets = samples
-            segs = segs.cuda(args.gpu, non_blocking=True)
+            # TODO(nab-126@): handling dino training
+            if args.obj_det_arch == "dino":
+                # try:
+                #     need_tgt_for_training = args.use_dn
+                # except:
+                #     need_tgt_for_training = False
+                need_tgt_for_training = True
+                nested_tensors, target_bbox, targets = samples
+                images, masks = nested_tensors.decompose()
+                masks = masks.cuda(args.gpu, non_blocking=True)
+                targets = torch.tensor(
+                    targets, device=masks.device, dtype=torch.long
+                )
+                target_bbox = [
+                    {
+                        k: v.cuda(args.gpu, non_blocking=True)
+                        for k, v in t.items()
+                    }
+                    for t in target_bbox
+                ]
+            else:
+                images, segs, targets = samples
+                segs = segs.cuda(args.gpu, non_blocking=True)
 
+        batch_size: int = targets.size(0)
         images = images.cuda(args.gpu, non_blocking=True)
         targets = targets.cuda(args.gpu, non_blocking=True)
-        batch_size = images.size(0)
 
-        # Compute output
         with amp.autocast(enabled=not args.full_precision):
-            if attack.use_mask:
-                # Attack for part models where both class and segmentation
-                # labels are used
-                images = attack(images, targets, segs)
+            if args.obj_det_arch == "dino":
+                forward_args = {
+                    "masks": masks,
+                    "dino_targets": target_bbox,
+                    "need_tgt_for_training": need_tgt_for_training,
+                    "return_mask": False,
+                }
+                images = attack(images, targets, **forward_args)
+
+                if args.adv_train in ("trades", "mat"):
+                    masks = torch.cat([masks.detach(), masks.detach()], dim=0)
+                    target_bbox = [*target_bbox, *target_bbox]
+
+                # TODO(nab-126@): Interface model with kwargs dict like above
+                outputs, dino_outputs = model(
+                    images,
+                    masks,
+                    target_bbox,
+                    need_tgt_for_training,
+                    return_mask=True,
+                )
+                loss = criterion(outputs, dino_outputs, target_bbox, targets)
+
+                if args.adv_train in ("trades", "mat"):
+                    outputs = outputs[batch_size:]
+            else:
+                images = attack(images, targets, seg_targets=segs)
                 if attack.dual_losses:
                     targets = torch.cat([targets, targets], axis=0)
                     segs = torch.cat([segs, segs], axis=0)
-            else:
-                # Attack for either classifier or segmenter alone
-                images = attack(images, targets)
 
-            if segs is None or seg_only:
-                outputs = model(images)
-                loss = criterion(outputs, targets)
-            elif "groundtruth" in args.experiment:
-                outputs = model(images, segs=segs)
-                loss = criterion(outputs, targets)
-            else:
-                outputs = model(images, return_mask=True)
-                loss = criterion(outputs, targets, segs)
-                outputs = outputs[0]
+                # TODO(chawins@): unify model interface
+                if segs is None or seg_only:
+                    outputs = model(images)
+                    loss = criterion(outputs, targets)
+                elif "groundtruth" in args.experiment:
+                    outputs = model(images, segs=segs)
+                    loss = criterion(outputs, targets)
+                else:
+                    outputs = model(images, return_mask=True)
+                    loss = criterion(outputs, targets, segs)
+                    outputs = outputs[0]
 
-            if args.adv_train in ("trades", "mat"):
-                outputs = outputs[batch_size:]
+                if args.adv_train in ("trades", "mat"):
+                    outputs = outputs[batch_size:]
 
         if not math.isfinite(loss.item()):
-            print("Loss is {}, stopping training".format(loss.item()))
+            print(f"Loss is {loss.item()}, stopping training")
             sys.exit(1)
 
         # Measure accuracy and record loss
@@ -531,7 +431,7 @@ def _train(
     }
 
 
-def _validate(val_loader, model, criterion, attack, args):
+def _validate(val_loader, model, criterion, attack):
     seg_only = "seg-only" in args.experiment
     batch_time = AverageMeter("Time", ":6.3f")
     data_time = AverageMeter("Data", ":6.3f")
@@ -562,17 +462,55 @@ def _validate(val_loader, model, criterion, attack, args):
             images, targets, _ = samples
             segs = None
         else:
-            images, segs, targets = samples
-            segs = segs.cuda(args.gpu, non_blocking=True)
+            # handling dino validation
+            if args.obj_det_arch == "dino":
+                # try:
+                #     need_tgt_for_training = args.use_dn
+                # except:
+                #     need_tgt_for_training = False
+                need_tgt_for_training = True
+                # images, target_bbox, targets = samples
+                # import pdb
+                # pdb.set_trace()
+                nested_tensors, target_bbox, targets = samples
+                images, masks = nested_tensors.decompose()
+                masks = masks.cuda(args.gpu, non_blocking=True)
+                targets = torch.tensor(
+                    targets, device=masks.device, dtype=torch.long
+                )
+                target_bbox = [
+                    {
+                        k: v.cuda(args.gpu, non_blocking=True)
+                        for k, v in t.items()
+                    }
+                    for t in target_bbox
+                ]
+            else:
+                images, segs, targets = samples
+                segs = segs.cuda(args.gpu, non_blocking=True)
+
+            # # handling dino validation
+            # if args.obj_det_arch == "dino":
+            #     try:
+            #         need_tgt_for_training = args.use_dn
+            #     except:
+            #         need_tgt_for_training = False
+
+            #     images, target_bbox, targets = samples
+            #     targets = torch.Tensor(targets)
+
+            # else:
+            #     images, segs, targets = samples
+            #     segs = segs.cuda(args.gpu, non_blocking=True)
 
         # DEBUG
         if args.debug:
-            save_image(COLORMAP[segs].permute(0, 3, 1, 2), "gt.png")
+            save_image(COLORMAP[segs.cpu()].permute(0, 3, 1, 2), "gt.png")
             save_image(images, "test.png")
 
         images = images.cuda(args.gpu, non_blocking=True)
         targets = targets.cuda(args.gpu, non_blocking=True)
-        batch_size = images.size(0)
+        batch_size = targets.size(0)
 
         # DEBUG: fixed clean segmentation masks
         if "clean" in args.experiment:
@@ -580,45 +518,58 @@ def _validate(val_loader, model, criterion, attack, args):
 
         # compute output
         with torch.no_grad():
-            if attack.use_mask:
-                images = attack(images, targets, segs)
-            else:
-                images = attack(images, targets)
-
-            # Need to duplicate segs and targets to match images expanded by
-            # image corruption attack
-            if images.shape[0] != targets.shape[0]:
-                ratio = images.shape[0] // targets.shape[0]
-                targets = targets.repeat(
-                    (ratio,) + (1,) * (len(targets.shape) - 1)
+            if args.obj_det_arch == "dino":
+                forward_args = {
+                    "masks": masks,
+                    "dino_targets": target_bbox,
+                    "need_tgt_for_training": need_tgt_for_training,
+                    "return_mask": False,
+                }
+                images = attack(images, targets, **forward_args)
+                outputs = model(
+                    images,
+                    masks,
+                    target_bbox,
+                    need_tgt_for_training,
+                    return_mask=False,
                 )
-                if segs:
-                    segs = segs.repeat((ratio,) + (1,) * (len(segs.shape) - 1))
-
-            if segs is None or "normal" in args.experiment or seg_only:
-                outputs = model(images)
-            elif "groundtruth" in args.experiment:
-                outputs = model(images, segs=segs)
                 loss = criterion(outputs, targets)
             else:
-                outputs, masks = model(images, return_mask=True)
-                if "centroid" in args.experiment:
-                    masks, _, _, _ = masks
-                pixel_acc = pixel_accuracy(masks, segs)
-                pacc.update(pixel_acc.item(), batch_size)
-            loss = criterion(outputs, targets)
+                images = attack(images, targets, seg_targets=segs)
+
+                # Need to duplicate segs and targets to match images expanded by
+                # image corruption attack
+                if images.shape[0] != targets.shape[0]:
+                    ratio = images.shape[0] // targets.shape[0]
+                    targets = targets.repeat(
+                        (ratio,) + (1,) * (len(targets.shape) - 1)
+                    )
+                    if segs:
+                        segs = segs.repeat(
+                            (ratio,) + (1,) * (len(segs.shape) - 1)
+                        )
+
+                if segs is None or "normal" in args.experiment or seg_only:
+                    outputs = model(images)
+                elif "groundtruth" in args.experiment:
+                    outputs = model(images, segs=segs)
+                    loss = criterion(outputs, targets)
+                else:
+                    outputs, masks = model(images, return_mask=True)
+                    if "centroid" in args.experiment:
+                        masks, _, _, _ = masks
+                    pixel_acc = pixel_accuracy(masks, segs)
+                    pacc.update(pixel_acc.item(), batch_size)
+                loss = criterion(outputs, targets)
 
         # DEBUG
-        # if args.debug and isinstance(attack, PGDAttackModule):
         if args.debug:
             save_image(
-                COLORMAP[masks.argmax(1)].permute(0, 3, 1, 2),
+                COLORMAP[masks.argmax(1).cpu()].permute(0, 3, 1, 2),
                 "pred_seg_clean.png",
             )
             print(targets == outputs.argmax(1))
-            import pdb
-
-            pdb.set_trace()
+            raise NotImplementedError("End of debugging. Exit.")
 
         # measure accuracy and record loss
         acc1 = compute_acc(outputs, targets)
@@ -651,8 +602,8 @@ def _validate(val_loader, model, criterion, attack, args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        "Part Classification", parents=[_get_args_parser()]
+        "Part Classification", parents=[get_args_parser()]
     )
     args = parser.parse_args()
     os.makedirs(args.output_dir, exist_ok=True)
-    main(args)
+    main()

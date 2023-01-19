@@ -1,35 +1,39 @@
+from __future__ import annotations
+
+from typing import Any, Callable
+
 import torch
-from .base import AttackModule
+from torch import nn
 
-EPS = 1e-6
+from part_model.attack.pgd import PGDAttack
+
+_Loss = Callable[..., torch.Tensor]
 
 
-class SegPGDAttackModule(AttackModule):
-
-    def __init__(self, attack_config, core_model, loss_fn, norm, eps,
-                 forward_args={}, **kwargs):
-        super(SegPGDAttackModule, self).__init__(
-            attack_config, core_model, loss_fn, norm, eps, **kwargs)
-        assert self.norm in ('L2', 'Linf')
-        self.num_steps = attack_config['pgd_steps']
-        self.step_size = attack_config['pgd_step_size']
-        self.num_restarts = attack_config['num_restarts']
-        self.forward_args = forward_args
-        self.forward_args['return_mask'] = True
-        self.use_mask = True
-        self.dual_losses = isinstance(loss_fn, (list, tuple))
+class SegPGDAttackModule(PGDAttack):
+    def __init__(
+        self,
+        attack_config: dict[str, Any],
+        core_model: nn.Module,
+        loss_fn: _Loss | tuple[_Loss, _Loss],
+        norm: str = "Linf",
+        eps: float = 8 / 255,
+        **kwargs,
+    ) -> None:
+        super().__init__(
+            attack_config, core_model, loss_fn, norm, eps, **kwargs
+        )
+        self._forward_args["return_mask"] = True
+        self.use_mask: bool = True
+        self.dual_losses: bool = isinstance(loss_fn, (list, tuple))
         if self.dual_losses:
-            self.loss_fn1 = loss_fn[0]
-            self.loss_fn2 = loss_fn[1]
-
-    def _project_l2(self, x, eps):
-        dims = [-1, ] + [1, ] * (x.ndim - 1)
-        return x / (x.view(len(x), -1).norm(2, 1).view(dims) + EPS) * eps
+            self.loss_fn1: _Loss = loss_fn[0]
+            self.loss_fn2: _Loss = loss_fn[1]
 
     def _forward_l2(self, x, y, mask, loss_fn=None):
-        loss_fn = self.loss_fn if loss_fn is None else loss_fn
-        mode = self.core_model.training
-        self.core_model.eval()
+        loss_fn = self._loss_fn if loss_fn is None else loss_fn
+        mode = self._core_model.training
+        self._core_model.eval()
 
         # Initialize worst-case inputs
         x_adv_worst = x.clone().detach()
@@ -40,7 +44,7 @@ class SegPGDAttackModule(AttackModule):
             x_adv = x.clone().detach()
 
             # Initialize adversarial inputs
-            x_adv += self._project_l2(torch.randn_like(x_adv), self.eps)
+            x_adv += self._project_l2(torch.randn_like(x_adv), self._eps)
             x_adv.clamp_(0, 1)
 
             # Run PGD on inputs for specified number of steps
@@ -49,14 +53,16 @@ class SegPGDAttackModule(AttackModule):
 
                 # Compute logits, loss, gradients
                 with torch.enable_grad():
-                    logits = self.core_model(x_adv, **self.forward_args)
+                    logits = self._core_model(x_adv, **self._forward_args)
                     loss = loss_fn(logits, y, mask).mean()
-                    grads = torch.autograd.grad(loss, x_adv, allow_unused=True)[0].detach()
+                    grads = torch.autograd.grad(loss, x_adv, allow_unused=True)[
+                        0
+                    ].detach()
 
                 with torch.no_grad():
                     # Perform gradient update, project to norm ball
                     delta = x_adv - x + self._project_l2(grads, self.step_size)
-                    x_adv = x + self._project_l2(delta, self.eps)
+                    x_adv = x + self._project_l2(delta, self._eps)
                     # Clip perturbed inputs to image domain
                     x_adv.clamp_(0, 1)
 
@@ -64,20 +70,22 @@ class SegPGDAttackModule(AttackModule):
                 x_adv_worst = x_adv
             else:
                 # Update worst-case inputs with itemized final losses
-                out = self.core_model(x_adv, **self.forward_args)
+                out = self._core_model(x_adv, **self._forward_args)
                 fin_losses = loss_fn(out, y, mask).reshape(worst_losses.shape)
                 up_mask = (fin_losses >= worst_losses).float()
                 x_adv_worst = x_adv * up_mask + x_adv_worst * (1 - up_mask)
-                worst_losses = fin_losses * up_mask + worst_losses * (1 - up_mask)
+                worst_losses = fin_losses * up_mask + worst_losses * (
+                    1 - up_mask
+                )
 
         # Return worst-case perturbed input logits
-        self.core_model.train(mode)
+        self._core_model.train(mode)
         return x_adv_worst.detach()
 
     def _forward_linf(self, x, y, mask, loss_fn=None):
-        loss_fn = self.loss_fn if loss_fn is None else loss_fn
-        mode = self.core_model.training
-        self.core_model.eval()
+        loss_fn = self._loss_fn if loss_fn is None else loss_fn
+        mode = self._core_model.training
+        self._core_model.eval()
 
         # Initialize worst-case inputs
         x_adv_worst = x.clone().detach()
@@ -88,7 +96,7 @@ class SegPGDAttackModule(AttackModule):
             x_adv = x.clone().detach()
 
             # Initialize adversarial inputs
-            x_adv += torch.zeros_like(x_adv).uniform_(-self.eps, self.eps)
+            x_adv += torch.zeros_like(x_adv).uniform_(-self._eps, self._eps)
             x_adv = torch.clamp(x_adv, 0, 1)
 
             # Run PGD on inputs for specified number of steps
@@ -97,14 +105,18 @@ class SegPGDAttackModule(AttackModule):
 
                 # Compute logits, loss, gradients
                 with torch.enable_grad():
-                    logits = self.core_model(x_adv, **self.forward_args)
+                    logits = self._core_model(x_adv, **self._forward_args)
                     loss = loss_fn(logits, y, mask).mean()
-                    grads = torch.autograd.grad(loss, x_adv, allow_unused=True)[0].detach()
+                    grads = torch.autograd.grad(loss, x_adv, allow_unused=True)[
+                        0
+                    ].detach()
 
                 with torch.no_grad():
                     # Perform gradient update, project to norm ball
                     x_adv = x_adv.detach() + self.step_size * torch.sign(grads)
-                    x_adv = torch.min(torch.max(x_adv, x - self.eps), x + self.eps)
+                    x_adv = torch.min(
+                        torch.max(x_adv, x - self._eps), x + self._eps
+                    )
                     # Clip perturbed inputs to image domain
                     x_adv = torch.clamp(x_adv, 0, 1)
 
@@ -112,31 +124,20 @@ class SegPGDAttackModule(AttackModule):
                 x_adv_worst = x_adv
             else:
                 # Update worst-case inputs with itemized final losses
-                out = self.core_model(x_adv, **self.forward_args)
+                out = self._core_model(x_adv, **self._forward_args)
                 fin_losses = loss_fn(out, y, mask).reshape(worst_losses.shape)
                 up_mask = (fin_losses >= worst_losses).float()
                 x_adv_worst = x_adv * up_mask + x_adv_worst * (1 - up_mask)
-                worst_losses = fin_losses * up_mask + worst_losses * (1 - up_mask)
-
-        # DEBUG
-        # from torchvision.utils import save_image
-        # print(y)
-        # show_img = [img for img in x.cpu()][:16]
-        # orig_mask = self.core_model(x, **self.forward_args)[1].argmax(1)
-        # show_img.extend([COLORMAP[m].permute(2, 0, 1) for m in orig_mask][:16])
-        # mask = logits[1].argmax(1)
-        # show_img.extend([COLORMAP[m].permute(2, 0, 1) for m in mask][:16])
-
-        # save_image(show_img, 'test.png')
-        # import pdb
-        # pdb.set_trace()
+                worst_losses = fin_losses * up_mask + worst_losses * (
+                    1 - up_mask
+                )
 
         # Return worst-case perturbed input logits
-        self.core_model.train(mode)
+        self._core_model.train(mode)
         return x_adv_worst.detach()
 
     def _forward(self, *args, loss_fn=None):
-        if self.norm == 'L2':
+        if self._norm == "L2":
             return self._forward_l2(*args, loss_fn=loss_fn)
         return self._forward_linf(*args, loss_fn=loss_fn)
 

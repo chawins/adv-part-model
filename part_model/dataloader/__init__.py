@@ -1,17 +1,20 @@
-from .part_imagenet_corrupt import PART_IMAGENET_CORRUPT
-from .part_imagenet_mixed_next import PART_IMAGENET_MIXED
-from .cityscapes import CITYSCAPES
-from .part_imagenet import PART_IMAGENET
-from .part_imagenet_imagenet_class import PART_IMAGENET_IMAGENET_CLASS
-from .part_imagenet_geirhos import PART_IMAGENET_GEIRHOS
-from .part_imagenet_pseudo import PART_IMAGENET_PSEUDO
-from .pascal_part import PASCAL_PART
-from .pascal_voc import PASCAL_VOC
-from .util import COLORMAP
-from .part_imagenet_pseudo_imagenet_class import (
+from part_model.dataloader.cityscapes import CITYSCAPES
+from part_model.dataloader.imagenet import IMAGENET
+from part_model.dataloader.part_imagenet import PART_IMAGENET
+from part_model.dataloader.part_imagenet_bbox import PART_IMAGENET_BBOX
+from part_model.dataloader.part_imagenet_corrupt import PART_IMAGENET_CORRUPT
+from part_model.dataloader.part_imagenet_geirhos import PART_IMAGENET_GEIRHOS
+from part_model.dataloader.part_imagenet_mixed_next import PART_IMAGENET_MIXED
+from part_model.dataloader.part_imagenet_imagenet_class import (
+    PART_IMAGENET_IMAGENET_CLASS,
+)
+from part_model.dataloader.part_imagenet_pseudo import PART_IMAGENET_PSEUDO
+from part_model.dataloader.part_imagenet_pseudo_imagenet_class import (
     PART_IMAGENET_PSEUDO_IMAGENET_CLASS,
 )
-
+from part_model.dataloader.pascal_part import PASCAL_PART
+from part_model.dataloader.pascal_voc import PASCAL_VOC
+from part_model.dataloader.util import COLORMAP
 
 DATASET_DICT = {
     "cityscapes": CITYSCAPES,
@@ -24,6 +27,8 @@ DATASET_DICT = {
     "part-imagenet-pseudo": PART_IMAGENET_PSEUDO,
     "part-imagenet-pseudo-imagenet-class": PART_IMAGENET_PSEUDO_IMAGENET_CLASS,
     "part-imagenet-imagenet-class": PART_IMAGENET_IMAGENET_CLASS,
+    "part-imagenet-bbox": PART_IMAGENET_BBOX,
+    "imagenet": IMAGENET,
 }
 
 

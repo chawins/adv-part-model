@@ -3,19 +3,12 @@ import os
 import numpy as np
 import torch
 import torch.utils.data as data
-from part_model.utils import get_seg_type, np_temp_seed
-from part_model.utils.eval_sampler import DistributedEvalSampler
-from part_model.utils.image import get_seg_type
 from PIL import Image
 
-from .segmentation_transforms import (
-    CenterCrop,
-    Compose,
-    RandomHorizontalFlip,
-    RandomResizedCrop,
-    Resize,
-    ToTensor,
-)
+from part_model.utils import get_seg_type, np_temp_seed
+from part_model.utils.eval_sampler import DistributedEvalSampler
+
+from .segmentation_transforms import CenterCrop, Compose, Resize, ToTensor
 
 CLASSES = {
     "Quadruped": 4,
@@ -429,9 +422,13 @@ def get_loader_sampler(args, transform, split, distributed_sampler=True):
     )
 
     # TODO: can we make this cleaner?
-    PART_IMAGENET_MIXED["part_to_class"] = part_imagenet_mixed_dataset.part_to_class
+    PART_IMAGENET_MIXED[
+        "part_to_class"
+    ] = part_imagenet_mixed_dataset.part_to_class
     PART_IMAGENET_MIXED["num_classes"] = part_imagenet_mixed_dataset.num_classes
-    PART_IMAGENET_MIXED["num_seg_labels"] = part_imagenet_mixed_dataset.num_seg_labels
+    PART_IMAGENET_MIXED[
+        "num_seg_labels"
+    ] = part_imagenet_mixed_dataset.num_seg_labels
 
     setattr(args, "num_classes", part_imagenet_mixed_dataset.num_classes)
     pto = part_imagenet_mixed_dataset.part_to_object
