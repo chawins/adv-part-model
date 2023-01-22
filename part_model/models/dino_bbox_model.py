@@ -25,13 +25,17 @@ class DinoBoundingBoxModel(nn.Module):
 
         transformer = build_deformable_transformer(args)
 
-        try:
-            match_unstable_error = args.match_unstable_error
-            dn_labelbook_size = args.dn_labelbook_size
-        except:
-            match_unstable_error = True
-            # dn_labelbook_size = num_classes
-            dn_labelbook_size = args.seg_labels
+        match_unstable_error = args.match_unstable_error
+        # dn_labelbook_size = args.dn_labelbook_size
+        dn_labelbook_size = args.seg_labels + 1
+        # try:
+        #     match_unstable_error = args.match_unstable_error
+        #     dn_labelbook_size = args.dn_labelbook_size
+        # except:
+        #     match_unstable_error = True
+        #     # dn_labelbook_size = num_classes
+        #     # dn_labelbook_size = args.seg_labels
+        #     dn_labelbook_size = 80
 
         try:
             dec_pred_class_embed_share = args.dec_pred_class_embed_share
@@ -46,7 +50,6 @@ class DinoBoundingBoxModel(nn.Module):
             backbone,
             transformer,
             num_classes=args.seg_labels,
-            # num_classes=num_classes,
             num_queries=args.num_queries,
             aux_loss=True,
             iter_update=True,
