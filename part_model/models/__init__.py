@@ -158,6 +158,8 @@ def build_classifier(args):
             model = PixelCountModel(args, segmenter, None)
         elif model_token == "bbox_2heads_d":
             model = MultiHeadDinoBoundingBoxModel(args)
+            for param in model.parameters():
+                param.requires_grad = True
         elif model_token == "bbox":
             # two options, either bbox model from object detection or bbox from segmentation model
             if args.obj_det_arch == "dino":
