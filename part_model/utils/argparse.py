@@ -224,6 +224,13 @@ def get_args_parser() -> argparse.ArgumentParser:
         type=str,
         help="Architecture of object detection model.",
     )
+    parser.add_argument(
+        "--use-imagenet-classes", action="store_true", help="Use imagenet classes instead of part imagenet classes"
+    )
+    parser.add_argument(
+        "--group-parts", action="store_true", help="Group part imagenet classes"
+    )
+
     # TODO(nab-126@): clean
     from DINO.util.slconfig import DictAction
 
