@@ -631,6 +631,9 @@ class PartImageNetBBOXDataset(torchvision.datasets.CocoDetection):
             img, target = super(PartImageNetBBOXDataset, self).__getitem__(idx)
 
         image_id = self.ids[idx]
+
+        # print('\nimage_id: ', image_id, '\n')
+        # import pdb; pdb.set_trace()
         target = {"image_id": image_id, "annotations": target}
         img, target = self.prepare(img, target)
 
@@ -650,25 +653,7 @@ def get_loader_sampler_bbox(args, transforms, split):
 
     root = Path(args.bbox_label_dir)
 
-    if not args.sample:
-        PATHS = {
-            "train": (
-                root / "train",
-                root / "image_labels" / "train.json",
-                root / "annotations" / "train.json",
-            ),
-            "val": (
-                root / "val",
-                root / "image_labels" / "val.json",
-                root / "annotations" / "val.json",
-            ),
-            "test": (
-                root / "test",
-                root / "image_labels" / "test.json",
-                root / "annotations" / "test.json",
-            ),
-        }
-    else:
+    if args.sample:
         PATHS = {
             "train": (
                 root / "train",
@@ -686,6 +671,99 @@ def get_loader_sampler_bbox(args, transforms, split):
                 root / "annotations" / "test_sample.json",
             ),
         }
+        
+        # PATHS = {
+        #     "train": (
+        #         root / "train",
+        #         root / "image_labels" / "train.json",
+        #         root / "annotations" / "train.json",
+        #     ),
+        #     "val": (
+        #         root / "val",
+        #         root / "image_labels" / "val.json",
+        #         root / "annotations" / "val.json",
+        #     ),
+        #     "test": (
+        #         root / "test",
+        #         root / "image_labels" / "test.json",
+        #         root / "annotations" / "test.json",
+        #     ),
+        # }
+    elif args.use_imagenet_classes:
+        if args.group_parts:
+            PATHS = {
+                "train": (
+                    root / "train",
+                    root / "image_labels" / "imagenet" / "grouped" / "train_sample.json",
+                    root / "annotations" / "imagenet" / "grouped" / "train_sample.json",
+                ),
+                "val": (
+                    root / "val",
+                    root / "image_labels" / "imagenet" / "grouped" / "val_sample.json",
+                    root / "annotations" / "imagenet" / "grouped" / "val_sample.json",
+                ),
+                "test": (
+                    root / "test",
+                    root / "image_labels" / "imagenet" / "grouped" / "test_sample.json",
+                    root / "annotations" / "imagenet" / "grouped" / "test_sample.json",
+                ),
+            }
+        else:
+            PATHS = {
+                "train": (
+                    root / "train",
+                    root / "image_labels" / "imagenet" / "all" / "train_sample.json",
+                    root / "annotations" / "imagenet" / "all" / "train_sample.json",
+                ),
+                "val": (
+                    root / "val",
+                    root / "image_labels" / "imagenet" / "all" / "val_sample.json",
+                    root / "annotations" / "imagenet" / "all" / "val_sample.json",
+                ),
+                "test": (
+                    root / "test",
+                    root / "image_labels" / "imagenet" / "all" / "test_sample.json",
+                    root / "annotations" / "imagenet" / "all" / "test_sample.json",
+                ),
+            }
+    else:
+        if args.group_parts:
+            PATHS = {
+                "train": (
+                    root / "train",
+                    root / "image_labels" / "partimagenet" / "grouped" / "train_sample.json",
+                    root / "annotations" / "partimagenet" / "grouped" / "train_sample.json",
+                ),
+                "val": (
+                    root / "val",
+                    root / "image_labels" / "partimagenet" / "grouped" / "val_sample.json",
+                    root / "annotations" / "partimagenet" / "grouped" / "val_sample.json",
+                ),
+                "test": (
+                    root / "test",
+                    root / "image_labels" / "partimagenet" / "grouped" / "test_sample.json",
+                    root / "annotations" / "partimagenet" / "grouped" / "test_sample.json",
+                ),
+            }
+        else:
+            PATHS = {
+                "train": (
+                    root / "train",
+                    root / "image_labels" / "partimagenet" / "all" / "train_sample.json",
+                    root / "annotations" / "partimagenet" / "all" / "train_sample.json",
+                ),
+                "val": (
+                    root / "val",
+                    root / "image_labels" / "partimagenet" / "all" / "val_sample.json",
+                    root / "annotations" / "partimagenet" / "all" / "val_sample.json",
+                ),
+                "test": (
+                    root / "test",
+                    root / "image_labels" / "partimagenet" / "all" / "test_sample.json",
+                    root / "annotations" / "partimagenet" / "all" / "test_sample.json",
+                ),
+            }
+        
 
     img_folder, class_label_file, ann_file = PATHS[split]
 
