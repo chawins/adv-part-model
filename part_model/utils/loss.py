@@ -508,14 +508,23 @@ def get_train_criterion(args):
                     beta=args.adv_beta,
                 )
             else:
+                # import pdb; pdb.set_trace()
                 train_criterion = SemiBBOXLoss(
-                    args.num_classes,
+                    args.seg_labels,
                     matcher=matcher,
                     weight_dict=weight_dict,
                     focal_alpha=args.focal_alpha,
                     losses=losses,
                     seg_const=args.seg_const_trn,
                 )
+                # train_criterion = SemiBBOXLoss(
+                #     args.num_classes,
+                #     matcher=matcher,
+                #     weight_dict=weight_dict,
+                #     focal_alpha=args.focal_alpha,
+                #     losses=losses,
+                #     seg_const=args.seg_const_trn,
+                # )
 
         else:
             train_criterion = SemiSumLoss(seg_const=args.seg_const_trn)
@@ -563,6 +572,8 @@ class SemiBBOXLoss(SetCriterion):
             clf_loss = F.cross_entropy(logits, targets, reduction="none")
             loss += (1 - self.seg_const) * clf_loss
         if self.seg_const > 0:
+            # import pdb; pdb.set_trace()
+            # loss_dict = super().forward(dino_outputs, dino_targets, return_indices)
             loss_dict = super().forward(
                 dino_outputs, dino_targets, return_indices
             )
@@ -572,6 +583,12 @@ class SemiBBOXLoss(SetCriterion):
                 if k in self.weight_dict
             )
             loss += self.seg_const * bbox_loss
+        
+        # print()
+        # print('clf_loss', clf_loss)
+        # print('bbox_loss', bbox_loss)
+        # print()
+        # import pdb; pdb.set_trace()
         if self.reduction == "mean":
             return loss.mean()
 
