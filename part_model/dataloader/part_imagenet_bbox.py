@@ -694,36 +694,36 @@ def get_loader_sampler_bbox(args, transforms, split):
             PATHS = {
                 "train": (
                     root / "train",
-                    root / "image_labels" / "imagenet" / "grouped" / "train_sample.json",
-                    root / "annotations" / "imagenet" / "grouped" / "train_sample.json",
+                    root / "image_labels" / "imagenet" / "grouped" / "train.json",
+                    root / "annotations" / "imagenet" / "grouped" / "train.json",
                 ),
                 "val": (
                     root / "val",
-                    root / "image_labels" / "imagenet" / "grouped" / "val_sample.json",
-                    root / "annotations" / "imagenet" / "grouped" / "val_sample.json",
+                    root / "image_labels" / "imagenet" / "grouped" / "val.json",
+                    root / "annotations" / "imagenet" / "grouped" / "val.json",
                 ),
                 "test": (
                     root / "test",
-                    root / "image_labels" / "imagenet" / "grouped" / "test_sample.json",
-                    root / "annotations" / "imagenet" / "grouped" / "test_sample.json",
+                    root / "image_labels" / "imagenet" / "grouped" / "test.json",
+                    root / "annotations" / "imagenet" / "grouped" / "test.json",
                 ),
             }
         else:
             PATHS = {
                 "train": (
                     root / "train",
-                    root / "image_labels" / "imagenet" / "all" / "train_sample.json",
-                    root / "annotations" / "imagenet" / "all" / "train_sample.json",
+                    root / "image_labels" / "imagenet" / "all" / "train.json",
+                    root / "annotations" / "imagenet" / "all" / "train.json",
                 ),
                 "val": (
                     root / "val",
-                    root / "image_labels" / "imagenet" / "all" / "val_sample.json",
-                    root / "annotations" / "imagenet" / "all" / "val_sample.json",
+                    root / "image_labels" / "imagenet" / "all" / "val.json",
+                    root / "annotations" / "imagenet" / "all" / "val.json",
                 ),
                 "test": (
                     root / "test",
-                    root / "image_labels" / "imagenet" / "all" / "test_sample.json",
-                    root / "annotations" / "imagenet" / "all" / "test_sample.json",
+                    root / "image_labels" / "imagenet" / "all" / "test.json",
+                    root / "annotations" / "imagenet" / "all" / "test.json",
                 ),
             }
     else:
@@ -731,36 +731,36 @@ def get_loader_sampler_bbox(args, transforms, split):
             PATHS = {
                 "train": (
                     root / "train",
-                    root / "image_labels" / "partimagenet" / "grouped" / "train_sample.json",
-                    root / "annotations" / "partimagenet" / "grouped" / "train_sample.json",
+                    root / "image_labels" / "partimagenet" / "grouped" / "train.json",
+                    root / "annotations" / "partimagenet" / "grouped" / "train.json",
                 ),
                 "val": (
                     root / "val",
-                    root / "image_labels" / "partimagenet" / "grouped" / "val_sample.json",
-                    root / "annotations" / "partimagenet" / "grouped" / "val_sample.json",
+                    root / "image_labels" / "partimagenet" / "grouped" / "val.json",
+                    root / "annotations" / "partimagenet" / "grouped" / "val.json",
                 ),
                 "test": (
                     root / "test",
-                    root / "image_labels" / "partimagenet" / "grouped" / "test_sample.json",
-                    root / "annotations" / "partimagenet" / "grouped" / "test_sample.json",
+                    root / "image_labels" / "partimagenet" / "grouped" / "test.json",
+                    root / "annotations" / "partimagenet" / "grouped" / "test.json",
                 ),
             }
         else:
             PATHS = {
                 "train": (
                     root / "train",
-                    root / "image_labels" / "partimagenet" / "all" / "train_sample.json",
-                    root / "annotations" / "partimagenet" / "all" / "train_sample.json",
+                    root / "image_labels" / "partimagenet" / "all" / "train.json",
+                    root / "annotations" / "partimagenet" / "all" / "train.json",
                 ),
                 "val": (
                     root / "val",
-                    root / "image_labels" / "partimagenet" / "all" / "val_sample.json",
-                    root / "annotations" / "partimagenet" / "all" / "val_sample.json",
+                    root / "image_labels" / "partimagenet" / "all" / "val.json",
+                    root / "annotations" / "partimagenet" / "all" / "val.json",
                 ),
                 "test": (
                     root / "test",
-                    root / "image_labels" / "partimagenet" / "all" / "test_sample.json",
-                    root / "annotations" / "partimagenet" / "all" / "test_sample.json",
+                    root / "image_labels" / "partimagenet" / "all" / "test.json",
+                    root / "annotations" / "partimagenet" / "all" / "test.json",
                 ),
             }
         
@@ -768,7 +768,8 @@ def get_loader_sampler_bbox(args, transforms, split):
     img_folder, class_label_file, ann_file = PATHS[split]
 
     # add some hooks to datasets
-    aux_target_hacks_list = get_aux_target_hacks_list(split, args)
+    # aux_target_hacks_list = get_aux_target_hacks_list(split, args)
+    aux_target_hacks_list = None
     part_imagenet_dataset = PartImageNetBBOXDataset(
         img_folder,
         class_label_file,
