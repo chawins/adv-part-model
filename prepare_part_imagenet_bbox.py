@@ -29,8 +29,9 @@ def group_parts(array, mapping):
         array[array == part_id] = groupid
     return array
 
-def main(split, label_dir, sample_proportion=0.10):
+def main(split, label_dir, sample_proportion=0.10, bbox_discard_threshold=0.01):
     root = Path(os.path.join(label_dir, 'PartBoxSegmentations'))
+    num_discarded_bbox = 0
 
     PART_IMAGENET_CLASSES = {
         "Quadruped": 4,
@@ -54,18 +55,18 @@ def main(split, label_dir, sample_proportion=0.10):
             PATHS = {
                 "train": (
                     root / "train",
-                    root / "image_labels" / "imagenet" / "grouped" / "train_sample.json",
-                    root / "annotations" / "imagenet" / "grouped" / "train_sample.json",
+                    root / "image_labels" / "imagenet" / "grouped" / "train.json",
+                    root / "annotations" / "imagenet" / "grouped" / "train.json",
                 ),
                 "val": (
                     root / "val",
-                    root / "image_labels" / "imagenet" / "grouped" / "val_sample.json",
-                    root / "annotations" / "imagenet" / "grouped" / "val_sample.json",
+                    root / "image_labels" / "imagenet" / "grouped" / "val.json",
+                    root / "annotations" / "imagenet" / "grouped" / "val.json",
                 ),
                 "test": (
                     root / "test",
-                    root / "image_labels" / "imagenet" / "grouped" / "test_sample.json",
-                    root / "annotations" / "imagenet" / "grouped" / "test_sample.json",
+                    root / "image_labels" / "imagenet" / "grouped" / "test.json",
+                    root / "annotations" / "imagenet" / "grouped" / "test.json",
                 ),
             }
         else:
@@ -74,18 +75,18 @@ def main(split, label_dir, sample_proportion=0.10):
             PATHS = {
                 "train": (
                     root / "train",
-                    root / "image_labels" / "imagenet" / "all" / "train_sample.json",
-                    root / "annotations" / "imagenet" / "all" / "train_sample.json",
+                    root / "image_labels" / "imagenet" / "all" / "train.json",
+                    root / "annotations" / "imagenet" / "all" / "train.json",
                 ),
                 "val": (
                     root / "val",
-                    root / "image_labels" / "imagenet" / "all" / "val_sample.json",
-                    root / "annotations" / "imagenet" / "all" / "val_sample.json",
+                    root / "image_labels" / "imagenet" / "all" / "val.json",
+                    root / "annotations" / "imagenet" / "all" / "val.json",
                 ),
                 "test": (
                     root / "test",
-                    root / "image_labels" / "imagenet" / "all" / "test_sample.json",
-                    root / "annotations" / "imagenet" / "all" / "test_sample.json",
+                    root / "image_labels" / "imagenet" / "all" / "test.json",
+                    root / "annotations" / "imagenet" / "all" / "test.json",
                 ),
             }
     else:
@@ -95,18 +96,18 @@ def main(split, label_dir, sample_proportion=0.10):
             PATHS = {
                 "train": (
                     root / "train",
-                    root / "image_labels" / "partimagenet" / "grouped" / "train_sample.json",
-                    root / "annotations" / "partimagenet" / "grouped" / "train_sample.json",
+                    root / "image_labels" / "partimagenet" / "grouped" / "train.json",
+                    root / "annotations" / "partimagenet" / "grouped" / "train.json",
                 ),
                 "val": (
                     root / "val",
-                    root / "image_labels" / "partimagenet" / "grouped" / "val_sample.json",
-                    root / "annotations" / "partimagenet" / "grouped" / "val_sample.json",
+                    root / "image_labels" / "partimagenet" / "grouped" / "val.json",
+                    root / "annotations" / "partimagenet" / "grouped" / "val.json",
                 ),
                 "test": (
                     root / "test",
-                    root / "image_labels" / "partimagenet" / "grouped" / "test_sample.json",
-                    root / "annotations" / "partimagenet" / "grouped" / "test_sample.json",
+                    root / "image_labels" / "partimagenet" / "grouped" / "test.json",
+                    root / "annotations" / "partimagenet" / "grouped" / "test.json",
                 ),
             }
         else:
@@ -115,18 +116,18 @@ def main(split, label_dir, sample_proportion=0.10):
             PATHS = {
                 "train": (
                     root / "train",
-                    root / "image_labels" / "partimagenet" / "all" / "train_sample.json",
-                    root / "annotations" / "partimagenet" / "all" / "train_sample.json",
+                    root / "image_labels" / "partimagenet" / "all" / "train.json",
+                    root / "annotations" / "partimagenet" / "all" / "train.json",
                 ),
                 "val": (
                     root / "val",
-                    root / "image_labels" / "partimagenet" / "all" / "val_sample.json",
-                    root / "annotations" / "partimagenet" / "all" / "val_sample.json",
+                    root / "image_labels" / "partimagenet" / "all" / "val.json",
+                    root / "annotations" / "partimagenet" / "all" / "val.json",
                 ),
                 "test": (
                     root / "test",
-                    root / "image_labels" / "partimagenet" / "all" / "test_sample.json",
-                    root / "annotations" / "partimagenet" / "all" / "test_sample.json",
+                    root / "image_labels" / "partimagenet" / "all" / "test.json",
+                    root / "annotations" / "partimagenet" / "all" / "test.json",
                 ),
             }
 
@@ -253,6 +254,7 @@ def main(split, label_dir, sample_proportion=0.10):
             # load segmentation
             im = Image.open(filename)
             width, height = im.size
+            image_area = width * height
             imarray = np.array(im)
             
             if args.group_parts:
@@ -301,19 +303,30 @@ def main(split, label_dir, sample_proportion=0.10):
                     bbox_width = max_col - min_col
                     bbox_height = max_row - min_row
 
+                    bbox_area = bbox_width * bbox_height
+                    bbox_to_image_area_ratio = bbox_area / image_area
+                    
+                    small_bbox = bbox_to_image_area_ratio < bbox_discard_threshold
+                    if small_bbox:
+                        num_discarded_bbox += 1
+                        continue
+
                     cur_part_bbox = [min_col, min_row, bbox_width, bbox_height]
 
+                    
                     annotations_json.append({
                         'image_id': global_image_id,
                         'bbox': cur_part_bbox,
                         'category_id': int(part_label),
                         'id': image_part_id,
-                        'area': bbox_width * bbox_height,
+                        'area': bbox_area,
                         'iscrowd': 0
                     })
                     image_part_id += 1
                     
             global_image_id += 1
+
+    print(f'[INFO] Number of discarded bboxes: {num_discarded_bbox}')
 
     # TODO: remove last few images in validation set for debugging. otherwise distributed training does not work
     if 'val' in split:
@@ -354,6 +367,10 @@ if __name__ == "__main__":
         "--group-parts", action="store_true", help="Group part imagenet classes"
     )
 
+    parser.add_argument(
+        "--bbox-discard-threshold", default=0.01, help="bbox with bbox-to-image-area ratio smaller than this threshold will be discarded"
+    )
+
     args = parser.parse_args()
-    main(split=args.split, label_dir=args.label_dir)
+    main(split=args.split, label_dir=args.label_dir, bbox_discard_threshold=args.bbox_discard_threshold)
         
