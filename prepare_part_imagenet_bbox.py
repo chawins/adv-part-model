@@ -197,12 +197,12 @@ def main(split, label_dir, sample_proportion=0.10, bbox_discard_threshold=0.01):
 
     categories_json = []
     part_id = 0
-    categories_json.append(
-        {'supercategory': 'background',
-        'id': 0,
-        'name': 'background'}
-    )
-    part_id += 1
+    # categories_json.append(
+    #     {'supercategory': 'background',
+    #     'id': 0,
+    #     'name': 'background'}
+    # )
+    # part_id += 1
     if args.group_parts:
         processed_groupids = set()
         for part_imagenet_class in PART_IMAGENET_CLASSES:
@@ -288,8 +288,6 @@ def main(split, label_dir, sample_proportion=0.10, bbox_discard_threshold=0.01):
             assert len(image_labels) <= PART_IMAGENET_CLASSES[part_imagenet_class]
             
             for _, part_label in enumerate(image_labels):
-                
-                     
                 # get sementation mask for object_id
                 mask = (imarray == part_label) * 1
                 mask = np.uint8(mask)
@@ -313,11 +311,11 @@ def main(split, label_dir, sample_proportion=0.10, bbox_discard_threshold=0.01):
 
                     cur_part_bbox = [min_col, min_row, bbox_width, bbox_height]
 
-                    
+                    # subtract 1 from part label to make it zero-indexed (background class was removed)
                     annotations_json.append({
                         'image_id': global_image_id,
                         'bbox': cur_part_bbox,
-                        'category_id': int(part_label),
+                        'category_id': int(part_label)-1,
                         'id': image_part_id,
                         'area': bbox_area,
                         'iscrowd': 0
