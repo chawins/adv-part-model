@@ -572,8 +572,6 @@ class SemiBBOXLoss(SetCriterion):
             clf_loss = F.cross_entropy(logits, targets, reduction="none")
             loss += (1 - self.seg_const) * clf_loss
         if self.seg_const > 0:
-            # import pdb; pdb.set_trace()
-            # loss_dict = super().forward(dino_outputs, dino_targets, return_indices)
             loss_dict = super().forward(
                 dino_outputs, dino_targets, return_indices
             )
@@ -584,11 +582,6 @@ class SemiBBOXLoss(SetCriterion):
             )
             loss += self.seg_const * bbox_loss
         
-        # print()
-        # print('clf_loss', clf_loss)
-        # print('bbox_loss', bbox_loss)
-        # print()
-        # import pdb; pdb.set_trace()
         if self.reduction == "mean":
             return loss.mean()
 
