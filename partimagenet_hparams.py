@@ -68,10 +68,38 @@ partimagenet_to_grouped_partimagenet[37] = ANIMAL_LEG # animal leg
 partimagenet_to_grouped_partimagenet[38] = ANIMAL_TAIL # animal tail
 
 # Snake
-partimagenet_to_grouped_partimagenet[39] = 22
-partimagenet_to_grouped_partimagenet[40] = 23
+partimagenet_to_grouped_partimagenet[39] = ANIMAL_HEAD # animal head
+partimagenet_to_grouped_partimagenet[40] = ANIMAL_BODY # animal body
 
+grouped_partimagenet_id2name = {}
+grouped_partimagenet_id2name[0] = 'background'
 
+grouped_partimagenet_id2name[1] = 'Aeroplane_head'
+grouped_partimagenet_id2name[2] = 'Aeroplane_body'
+grouped_partimagenet_id2name[3] = 'Aeroplane_engine'
+grouped_partimagenet_id2name[4] = 'Aeroplane_wing'
+grouped_partimagenet_id2name[5] = 'Aeroplane_tail'
+
+grouped_partimagenet_id2name[6] = 'Bicycle_frame' 
+grouped_partimagenet_id2name[7] = 'Bicycle_handle'
+grouped_partimagenet_id2name[8] = 'Bicycle_seat'
+grouped_partimagenet_id2name[9] = 'Bicycle_wheel'
+
+grouped_partimagenet_id2name[10] = 'Animal_head' 
+grouped_partimagenet_id2name[11] = 'Animal_body'
+grouped_partimagenet_id2name[12] = 'Animal_arm'
+grouped_partimagenet_id2name[13] = 'Animal_leg'
+grouped_partimagenet_id2name[14] = 'Animal_tail'
+
+grouped_partimagenet_id2name[15] = 'Boat_body'
+grouped_partimagenet_id2name[16] = 'Boat_engine'
+
+grouped_partimagenet_id2name[17] = 'Bottle_body'
+grouped_partimagenet_id2name[18] = 'Bottle_cap'
+
+grouped_partimagenet_id2name[19] = 'Car_body'
+grouped_partimagenet_id2name[20] = 'Car_wheel'
+grouped_partimagenet_id2name[21] = 'Car_engine'
 
 
 partimagenet_id2name = {}   
@@ -130,6 +158,55 @@ partimagenet_id2name[40] = 'Snake_body'
 
 
 
+
+label_dir = '/data1/chawins/PartImageNet'
+part_segmentations_path = os.path.join(
+    label_dir, "PartSegmentations", 'All', 'train'
+)
+imagenet_labels_path = os.path.join(label_dir, 'LOC_synset_mapping.txt')
+imagenet_id2name = {}
+with open(imagenet_labels_path, "r") as f:        
+    for line in f:
+        line = line.strip()
+        line_split = line.split()
+        imagenet_id2name[line_split[0]] = line_split[1]
+
+
+PART_IMAGENET_CLASSES = {
+    "Quadruped": 4,
+    "Biped": 5,
+    "Fish": 4,
+    "Bird": 5,
+    "Snake": 2,
+    "Reptile": 4,
+    "Car": 3,
+    "Bicycle": 4,
+    "Boat": 2,
+    "Aeroplane": 5,
+    "Bottle": 2,
+}
+PART_IMAGENET_CLASSES = dict(sorted(PART_IMAGENET_CLASSES.items()))
+
+IMAGENET_IDS = set()
+# create mapping from imagenet id to partimagenet id
+# partimagenetid_to_imagenetid = {}
+for class_label, part_imagenet_class in enumerate(PART_IMAGENET_CLASSES):
+    with open(f"{part_segmentations_path}/{part_imagenet_class}.txt", "r") as f:
+        filenames = f.readlines()
+        for filename in filenames:
+            filename = filename.strip()
+            imagenet_id = filename.split('/')[0]
+            IMAGENET_IDS.add(imagenet_id)
+
+IMAGENET_IDS = list(IMAGENET_IDS)
+assert len(IMAGENET_IDS) == 158 # https://arxiv.org/pdf/2112.00933.pdf
+IMAGENET_IDS.sort()
+
+imagenetclass_to_imagenetid = {}
+imagenetid_to_imagenetclass = {}
+for imagenet_class, imagenet_id in enumerate(IMAGENET_IDS):
+    imagenetid_to_imagenetclass[imagenet_id] = imagenet_class
+    imagenetclass_to_imagenetid[imagenet_class] = imagenet_id
 
 
 
