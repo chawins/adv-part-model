@@ -9,7 +9,9 @@ _NormVal = Union[List[float], Tuple[float, float, float]]
 
 
 class Normalize(nn.Module):
-    def __init__(self, mean: _NormVal = None, std: _NormVal | None = None) -> None:
+    def __init__(
+        self, mean: _NormVal = None, std: _NormVal | None = None
+    ) -> None:
         super().__init__()
         if mean is None or std is None:
             self.mean, self.std = None, None

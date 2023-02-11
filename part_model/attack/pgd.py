@@ -56,6 +56,7 @@ class PGDAttack(AttackModule):
         self, x_adv: torch.Tensor, targets: torch.Tensor, **kwargs
     ) -> torch.Tensor:
         """Compute logits, loss, gradients."""
+        x_adv.requires_grad_()
         logits = self._core_model(x_adv, **kwargs, **self._forward_args)
         loss = self._loss_fn(logits, targets).mean()
         grads = torch.autograd.grad(loss, x_adv, allow_unused=True)[0]
@@ -139,7 +140,6 @@ class PGDAttack(AttackModule):
 
             # Run PGD on inputs for specified number of steps
             for _ in range(self._num_steps):
-                x_adv.requires_grad_()
                 grads = self._compute_grads(x_adv, targets, **kwargs)
                 x_adv = self._update_and_proj(
                     x_adv,

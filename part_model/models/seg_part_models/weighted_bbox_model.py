@@ -126,7 +126,6 @@ class WeightedBBoxModel(nn.Module):
         self.height = height
         self.width = width
         self.totalPixels = height * width
-        assert height == height
 
         self.core_model = nn.Sequential(
             nn.Conv1d(dim, 10, 1) if self.use_conv1d else nn.Identity(),
