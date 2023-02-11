@@ -12,11 +12,11 @@ from torch import nn
 from torch.cuda import amp
 
 from part_model.dataloader import DATASET_DICT
+from part_model.models import base_model, dino_resnet
 from part_model.models.det_part_models import (
     dino_bbox_model,
     multi_head_dino_bbox_model,
 )
-from part_model.models.model import Classifier
 from part_model.models.seg_part_models import (
     bbox_model,
     clean_mask_model,
@@ -30,7 +30,7 @@ from part_model.models.seg_part_models import (
     two_head_model,
     weighted_bbox_model,
 )
-from part_model.models.seg_part_models.util import SEGM_BUILDER, SegClassifier
+from part_model.models.seg_part_models.util import SEGM_BUILDER
 from part_model.utils.image import get_seg_type
 
 
@@ -137,7 +137,19 @@ def build_classifier(args):
             for param in segmenter.parameters():
                 param.requires_grad = False
 
-        if model_token == "mask":
+        if args.obj_det_arch == "dino":
+            # two options, either sequential or two-headed model
+            if model_token == "seq":
+                model = dino_bbox_model.DinoBoundingBoxModel(args)
+            elif model_token == "2heads":
+                model = (
+                    multi_head_dino_bbox_model.MultiHeadDinoBoundingBoxModel(
+                        args
+                    )
+                )
+            for param in model.parameters():
+                param.requires_grad = True
+        elif model_token == "mask":
             model.conv1 = nn.Conv2d(
                 args.seg_labels
                 + (3 if "inpt" in exp_tokens else 0)
@@ -150,6 +162,11 @@ def build_classifier(args):
             )
             model.fc = nn.Linear(rep_dim, args.num_classes)
             model = part_mask_model.PartMaskModel(args, segmenter, model)
+        elif model_token == "dino_resnet":
+            model = dino_resnet.ResNet(args)
+            for param in model.parameters():
+                param.requires_grad = True
+
         elif model_token == "seg_cat":
             model.conv1 = nn.Conv2d(
                 (args.seg_labels - 1) * 3
@@ -220,7 +237,7 @@ def build_classifier(args):
         elif model_token == "pooling":
             model = pooling_model.PoolingModel(args, segmenter)
 
-        model = SegClassifier(model, normalize=normalize)
+        model = base_model.SegClassifier(model, normalize=normalize)
         n_seg = sum(p.numel() for p in model.parameters()) / 1e6
         nt_seg = (
             sum(p.numel() for p in model.parameters() if p.requires_grad) / 1e6
@@ -229,13 +246,14 @@ def build_classifier(args):
     else:
         print("=> Building a normal classifier...")
         model.fc = nn.Linear(rep_dim, args.num_classes)
-        model = Classifier(model, normalize=normalize)
+        model = base_model.Classifier(model, normalize=normalize)
         n_model = sum(p.numel() for p in model.parameters()) / 1e6
         print(f"=> Total params: {n_model:.2f}M")
 
     # Wrap model again under DistributedDataParallel or just DataParallel
     model = wrap_distributed(args, model)
 
+    print("args.lr_backbone", args.lr_backbone)
     if args.obj_det_arch == "dino":
         backbone_params, non_backbone_params = [], []
         for name, param in model.named_parameters():

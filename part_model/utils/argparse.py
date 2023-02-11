@@ -1,7 +1,7 @@
 """Utility functions for argument parsing."""
 
 import argparse
-
+from DINO.util.slconfig import DictAction
 
 def get_args_parser() -> argparse.ArgumentParser:
     """Create argparser for common main function."""
@@ -214,6 +214,11 @@ def get_args_parser() -> argparse.ArgumentParser:
 
     # Detection model args
     parser.add_argument(
+        "--calculate-map",
+        action="store_true",
+        help="Calculate mAP for object detection model",
+    )
+    parser.add_argument(
         "--bbox-label-dir",
         default="",
         type=str,
@@ -224,8 +229,12 @@ def get_args_parser() -> argparse.ArgumentParser:
         type=str,
         help="Architecture of object detection model.",
     )
-    # TODO(nab-126@): clean
-    from DINO.util.slconfig import DictAction
+    parser.add_argument(
+        "--use-imagenet-classes", action="store_true", help="Use imagenet classes instead of part imagenet classes"
+    )
+    parser.add_argument(
+        "--group-parts", action="store_true", help="Group part imagenet classes"
+    )
 
     parser.add_argument("--config_file", "-c", type=str, required=False)
     parser.add_argument(

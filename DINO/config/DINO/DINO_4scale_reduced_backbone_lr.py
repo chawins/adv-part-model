@@ -100,8 +100,7 @@ dn_number = 100
 dn_box_noise_scale = 0.4
 dn_label_noise_ratio = 0.5
 embed_init_tgt = True
-dn_labelbook_size = 41
-# dn_labelbook_size = 91
+dn_labelbook_size = 91
 
 match_unstable_error = True
 
