@@ -1,10 +1,11 @@
+"""Implementation of DINO as part model."""
+
 from __future__ import annotations
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from DINO.main import build_model_main
 from DINO.models.dino.dino import (
     DINO,
     build_backbone,
@@ -28,6 +29,8 @@ class DinoBoundingBoxModel(nn.Module):
 
         dn_labelbook_size = args.seg_labels + 1
 
+        # TODO(nabeel@): Why is this try-except needed? Catch all like this is
+        # not recommended.
         try:
             dec_pred_class_embed_share = args.dec_pred_class_embed_share
         except:
@@ -71,7 +74,9 @@ class DinoBoundingBoxModel(nn.Module):
         )
 
         self.core_model = nn.Sequential(
-            nn.Conv1d(args.num_queries, 10, 5) if self.use_conv1d else nn.Identity(),
+            nn.Conv1d(args.num_queries, 10, 5)
+            if self.use_conv1d
+            else nn.Identity(),
             nn.Flatten(),
             nn.BatchNorm1d(input_dim),
             nn.Linear(input_dim, 50),
@@ -84,7 +89,7 @@ class DinoBoundingBoxModel(nn.Module):
         self,
         images,
         **kwargs,
-    ):  
+    ):
         masks = kwargs["masks"]
         dino_targets = kwargs["dino_targets"]
         need_tgt_for_training = kwargs["need_tgt_for_training"]
@@ -101,17 +106,26 @@ class DinoBoundingBoxModel(nn.Module):
         dino_boxes = dino_outputs["pred_boxes"]
 
         if self.sort_dino_outputs:
-            topk_values, topk_indexes = torch.topk(dino_probs.view(dino_probs.shape[0], -1), self.num_queries, dim=1)        
+            # TODO(nabeel@): Don't leave unused variables and commneted out line
+            # in code.
+            topk_values, topk_indexes = torch.topk(
+                dino_probs.view(dino_probs.shape[0], -1),
+                self.num_queries,
+                dim=1,
+            )
             topk_boxes = topk_indexes // dino_probs.shape[2]
             # labels = top_indexes % out_logits.shape[2]
-            dino_probs = torch.gather(dino_probs, 1, topk_boxes.unsqueeze(-1).repeat(1,1,dino_probs.shape[2]))
-            dino_boxes = torch.gather(dino_boxes, 1, topk_boxes.unsqueeze(-1).repeat(1,1,4))
-        
-        features = torch.cat(
-            [
+            dino_probs = torch.gather(
                 dino_probs,
-                dino_boxes
-            ],
+                1,
+                topk_boxes.unsqueeze(-1).repeat(1, 1, dino_probs.shape[2]),
+            )
+            dino_boxes = torch.gather(
+                dino_boxes, 1, topk_boxes.unsqueeze(-1).repeat(1, 1, 4)
+            )
+
+        features = torch.cat(
+            [dino_probs, dino_boxes],
             dim=2,
         )
 

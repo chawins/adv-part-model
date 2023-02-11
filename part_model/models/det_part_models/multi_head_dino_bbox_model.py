@@ -1,10 +1,9 @@
-from __future__ import annotations
+"""Implement multi-headed DINO part model."""
 
-from typing import Any
+from __future__ import annotations
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 from DINO.models.dino.dino import (
     DINO,
@@ -25,6 +24,7 @@ class MultiHeadDinoBoundingBoxModel(nn.Module):
 
         dn_labelbook_size = args.seg_labels + 1
 
+        # TODO(nabeel@): Same comment as in dino_bbox_model.py.
         try:
             dec_pred_class_embed_share = args.dec_pred_class_embed_share
         except:

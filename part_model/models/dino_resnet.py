@@ -1,16 +1,11 @@
-from __future__ import annotations
+"""Use ResNet from DINO (for debugging purposes only)."""
 
-from typing import Any
+from __future__ import annotations
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
-from DINO.models.dino.dino import (
-    DINO,
-    build_backbone,
-    build_deformable_transformer,
-)
+from DINO.models.dino.dino import build_backbone
 from DINO.util.misc import NestedTensor
 
 
@@ -37,7 +32,7 @@ class ResNet(nn.Module):
         need_tgt_for_training,
         return_mask=False,
         **kwargs,
-    )-> torch.Tensor:
+    ) -> torch.Tensor:
         _ = kwargs  # Unused
         nested_tensors = NestedTensor(images, masks)
         out = self.backbone(nested_tensors)
