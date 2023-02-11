@@ -90,8 +90,17 @@ def build_classifier(args):
             # Froze all weights of the part segmentation model
             for param in segmenter.parameters():
                 param.requires_grad = False
-
-        if model_token == "mask":
+        
+        
+        if args.obj_det_arch == "dino":
+            # two options, either sequential or two-headed model
+            if model_token == "seq":
+                model = DinoBoundingBoxModel(args)
+            elif model_token == "2heads":
+                model = MultiHeadDinoBoundingBoxModel(args)
+            for param in model.parameters():
+                param.requires_grad = True
+        elif model_token == "mask":
             model.conv1 = nn.Conv2d(
                 args.seg_labels
                 + (3 if "inpt" in exp_tokens else 0)
@@ -156,18 +165,8 @@ def build_classifier(args):
             model = TwoHeadModel(args, segmenter, "e")
         elif model_token == "pixel":
             model = PixelCountModel(args, segmenter, None)
-        elif model_token == "bbox_2heads_d":
-            model = MultiHeadDinoBoundingBoxModel(args)
-            for param in model.parameters():
-                param.requires_grad = True
         elif model_token == "bbox":
-            # two options, either bbox model from object detection or bbox from segmentation model
-            if args.obj_det_arch == "dino":
-                model = DinoBoundingBoxModel(args)
-                for param in model.parameters():
-                    param.requires_grad = True
-            else:
-                model = BoundingBoxModel(args, segmenter)
+            model = BoundingBoxModel(args, segmenter)
         elif model_token == "wbbox":
             model = WeightedBBoxModel(args, segmenter)
         elif model_token == "fc":
