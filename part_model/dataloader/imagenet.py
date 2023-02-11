@@ -19,7 +19,7 @@ from part_model.utils.image import get_seg_type
 
 
 class ImageNetSegDataset(part_imagenet.PartImageNetSegDataset):
-    """PartImageNet Dataset."""
+    """ImageNet Dataset."""
 
     CLASSES = {
         "n01440764": 4,
@@ -188,7 +188,7 @@ def _get_loader_sampler(args, transform, split: str):
     is_train: bool = split == "train"
     use_atta: bool = args.adv_train == "atta"
 
-    part_imagenet_dataset = ImageNetSegDataset(
+    imagenet_dataset = ImageNetSegDataset(
         args.data,
         args.seg_label_dir,
         split=split,
@@ -205,7 +205,7 @@ def _get_loader_sampler(args, transform, split: str):
         shuffle = None
         if is_train:
             sampler = torch.utils.data.distributed.DistributedSampler(
-                part_imagenet_dataset,
+                imagenet_dataset,
                 shuffle=True,
                 seed=args.seed,
                 drop_last=False,
@@ -213,12 +213,12 @@ def _get_loader_sampler(args, transform, split: str):
         else:
             # Use distributed sampler for validation but not testing
             sampler = DistributedEvalSampler(
-                part_imagenet_dataset, shuffle=False, seed=args.seed
+                imagenet_dataset, shuffle=False, seed=args.seed
             )
 
     batch_size = args.batch_size
     loader = torch.utils.data.DataLoader(
-        part_imagenet_dataset,
+        imagenet_dataset,
         batch_size=batch_size,
         shuffle=shuffle,
         num_workers=args.workers,
@@ -228,11 +228,11 @@ def _get_loader_sampler(args, transform, split: str):
     )
 
     # TODO(chawins@): can we make this cleaner?
-    IMAGENET["part_to_class"] = part_imagenet_dataset.part_to_class
-    IMAGENET["num_classes"] = part_imagenet_dataset.num_classes
-    IMAGENET["num_seg_labels"] = part_imagenet_dataset.num_seg_labels
+    IMAGENET["part_to_class"] = imagenet_dataset.part_to_class
+    IMAGENET["num_classes"] = imagenet_dataset.num_classes
+    IMAGENET["num_seg_labels"] = imagenet_dataset.num_seg_labels
 
-    pto = part_imagenet_dataset.part_to_object
+    pto = imagenet_dataset.part_to_object
     if seg_type == "part":
         seg_labels = len(pto)
     elif seg_type == "fg":
@@ -241,10 +241,10 @@ def _get_loader_sampler(args, transform, split: str):
         seg_labels = pto.max().item() + 1
 
     setattr(args, "seg_labels", seg_labels)
-    setattr(args, "num_classes", part_imagenet_dataset.num_classes)
+    setattr(args, "num_classes", imagenet_dataset.num_classes)
     setattr(args, "input_dim", IMAGENET["input_dim"])
     if is_train:
-        setattr(args, "num_train", len(part_imagenet_dataset))
+        setattr(args, "num_train", len(imagenet_dataset))
 
     return loader, sampler
 
