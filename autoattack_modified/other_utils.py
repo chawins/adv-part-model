@@ -1,5 +1,6 @@
 import os
 import torch
+import copy 
 
 class Logger():
     def __init__(self, log_path):
@@ -50,3 +51,17 @@ def get_pred(output):
     if output.size(-1) == 1:
         return (output >= 0).squeeze().float()
     return output.argmax(1)
+
+def mask_kwargs(kwargs_orig, batch_datapoint_idcs):
+    kwargs = {}
+    if 'dino_targets' in kwargs_orig:
+        kwargs = copy.deepcopy(kwargs_orig)
+        kwargs['masks'] = kwargs_orig['masks'][batch_datapoint_idcs]
+        kwargs['dino_targets'] = []
+
+        if batch_datapoint_idcs.ndim == 0:
+            kwargs['dino_targets'].append(kwargs_orig['dino_targets'][batch_datapoint_idcs])
+        else:
+            for i in batch_datapoint_idcs:
+                kwargs['dino_targets'].append(kwargs_orig['dino_targets'][i])
+    return kwargs
