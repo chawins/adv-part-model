@@ -19,23 +19,14 @@ class DinoBoundingBoxModel(nn.Module):
         super().__init__()
 
         self.use_conv1d = "conv1d" in args.experiment
+        self.sort_dino_outputs = "sort_dino_outputs" in args.experiment
+        self.num_queries = args.num_queries
 
-        # TODO: load weights if args.load_from_segmenter
         backbone = build_backbone(args)
 
         transformer = build_deformable_transformer(args)
 
-        match_unstable_error = args.match_unstable_error
-        # dn_labelbook_size = args.dn_labelbook_size
         dn_labelbook_size = args.seg_labels + 1
-        # try:
-        #     match_unstable_error = args.match_unstable_error
-        #     dn_labelbook_size = args.dn_labelbook_size
-        # except:
-        #     match_unstable_error = True
-        #     # dn_labelbook_size = num_classes
-        #     # dn_labelbook_size = args.seg_labels
-        #     dn_labelbook_size = 80
 
         try:
             dec_pred_class_embed_share = args.dec_pred_class_embed_share
@@ -92,12 +83,12 @@ class DinoBoundingBoxModel(nn.Module):
     def forward(
         self,
         images,
-        masks,
-        dino_targets,
-        need_tgt_for_training,
-        return_mask=False,
         **kwargs,
-    ):
+    ):  
+        masks = kwargs["masks"]
+        dino_targets = kwargs["dino_targets"]
+        need_tgt_for_training = kwargs["need_tgt_for_training"]
+        return_mask = kwargs["return_mask"]
         # Object Detection part
         nested_tensors = NestedTensor(images, masks)
 
@@ -106,11 +97,20 @@ class DinoBoundingBoxModel(nn.Module):
         else:
             dino_outputs = self.object_detector(nested_tensors)
 
-        # concatenate softmax'd logits and bounding box predictions
+        dino_probs = F.softmax(dino_outputs["pred_logits"], dim=-1)
+        dino_boxes = dino_outputs["pred_boxes"]
+
+        if self.sort_dino_outputs:
+            topk_values, topk_indexes = torch.topk(dino_probs.view(dino_probs.shape[0], -1), self.num_queries, dim=1)        
+            topk_boxes = topk_indexes // dino_probs.shape[2]
+            # labels = top_indexes % out_logits.shape[2]
+            dino_probs = torch.gather(dino_probs, 1, topk_boxes.unsqueeze(-1).repeat(1,1,dino_probs.shape[2]))
+            dino_boxes = torch.gather(dino_boxes, 1, topk_boxes.unsqueeze(-1).repeat(1,1,4))
+        
         features = torch.cat(
             [
-                F.softmax(dino_outputs["pred_logits"], dim=1),
-                dino_outputs["pred_boxes"],
+                dino_probs,
+                dino_boxes
             ],
             dim=2,
         )
@@ -119,5 +119,4 @@ class DinoBoundingBoxModel(nn.Module):
 
         if return_mask:
             return out, dino_outputs
-            # return out, outputs['pred_logits'], outputs['pred_boxes']
         return out
