@@ -1,7 +1,5 @@
 import os
-import json
 
-# grouped_partimagenet_id2name = {}
 partimagenet_to_grouped_partimagenet = {}
 
 ANIMAL_HEAD = 10
@@ -159,10 +157,10 @@ partimagenet_id2name[39] = 'Snake_body'
 
 
 
-label_dir = '/data1/chawins/PartImageNet'
-part_segmentations_path = os.path.join(
-    label_dir, "PartSegmentations", 'All', 'train'
-)
+# label_dir = '~/data/PartImageNet'
+# part_segmentations_path = os.path.join(
+#     label_dir, "PartSegmentations", 'All', 'train'
+# )
 imagenet_labels_filename = 'LOC_synset_mapping.txt'
 imagenet_id2name = {}
 with open(imagenet_labels_filename, "r") as f:        
@@ -187,26 +185,26 @@ PART_IMAGENET_CLASSES = {
 }
 PART_IMAGENET_CLASSES = dict(sorted(PART_IMAGENET_CLASSES.items()))
 
-IMAGENET_IDS = set()
-# create mapping from imagenet id to partimagenet id
-# partimagenetid_to_imagenetid = {}
-for class_label, part_imagenet_class in enumerate(PART_IMAGENET_CLASSES):
-    with open(f"{part_segmentations_path}/{part_imagenet_class}.txt", "r") as f:
-        filenames = f.readlines()
-        for filename in filenames:
-            filename = filename.strip()
-            imagenet_id = filename.split('/')[0]
-            IMAGENET_IDS.add(imagenet_id)
+# IMAGENET_IDS = set()
+# # create mapping from imagenet id to partimagenet id
+# # partimagenetid_to_imagenetid = {}
+# for class_label, part_imagenet_class in enumerate(PART_IMAGENET_CLASSES):
+#     with open(f"{part_segmentations_path}/{part_imagenet_class}.txt", "r") as f:
+#         filenames = f.readlines()
+#         for filename in filenames:
+#             filename = filename.strip()
+#             imagenet_id = filename.split('/')[0]
+#             IMAGENET_IDS.add(imagenet_id)
 
-IMAGENET_IDS = list(IMAGENET_IDS)
-assert len(IMAGENET_IDS) == 158 # https://arxiv.org/pdf/2112.00933.pdf
-IMAGENET_IDS.sort()
+# IMAGENET_IDS = list(IMAGENET_IDS)
+# assert len(IMAGENET_IDS) == 158 # https://arxiv.org/pdf/2112.00933.pdf
+# IMAGENET_IDS.sort()
 
-imagenetclass_to_imagenetid = {}
-imagenetid_to_imagenetclass = {}
-for imagenet_class, imagenet_id in enumerate(IMAGENET_IDS):
-    imagenetid_to_imagenetclass[imagenet_id] = imagenet_class
-    imagenetclass_to_imagenetid[imagenet_class] = imagenet_id
+# imagenetclass_to_imagenetid = {}
+# imagenetid_to_imagenetclass = {}
+# for imagenet_class, imagenet_id in enumerate(IMAGENET_IDS):
+#     imagenetid_to_imagenetclass[imagenet_id] = imagenet_class
+#     imagenetclass_to_imagenetid[imagenet_class] = imagenet_id
 
 
 

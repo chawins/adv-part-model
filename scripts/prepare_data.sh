@@ -30,7 +30,7 @@
 #     --min-area 0.
 
 # python -u prepare_part_imagenet.py \
-#     --data-dir /data/nab_126/PartImageNet/ \
+#     --data-dir ~/data/PartImageNet/ \
 #     --name All
 
 
@@ -49,14 +49,14 @@ python prepare_part_imagenet_bbox.py --label-dir $DATAPATH --split train
 python prepare_part_imagenet_bbox.py --label-dir $DATAPATH --split val
 python prepare_part_imagenet_bbox.py --label-dir $DATAPATH --split test
 
-python prepare_part_imagenet_bbox.py --label-dir $DATAPATH --split train --use-imagenet-classes
-python prepare_part_imagenet_bbox.py --label-dir $DATAPATH --split val --use-imagenet-classes
-python prepare_part_imagenet_bbox.py --label-dir $DATAPATH --split test --use-imagenet-classes
+# python prepare_part_imagenet_bbox.py --label-dir $DATAPATH --split train --use-imagenet-classes
+# python prepare_part_imagenet_bbox.py --label-dir $DATAPATH --split val --use-imagenet-classes
+# python prepare_part_imagenet_bbox.py --label-dir $DATAPATH --split test --use-imagenet-classes
 
-python prepare_part_imagenet_bbox.py --label-dir $DATAPATH --split train --group-parts
-python prepare_part_imagenet_bbox.py --label-dir $DATAPATH --split val --group-parts
-python prepare_part_imagenet_bbox.py --label-dir $DATAPATH --split test --group-parts
+# python prepare_part_imagenet_bbox.py --label-dir $DATAPATH --split train --group-parts
+# python prepare_part_imagenet_bbox.py --label-dir $DATAPATH --split val --group-parts
+# python prepare_part_imagenet_bbox.py --label-dir $DATAPATH --split test --group-parts
 
-python prepare_part_imagenet_bbox.py --label-dir $DATAPATH --split train --use-imagenet-classes --group-parts
-python prepare_part_imagenet_bbox.py --label-dir $DATAPATH --split val --use-imagenet-classes --group-parts
-python prepare_part_imagenet_bbox.py --label-dir $DATAPATH --split test --use-imagenet-classes --group-parts
+# python prepare_part_imagenet_bbox.py --label-dir $DATAPATH --split train --use-imagenet-classes --group-parts
+# python prepare_part_imagenet_bbox.py --label-dir $DATAPATH --split val --use-imagenet-classes --group-parts
+# python prepare_part_imagenet_bbox.py --label-dir $DATAPATH --split test --use-imagenet-classes --group-parts
