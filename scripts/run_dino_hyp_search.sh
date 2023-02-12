@@ -1,6 +1,6 @@
 #!/bin/bash
 ID=9
-GPU=0
+GPU=1
 NUM_GPU=1
 BS=2
 AA_BS=32
@@ -27,9 +27,11 @@ EPS=0.03137254901
 EPOCHS=50
 
 c_seg_arr=(0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9)
+
 for C_SEG in ${c_seg_arr[@]};
 do
-    OUTPUT_DIR='~/data/models/part-image-net/all/c_seg_${C_SEG}/' # need to change
+    OUTPUT_DIR="~/data/models/part-image-net/all/c_seg_${C_SEG}/" # need to change
+    echo $OUTPUT_DIR
     # pretrain dino bbox part model
     torchrun \
         --standalone --nnodes=1 --max_restarts 0 --nproc_per_node=$NUM_GPU \
