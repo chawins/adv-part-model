@@ -157,9 +157,9 @@ def main(split, label_dir, sample_proportion=0.10, bbox_discard_threshold=0.01):
     # with open(f"{label_dir}/{part_imagenet_class}.txt", "r") as path_file:
     #     path_file.writelines(filenames)
 
-    imagenet_labels_path = os.path.join(label_dir, 'LOC_synset_mapping.txt')
+    imagenet_labels_filename = 'LOC_synset_mapping.txt'
     imagenet_id2name = {}
-    with open(imagenet_labels_path, "r") as f:        
+    with open(imagenet_labels_filename, "r") as f:        
         for line in f:
             line = line.strip()
             line_split = line.split()
