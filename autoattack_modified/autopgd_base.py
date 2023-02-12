@@ -14,7 +14,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from .flags import SET_MASK
-from .other_utils import L0_norm, L1_norm, L2_norm, get_pred, mask_kwargs
+from .other_utils import L0_norm, L1_norm, L2_norm, get_pred
 
 
 def L1_projection(x2, y2, eps1):
@@ -197,7 +197,7 @@ class APGDAttack():
         return -(x[u, y] - x_sorted[:, -2] * ind - x_sorted[:, -1] * (
             1. - ind)) / (x_sorted[:, -1] - x_sorted[:, -3] + 1e-12)
 
-    def attack_single_run(self, x, y, x_init=None, **kwargs):
+    def attack_single_run(self, x, y, x_init=None):
         if len(x.shape) < self.ndims:
             x = x.unsqueeze(0)
             y = y.unsqueeze(0)
@@ -256,7 +256,7 @@ class APGDAttack():
         for _ in range(self.eot_iter):
             if not self.is_tf_model:
                 with torch.enable_grad():
-                    logits = self.model(x_adv, **kwargs)
+                    logits = self.model(x_adv)
                     if logits.size(-1) > 1:
                         loss_indiv = criterion_indiv(logits, y)
                     else:
@@ -355,7 +355,7 @@ class APGDAttack():
             for _ in range(self.eot_iter):
                 if not self.is_tf_model:
                     with torch.enable_grad():
-                        logits = self.model(x_adv, **kwargs)
+                        logits = self.model(x_adv)
                         if logits.size(-1) > 1:
                             loss_indiv = criterion_indiv(logits, y)
                         else:
@@ -436,7 +436,7 @@ class APGDAttack():
 
         return (x_best, acc, loss_best, x_best_adv)
 
-    def perturb(self, x, y=None, best_loss=False, x_init=None, **kwargs_orig):
+    def perturb(self, x, y=None, best_loss=False, x_init=None):
         """
         :param x:           clean images
         :param y:           clean labels, if None we use the predicted labels
@@ -454,7 +454,7 @@ class APGDAttack():
         if not self.is_tf_model:
             # DEBUG
             # y_pred = self.model(x).max(1)[1]
-            y_pred = get_pred(self.model(x, **kwargs_orig))
+            y_pred = get_pred(self.model(x))
         else:
             y_pred = self.model.predict(x).max(1)[1]
         if y is None:
@@ -504,10 +504,8 @@ class APGDAttack():
                         # self.model.set_mask(ind_to_fool)
                         self.model.set_mask(x_to_fool)
 
-                    kwargs = mask_kwargs(kwargs_orig, ind_to_fool)
-                    
                     if not self.use_largereps:
-                        res_curr = self.attack_single_run(x_to_fool, y_to_fool, **kwargs)
+                        res_curr = self.attack_single_run(x_to_fool, y_to_fool)
                     else:
                         res_curr = self.decr_eps_pgd(x_to_fool, y_to_fool, epss, iters)
                     best_curr, acc_curr, loss_curr, adv_curr = res_curr
@@ -613,7 +611,7 @@ class APGDAttack_targeted(APGDAttack):
     def ce_loss_targeted(self, x, y):
         return -1. * F.cross_entropy(x, self.y_target, reduction='none')
 
-    def perturb(self, x, y=None, x_init=None, **kwargs_orig):
+    def perturb(self, x, y=None, x_init=None):
         """
         :param x:           clean images
         :param y:           clean labels, if None we use the predicted labels
@@ -629,7 +627,7 @@ class APGDAttack_targeted(APGDAttack):
         if not self.is_tf_model:
             # DEBUG
             # y_pred = self.model(x).max(1)[1]
-            y_pred = get_pred(self.model(x, **kwargs))
+            y_pred = get_pred(self.model(x))
         else:
             y_pred = self.model.predict(x).max(1)[1]
         if y is None:
@@ -672,22 +670,19 @@ class APGDAttack_targeted(APGDAttack):
                     x_to_fool = x[ind_to_fool].clone()
                     y_to_fool = y[ind_to_fool].clone()
 
-                    kwargs = mask_kwargs(kwargs_orig, ind_to_fool)
-                    
                     # DEBUG: x_to_fool is shortened here so mask has to be set again
                     if SET_MASK:
                         # self.model.set_mask(ind_to_fool)
                         self.model.set_mask(x_to_fool)
 
                     if not self.is_tf_model:
-                        # import pdb; pdb.set_trace()
-                        output = self.model(x_to_fool, **kwargs)
+                        output = self.model(x_to_fool)
                     else:
                         output = self.model.predict(x_to_fool)
                     self.y_target = output.sort(dim=1)[1][:, -target_class]
 
                     if not self.use_largereps:
-                        res_curr = self.attack_single_run(x_to_fool, y_to_fool, **kwargs)
+                        res_curr = self.attack_single_run(x_to_fool, y_to_fool)
                     else:
                         res_curr = self.decr_eps_pgd(x_to_fool, y_to_fool, epss, iters)
                     best_curr, acc_curr, loss_curr, adv_curr = res_curr

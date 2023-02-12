@@ -12,7 +12,7 @@ import os, sys
 from typing import Optional
 from DINO.util.get_param_dicts import get_param_dict
 
-# sys.path.insert(0, '..')
+
 
 
 from DINO.util.logger import setup_logger
@@ -78,8 +78,7 @@ def get_args_parser():
     parser.add_argument('--rank', default=0, type=int,
                         help='number of distributed processes')
     parser.add_argument("--local_rank", type=int, help='local rank for DistributedDataParallel')
-    parser.add_argument('--amp', action='store_true',
-                        help="Train with mixed precision")
+
     
     return parser
 

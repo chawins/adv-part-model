@@ -60,7 +60,7 @@ class PGDAttack(AttackModule):
         logits = self._core_model(x_adv, **kwargs, **self._forward_args)
         loss = self._loss_fn(logits, targets).mean()
         grads = torch.autograd.grad(loss, x_adv, allow_unused=True)[0]
-        grads = grads.detach()
+        grads.detach_()
         return grads
 
     @torch.no_grad()

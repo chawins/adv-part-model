@@ -51,7 +51,7 @@ class AutoAttackModule(AttackModule):
         mode = self._core_model.training
         self._core_model.eval()
         x_adv = self._adversary.run_standard_evaluation(
-            inputs, targets, bs=inputs.size(0), **kwargs
+            inputs, targets, bs=inputs.size(0)
         )
         self._core_model.train(mode)
         return x_adv

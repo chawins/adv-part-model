@@ -67,12 +67,12 @@ class FABAttack_PT(FABAttack):
                          device,
                          n_target_classes)
 
-    def _predict_fn(self, x, **kwargs):
-        return self.predict(x, **kwargs)
+    def _predict_fn(self, x):
+        return self.predict(x)
 
-    def _get_predicted_label(self, x, **kwargs):
+    def _get_predicted_label(self, x):
         with torch.no_grad():
-            outputs = self._predict_fn(x, **kwargs)
+            outputs = self._predict_fn(x)
 
         # DEBUG
         # _, y = torch.max(outputs, dim=1)
@@ -114,19 +114,11 @@ class FABAttack_PT(FABAttack):
 
         return df, dg
 
-    def get_diff_logits_grads_batch_targeted(self, imgs, la, la_target, **kwargs):
+    def get_diff_logits_grads_batch_targeted(self, imgs, la, la_target):
         u = torch.arange(imgs.shape[0])
         im = imgs.clone().requires_grad_()
         with torch.enable_grad():
-            
-            # print(len(imgs))
-            # print(len(kwargs['dino_targets']))
-            # import pdb; pdb.set_trace()
-
-            # 244 245 246 247 248 249 250 251 252 253 254 255
-            # iterate through parameters of self.predict with indices
-            # for i, (name, param) in enumerate(self.predict.named_parameters()): print(i, name, param.size())
-            y = self.predict(im, **kwargs)
+            y = self.predict(im)
             diffy = -(y[u, la] - y[u, la_target])
             sumdiffy = diffy.sum()
 

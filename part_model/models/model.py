@@ -50,26 +50,3 @@ class Classifier(nn.Module):
             return inputs
         inputs = (inputs - self.mean) / self.std
         return self._model(inputs)
-
-
-class SegClassifier(Classifier):
-    """Base Classifier interface."""
-
-    def forward(
-        self, inputs: torch.Tensor, return_mask: bool = False, **kwargs
-    ):
-        """Forward pass.
-
-        Args:
-            inputs: Input images.
-            return_mask: If True, returns predicted segmentation mask together
-                with the outputs. Defaults to False.
-
-        Returns:
-            Output logits.
-        """
-        _ = kwargs  # Unused
-        if self._normalize is None:
-            return inputs
-        inputs = (inputs - self.mean) / self.std
-        return self._model(inputs, return_mask=return_mask)

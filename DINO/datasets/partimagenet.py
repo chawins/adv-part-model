@@ -401,7 +401,6 @@ class PartImageNetBBOXDataset(torchvision.datasets.CocoDetection):
         image_id = self.ids[idx]
         target = {'image_id': image_id, 'annotations': target}
         img, target = self.prepare(img, target)
-        
 
         if self._transforms is not None:
             img, target = self._transforms(img, target)
@@ -410,7 +409,7 @@ class PartImageNetBBOXDataset(torchvision.datasets.CocoDetection):
         if self.aux_target_hacks is not None:
             for hack_runner in self.aux_target_hacks:
                 target, img = hack_runner(target, img=img)
-    
+
         # class_label = self.image_to_label[str(idx)]
         return img, target
 
@@ -712,113 +711,17 @@ def get_aux_target_hacks_list(image_set, args):
     return aux_target_hacks_list
 
 
-# TODO: clean imports
-import PIL
-from torchvision.transforms import RandomResizedCrop
-from DINO.datasets.transforms import crop, resize
-
-class RandomCrop(object):
-    def __init__(
-        self,
-        scale=(0.08, 1.0),
-        ratio=(0.75, 1.333333),
-    ) -> None:
-        self.scale = scale
-        self.ratio = ratio
-
-    def __call__(self, img: PIL.Image.Image, target: dict):
-        region = RandomResizedCrop.get_params(img, self.scale, self.ratio)
-        img, target = crop(img, target, region)
-        return img, target
-
-
-class Resize(object):
-    def __init__(self, size) -> None:
-        self.size: int = size
-
-    def __call__(self, img: PIL.Image.Image, target: dict):
-        img, target = resize(img, target, self.size)
-        return img, target
-
-
 
 def build(image_set, args):
-    root = Path(args.bbox_label_dir)
-    
-    if args.use_imagenet_classes:
-        if args.group_parts:
-            PATHS = {
-                "train": (
-                    root / "train",
-                    root / "image_labels" / "imagenet" / "grouped" / "train.json",
-                    root / "annotations" / "imagenet" / "grouped" / "train.json",
-                ),
-                "val": (
-                    root / "val",
-                    root / "image_labels" / "imagenet" / "grouped" / "val.json",
-                    root / "annotations" / "imagenet" / "grouped" / "val.json",
-                ),
-                "test": (
-                    root / "test",
-                    root / "image_labels" / "imagenet" / "grouped" / "test.json",
-                    root / "annotations" / "imagenet" / "grouped" / "test.json",
-                ),
-            }
-        else:
-            PATHS = {
-                "train": (
-                    root / "train",
-                    root / "image_labels" / "imagenet" / "all" / "train.json",
-                    root / "annotations" / "imagenet" / "all" / "train.json",
-                ),
-                "val": (
-                    root / "val",
-                    root / "image_labels" / "imagenet" / "all" / "val.json",
-                    root / "annotations" / "imagenet" / "all" / "val.json",
-                ),
-                "test": (
-                    root / "test",
-                    root / "image_labels" / "imagenet" / "all" / "test.json",
-                    root / "annotations" / "imagenet" / "all" / "test.json",
-                ),
-            }
-    else:
-        if args.group_parts:
-            PATHS = {
-                "train": (
-                    root / "train",
-                    root / "image_labels" / "partimagenet" / "grouped" / "train.json",
-                    root / "annotations" / "partimagenet" / "grouped" / "train.json",
-                ),
-                "val": (
-                    root / "val",
-                    root / "image_labels" / "partimagenet" / "grouped" / "val.json",
-                    root / "annotations" / "partimagenet" / "grouped" / "val.json",
-                ),
-                "test": (
-                    root / "test",
-                    root / "image_labels" / "partimagenet" / "grouped" / "test.json",
-                    root / "annotations" / "partimagenet" / "grouped" / "test.json",
-                ),
-            }
-        else:
-            PATHS = {
-                "train": (
-                    root / "train",
-                    root / "image_labels" / "partimagenet" / "all" / "train.json",
-                    root / "annotations" / "partimagenet" / "all" / "train.json",
-                ),
-                "val": (
-                    root / "val",
-                    root / "image_labels" / "partimagenet" / "all" / "val.json",
-                    root / "annotations" / "partimagenet" / "all" / "val.json",
-                ),
-                "test": (
-                    root / "test",
-                    root / "image_labels" / "partimagenet" / "all" / "test.json",
-                    root / "annotations" / "partimagenet" / "all" / "test.json",
-                ),
-            }
+    # TODO: add as arg
+    root = Path('/data/shared/PartImageNet/PartBoxSegmentations')
+    # root = Path('/global/scratch/users/nabeel126/PartImageNet/PartBoxSegmentations')
+
+    PATHS = {
+        "train": (root / "train", root / "image_labels" / 'train.json', root / "annotations" / 'train.json'),
+        "val": (root / "val", root / "image_labels" / 'val.json', root / "annotations" / 'val.json'),
+        "test": (root / "test", root / "image_labels" / 'test.json', root / "annotations" / 'test.json' ),
+    }
 
     img_folder, class_label_file, ann_file = PATHS[image_set]
 
@@ -835,29 +738,7 @@ def build(image_set, args):
     except:
         strong_aug = False
 
-    # transforms = make_coco_transforms(image_set, fix_size=args.fix_size, strong_aug=strong_aug, args=args)
-
-    img_size = 224
-    if image_set == 'train':
-        transforms = T.Compose(
-            [
-                RandomCrop(),
-                Resize([img_size, img_size]),
-                T.RandomHorizontalFlip(),
-                T.ToTensor(),
-                T.Normalize([0, 0, 0], [1, 1, 1]),
-            ]
-        )
-    elif image_set in ['val', 'eval_debug', 'train_reg', 'test']:
-        transforms = T.Compose(
-            [
-                Resize([int(img_size * 256 / 224), int(img_size * 256 / 224)]),
-                T.CenterCrop([img_size, img_size]),
-                T.ToTensor(),
-                T.Normalize([0, 0, 0], [1, 1, 1]),
-            ]
-        )
-
+    transforms = make_coco_transforms(image_set, fix_size=args.fix_size, strong_aug=strong_aug, args=args)
 
     dataset = PartImageNetBBOXDataset(
         img_folder, 

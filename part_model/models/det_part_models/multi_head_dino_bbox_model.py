@@ -1,10 +1,12 @@
-"""Implement multi-headed DINO part model."""
-
 from __future__ import annotations
+
+from typing import Any
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
+from DINO.main import build_model_main
 from DINO.models.dino.dino import (
     DINO,
     build_backbone,
@@ -22,9 +24,14 @@ class MultiHeadDinoBoundingBoxModel(nn.Module):
 
         transformer = build_deformable_transformer(args)
 
-        dn_labelbook_size = args.seg_labels + 1
+        try:
+            match_unstable_error = args.match_unstable_error
+            dn_labelbook_size = args.dn_labelbook_size
+        except:
+            match_unstable_error = True
+            # dn_labelbook_size = num_classes
+            dn_labelbook_size = args.seg_labels
 
-        # TODO(nabeel@): Same comment as in dino_bbox_model.py.
         try:
             dec_pred_class_embed_share = args.dec_pred_class_embed_share
         except:
@@ -38,6 +45,7 @@ class MultiHeadDinoBoundingBoxModel(nn.Module):
             self.backbone,
             transformer,
             num_classes=args.seg_labels,
+            # num_classes=num_classes,
             num_queries=args.num_queries,
             aux_loss=True,
             iter_update=True,
@@ -61,6 +69,7 @@ class MultiHeadDinoBoundingBoxModel(nn.Module):
             dn_labelbook_size=dn_labelbook_size,
         )
 
+        # TODO: don't hardcode
         self.classifier_head = nn.Sequential(
             nn.AdaptiveAvgPool2d(output_size=(1, 1)),
             nn.Flatten(),
@@ -69,16 +78,18 @@ class MultiHeadDinoBoundingBoxModel(nn.Module):
             ),
         )
 
+        self.num_classes = args.num_classes
+
     def forward(
         self,
         images: torch.Tensor,
+        masks: torch.Tensor,
+        dino_targets: dict[str, Any],
+        need_tgt_for_training: bool = True,
+        return_mask: bool = False,
         **kwargs,
     ) -> torch.Tensor:
-        masks = kwargs["masks"]
-        dino_targets = kwargs["dino_targets"]
-        need_tgt_for_training = kwargs["need_tgt_for_training"]
-        return_mask = kwargs["return_mask"]
-
+        _ = kwargs  # Unused
         nested_tensors = NestedTensor(images, masks)
         out = self.backbone(nested_tensors)
 
