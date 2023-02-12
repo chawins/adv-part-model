@@ -103,58 +103,58 @@ grouped_partimagenet_id2name[21] = 'Car_engine'
 
 
 partimagenet_id2name = {}   
-partimagenet_id2name[0] = 'background'
+# partimagenet_id2name[0] = 'background'
 
-partimagenet_id2name[1] = 'Aeroplane_head'
-partimagenet_id2name[2] = 'Aeroplane_body'
-partimagenet_id2name[3] = 'Aeroplane_engine'
-partimagenet_id2name[4] = 'Aeroplane_wing'
-partimagenet_id2name[5] = 'Aeroplane_tail'
+partimagenet_id2name[0] = 'Aeroplane_head'
+partimagenet_id2name[1] = 'Aeroplane_body'
+partimagenet_id2name[2] = 'Aeroplane_engine'
+partimagenet_id2name[3] = 'Aeroplane_wing'
+partimagenet_id2name[4] = 'Aeroplane_tail'
 
-partimagenet_id2name[6] = 'Bicycle_frame' 
-partimagenet_id2name[7] = 'Bicycle_handle'
-partimagenet_id2name[8] = 'Bicycle_seat'
-partimagenet_id2name[9] = 'Bicycle_wheel'
+partimagenet_id2name[5] = 'Bicycle_frame'
+partimagenet_id2name[6] = 'Bicycle_handle'
+partimagenet_id2name[7] = 'Bicycle_seat'
+partimagenet_id2name[8] = 'Bicycle_wheel'
 
-partimagenet_id2name[10] = 'Biped_head'
-partimagenet_id2name[11] = 'Biped_body'
-partimagenet_id2name[12] = 'Biped_arm'
-partimagenet_id2name[13] = 'Biped_leg'
-partimagenet_id2name[14] = 'Biped_tail'
+partimagenet_id2name[9] = 'Biped_head'
+partimagenet_id2name[10] = 'Biped_body'
+partimagenet_id2name[11] = 'Biped_arm'
+partimagenet_id2name[12] = 'Biped_leg'
+partimagenet_id2name[13] = 'Biped_tail'
 
-partimagenet_id2name[15] = 'Bird_head'
-partimagenet_id2name[16] = 'Bird_body'
-partimagenet_id2name[17] = 'Bird_wing'
-partimagenet_id2name[18] = 'Bird_leg'
-partimagenet_id2name[19] = 'Bird_tail'
+partimagenet_id2name[14] = 'Bird_head'
+partimagenet_id2name[15] = 'Bird_body'
+partimagenet_id2name[16] = 'Bird_wing'
+partimagenet_id2name[17] = 'Bird_leg'
+partimagenet_id2name[18] = 'Bird_tail'
 
-partimagenet_id2name[20] = 'Boat_body'
-partimagenet_id2name[21] = 'Boat_sail'
+partimagenet_id2name[19] = 'Boat_body'
+partimagenet_id2name[20] = 'Boat_sail'
 
-partimagenet_id2name[22] = 'Bottle_head'
-partimagenet_id2name[23] = 'Bottle_body'
+partimagenet_id2name[21] = 'Bottle_head'
+partimagenet_id2name[22] = 'Bottle_body'
 
-partimagenet_id2name[24] = 'Car_body'
-partimagenet_id2name[25] = 'Car_wheel'
-partimagenet_id2name[26] = 'Car_mirror'
+partimagenet_id2name[23] = 'Car_body'
+partimagenet_id2name[24] = 'Car_wheel'
+partimagenet_id2name[25] = 'Car_mirror'
 
-partimagenet_id2name[27] = 'Fish_head'
-partimagenet_id2name[28] = 'Fish_body'
-partimagenet_id2name[29] = 'Fish_fins'
-partimagenet_id2name[30] = 'Fish_tail'
+partimagenet_id2name[26] = 'Fish_head'
+partimagenet_id2name[27] = 'Fish_body'
+partimagenet_id2name[28] = 'Fish_fins'
+partimagenet_id2name[29] = 'Fish_tail'
 
-partimagenet_id2name[31] = 'Quadruped_head'
-partimagenet_id2name[32] = 'Quadruped_body'
-partimagenet_id2name[33] = 'Quadruped_leg'
-partimagenet_id2name[34] = 'Quadruped_tail'
+partimagenet_id2name[30] = 'Quadruped_head'
+partimagenet_id2name[31] = 'Quadruped_body'
+partimagenet_id2name[32] = 'Quadruped_leg'
+partimagenet_id2name[33] = 'Quadruped_tail'
 
-partimagenet_id2name[35] = 'Reptile_head'
-partimagenet_id2name[36] = 'Reptile_body'
-partimagenet_id2name[37] = 'Reptile_leg'
-partimagenet_id2name[38] = 'Reptile_tail'
+partimagenet_id2name[34] = 'Reptile_head'
+partimagenet_id2name[35] = 'Reptile_body'
+partimagenet_id2name[36] = 'Reptile_leg'
+partimagenet_id2name[37] = 'Reptile_tail'
 
-partimagenet_id2name[39] = 'Snake_head'
-partimagenet_id2name[40] = 'Snake_body'
+partimagenet_id2name[38] = 'Snake_head'
+partimagenet_id2name[39] = 'Snake_body'
 
 
 
@@ -163,9 +163,9 @@ label_dir = '/data1/chawins/PartImageNet'
 part_segmentations_path = os.path.join(
     label_dir, "PartSegmentations", 'All', 'train'
 )
-imagenet_labels_path = os.path.join(label_dir, 'LOC_synset_mapping.txt')
+imagenet_labels_filename = 'LOC_synset_mapping.txt'
 imagenet_id2name = {}
-with open(imagenet_labels_path, "r") as f:        
+with open(imagenet_labels_filename, "r") as f:        
     for line in f:
         line = line.strip()
         line_split = line.split()
