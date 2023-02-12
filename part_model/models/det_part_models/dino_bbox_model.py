@@ -92,13 +92,14 @@ class DinoBoundingBoxModel(nn.Module):
         )
 
     def forward(
-        self, images: BatchImages, **kwargs
+        self,
+        images: BatchImages,
+        masks=None,
+        dino_targets=None,
+        need_tgt_for_training: bool = False,
+        return_mask: bool = False,
     ) -> Logits | tuple[Logits, torch.Tensor]:
         """Forward pass of sequential DINO part model."""
-        masks = kwargs["masks"]
-        dino_targets = kwargs["dino_targets"]
-        need_tgt_for_training = kwargs["need_tgt_for_training"]
-        return_mask = kwargs["return_mask"]
         # Object Detection part
         nested_tensors = NestedTensor(images, masks)
 

@@ -5,7 +5,6 @@ NUM_GPU=1
 BS=2
 AA_BS=32
 PORT=1000$ID
-BACKEND=nccl
 # =============================== PASCAL-Part =============================== #
 # DATASET=pascal-part
 # DATAPATH=~/data/pascal_part/PartImages/aeroplane_bird_car_cat_dog/
@@ -20,7 +19,7 @@ BACKEND=nccl
 # SEGPATH=$DATAPATH/PartSegmentations/All/
 # ============================== Part-ImageNet-BBox ============================== #
 DATASET=part-imagenet-bbox
-DATAPATH=/data1/chawins/PartImageNet # need to change
+DATAPATH=~/data/PartImageNet # need to change
 SEGPATH=$DATAPATH/PartSegmentations/All/
 BBOXDIR=$DATAPATH/PartBoxSegmentations
 # 0.0156862745, 0.03137254901, 0.06274509803
@@ -44,10 +43,10 @@ EPOCHS=50
 
 
 ### Training
-OUTPUT_DIR='/data1/nab_126/adv-part-model/models/part-image-net/trades/' # need to change
+OUTPUT_DIR='~/adv-part-model/models/part-image-net/trades/' # need to change
 ADV_BETA=0.6 # need to change
 # pretrain dino bbox part model
-torchrun \
+CUDA_VISIBLE_DEVICES=$GPU torchrun \
     --standalone --nnodes=1 --max_restarts 0 --nproc_per_node=$NUM_GPU \
     main.py --dist-url tcp://localhost:$PORT \
     --seg-backbone resnet50 --obj-det-arch dino --full-precision --pretrained \
@@ -58,7 +57,7 @@ torchrun \
     --epsilon $EPS --atk-norm Linf \
     --output-dir $OUTPUT_DIR/pretrained \
     --epochs $EPOCHS \
-    --experiment part-bbox-norm_img-semi \
+    --experiment part-seq-norm_img-semi \
     --seg-labels 41 \
     --config_file DINO/config/DINO/DINO_4scale_modified.py \
     --options dn_scalar=100 dn_label_coef=1.0 dn_bbox_coef=1.0
