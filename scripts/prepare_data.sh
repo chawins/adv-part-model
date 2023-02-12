@@ -34,7 +34,7 @@
 #     --name All
 
 
-DATAPATH=/data1/chawins/PartImageNet 
+DATAPATH=~/data/PartImageNet 
 
 # ### Data Prep
 # mkdir $DATAPATH/PartBoxSegmentations/train/

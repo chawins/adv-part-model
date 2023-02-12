@@ -1,14 +1,20 @@
+"""Data loading for detection model (e.g., DINO).
+
+TODO(nabeel@): Did you change things in this file significantly? Or did you just
+copy it from somewhere? Is there a way we can mostly just import from DINO and
+implment as needed?
+"""
+
 import json
-import os
 import random
 from pathlib import Path
 
-import DINO.datasets.transforms as T
-import numpy as np
 import PIL
 import torch
-import torch.utils.data as data
 import torchvision
+from torchvision.transforms import RandomResizedCrop
+
+import DINO.datasets.transforms as T
 from DINO.datasets.coco import ConvertCocoPolysToMask
 from DINO.datasets.transforms import crop, resize
 from DINO.util.box_ops import box_cxcywh_to_xyxy, box_iou
@@ -16,9 +22,6 @@ from DINO.util.misc import collate_fn
 from part_model.dataloader.util import COLORMAP
 from part_model.utils import get_seg_type, np_temp_seed
 from part_model.utils.eval_sampler import DistributedEvalSampler
-from part_model.utils.image import get_seg_type
-from PIL import Image
-from torchvision.transforms import RandomResizedCrop
 
 CLASSES = {
     "Quadruped": 4,
@@ -123,7 +126,9 @@ class label2compat:
             "89": 79,
             "90": 80,
         }
-        self.category_map = {int(k): v for k, v in self.category_map_str.items()}
+        self.category_map = {
+            int(k): v for k, v in self.category_map_str.items()
+        }
 
     def __call__(self, target, img=None):
         labels = target["labels"]
@@ -223,7 +228,9 @@ class RandomSelectBoxlabels:
     def set_state(
         self, prob_first_item, prob_random_item, prob_last_item, prob_stop_sign
     ):
-        sum_prob = prob_first_item + prob_random_item + prob_last_item + prob_stop_sign
+        sum_prob = (
+            prob_first_item + prob_random_item + prob_last_item + prob_stop_sign
+        )
         assert sum_prob - 1 < 1e-6, (
             f"Sum up all prob = {sum_prob}. prob_first_item:{prob_first_item}"
             + f"prob_random_item:{prob_random_item}, prob_last_item:{prob_last_item}"
@@ -339,7 +346,9 @@ class BboxPertuber:
     def generate_pertube_samples(self):
         import torch
 
-        samples = (torch.rand(self.generate_samples, 5) - 0.5) * 2 * self.max_ratio
+        samples = (
+            (torch.rand(self.generate_samples, 5) - 0.5) * 2 * self.max_ratio
+        )
         return samples
 
     def __call__(self, target, img):
@@ -381,10 +390,14 @@ class RandomCutout:
         known_box_add[:, :5] = unknown_box
         known_box_add[:, 5].uniform_(0.5, 1)
 
-        known_box_add[:, :2] += known_box_add[:, 2:4] * (torch.rand(Ku, 2) - 0.5) / 2
+        known_box_add[:, :2] += (
+            known_box_add[:, 2:4] * (torch.rand(Ku, 2) - 0.5) / 2
+        )
         known_box_add[:, 2:4] /= 2
 
-        target["box_label_known_pertube"] = torch.cat((known_box, known_box_add))
+        target["box_label_known_pertube"] = torch.cat(
+            (known_box, known_box_add)
+        )
         return target, img
 
 
@@ -403,7 +416,8 @@ class RandomSelectBoxes:
             label = labels[idx].item()
             boxs_list[label].append(item)
         boxs_list_tensor = [
-            torch.stack(i) if len(i) > 0 else torch.Tensor(0, 4) for i in boxs_list
+            torch.stack(i) if len(i) > 0 else torch.Tensor(0, 4)
+            for i in boxs_list
         ]
 
         # random selection
@@ -671,7 +685,7 @@ def get_loader_sampler_bbox(args, transforms, split):
                 root / "annotations" / "test_sample.json",
             ),
         }
-        
+
         # PATHS = {
         #     "train": (
         #         root / "train",
@@ -694,8 +708,16 @@ def get_loader_sampler_bbox(args, transforms, split):
             PATHS = {
                 "train": (
                     root / "train",
-                    root / "image_labels" / "imagenet" / "grouped" / "train.json",
-                    root / "annotations" / "imagenet" / "grouped" / "train.json",
+                    root
+                    / "image_labels"
+                    / "imagenet"
+                    / "grouped"
+                    / "train.json",
+                    root
+                    / "annotations"
+                    / "imagenet"
+                    / "grouped"
+                    / "train.json",
                 ),
                 "val": (
                     root / "val",
@@ -704,7 +726,11 @@ def get_loader_sampler_bbox(args, transforms, split):
                 ),
                 "test": (
                     root / "test",
-                    root / "image_labels" / "imagenet" / "grouped" / "test.json",
+                    root
+                    / "image_labels"
+                    / "imagenet"
+                    / "grouped"
+                    / "test.json",
                     root / "annotations" / "imagenet" / "grouped" / "test.json",
                 ),
             }
@@ -731,26 +757,58 @@ def get_loader_sampler_bbox(args, transforms, split):
             PATHS = {
                 "train": (
                     root / "train",
-                    root / "image_labels" / "partimagenet" / "grouped" / "train.json",
-                    root / "annotations" / "partimagenet" / "grouped" / "train.json",
+                    root
+                    / "image_labels"
+                    / "partimagenet"
+                    / "grouped"
+                    / "train.json",
+                    root
+                    / "annotations"
+                    / "partimagenet"
+                    / "grouped"
+                    / "train.json",
                 ),
                 "val": (
                     root / "val",
-                    root / "image_labels" / "partimagenet" / "grouped" / "val.json",
-                    root / "annotations" / "partimagenet" / "grouped" / "val.json",
+                    root
+                    / "image_labels"
+                    / "partimagenet"
+                    / "grouped"
+                    / "val.json",
+                    root
+                    / "annotations"
+                    / "partimagenet"
+                    / "grouped"
+                    / "val.json",
                 ),
                 "test": (
                     root / "test",
-                    root / "image_labels" / "partimagenet" / "grouped" / "test.json",
-                    root / "annotations" / "partimagenet" / "grouped" / "test.json",
+                    root
+                    / "image_labels"
+                    / "partimagenet"
+                    / "grouped"
+                    / "test.json",
+                    root
+                    / "annotations"
+                    / "partimagenet"
+                    / "grouped"
+                    / "test.json",
                 ),
             }
         else:
             PATHS = {
                 "train": (
                     root / "train",
-                    root / "image_labels" / "partimagenet" / "all" / "train.json",
-                    root / "annotations" / "partimagenet" / "all" / "train.json",
+                    root
+                    / "image_labels"
+                    / "partimagenet"
+                    / "all"
+                    / "train.json",
+                    root
+                    / "annotations"
+                    / "partimagenet"
+                    / "all"
+                    / "train.json",
                 ),
                 "val": (
                     root / "val",
@@ -759,11 +817,14 @@ def get_loader_sampler_bbox(args, transforms, split):
                 ),
                 "test": (
                     root / "test",
-                    root / "image_labels" / "partimagenet" / "all" / "test.json",
+                    root
+                    / "image_labels"
+                    / "partimagenet"
+                    / "all"
+                    / "test.json",
                     root / "annotations" / "partimagenet" / "all" / "test.json",
                 ),
             }
-        
 
     img_folder, class_label_file, ann_file = PATHS[split]
 

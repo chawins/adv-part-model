@@ -7,6 +7,8 @@ from typing import List, Tuple, Union
 import torch
 from torch import nn
 
+from part_model.utils.types import BatchImages, Logits
+
 _NormVal = Union[List[float], Tuple[float, float, float]]
 
 
@@ -36,7 +38,9 @@ class Classifier(nn.Module):
             )
             self.register_buffer("std", torch.tensor(std)[None, :, None, None])
 
-    def forward(self, inputs: torch.Tensor, **kwargs):
+    def forward(
+        self, inputs: BatchImages, **kwargs
+    ) -> Logits | Tuple[Logits, torch.Tensor]:
         """Forward pass.
 
         Args:
@@ -56,8 +60,8 @@ class SegClassifier(Classifier):
     """Base Classifier interface."""
 
     def forward(
-        self, inputs: torch.Tensor, return_mask: bool = False, **kwargs
-    ):
+        self, inputs: BatchImages, **kwargs
+    ) -> Logits | Tuple[Logits, torch.Tensor]:
         """Forward pass.
 
         Args:
@@ -68,8 +72,7 @@ class SegClassifier(Classifier):
         Returns:
             Output logits.
         """
-        _ = kwargs  # Unused
         if self._normalize is None:
             return inputs
         inputs = (inputs - self.mean) / self.std
-        return self._model(inputs, return_mask=return_mask)
+        return self._model(inputs, **kwargs)
