@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from argparse import Namespace
 
@@ -33,9 +34,11 @@ from part_model.models.seg_part_models import (
 from part_model.models.seg_part_models.util import SEGM_BUILDER, SegClassifier
 from part_model.utils.image import get_seg_type
 
+logger = logging.getLogger(__name__)
+
 
 def wrap_distributed(args, model):
-    # TODO: When using efficientnet as backbone, pytorch's torchrun complains
+    # When using efficientnet as backbone, pytorch's torchrun complains
     # about unused parameters. This can be suppressed by setting
     # find_unused_parameters to True.
     find_unused_parameters: bool = any(
@@ -64,7 +67,7 @@ def load_checkpoint(
     optimizer: torch.optim.Optimizer | None = None,
     scaler: amp.GradScaler | None = None,
 ) -> None:
-    print(f"=> Loading resume checkpoint {model_path}...")
+    logger.info("=> Loading resume checkpoint %s...", model_path)
     if args.gpu is None:
         checkpoint = torch.load(model_path)
     else:
@@ -72,7 +75,7 @@ def load_checkpoint(
         checkpoint = torch.load(model_path, map_location=f"cuda:{args.gpu}")
 
     if args.load_from_segmenter:
-        print("=> Loading segmenter weight only...")
+        logger.info("=> Loading segmenter weight only...")
         state_dict = {}
         for name, params in checkpoint["state_dict"].items():
             name.replace("module", "module.segmenter")
@@ -97,7 +100,7 @@ def load_checkpoint(
         args.start_epoch = checkpoint["epoch"]
         optimizer.load_state_dict(checkpoint["optimizer"])
         scaler.load_state_dict(checkpoint["scaler"])
-    print(f'=> Loaded resume checkpoint (epoch {checkpoint["epoch"]})')
+    logger.info("=> Loaded resume checkpoint (epoch %d)", checkpoint["epoch"])
 
 
 def build_classifier(args):
@@ -127,17 +130,34 @@ def build_classifier(args):
         exp_tokens = tokens[2:]
 
         if args.seg_arch is not None:
-            print("=> Building segmentation model...")
+            logger.info("=> Building segmentation model...")
             segmenter = SEGM_BUILDER[args.seg_arch](args, normalize=False)
         elif args.obj_det_arch is not None:
-            print("=> Building detection model...")
+            logger.info("=> Building detection model...")
 
         if args.freeze_seg:
             # Froze all weights of the part segmentation model
             for param in segmenter.parameters():
                 param.requires_grad = False
 
-        if model_token == "mask":
+        if args.obj_det_arch == "dino":
+            # two options, either sequential or two-headed model
+            if model_token == "seq":
+                model = dino_bbox_model.DinoBoundingBoxModel(args)
+            elif model_token == "2heads":
+                model = (
+                    multi_head_dino_bbox_model.MultiHeadDinoBoundingBoxModel(
+                        args
+                    )
+                )
+            else:
+                raise NotImplementedError(
+                    f"Invalid model type ({model_token}) for DINO!"
+                )
+
+            for param in model.parameters():
+                param.requires_grad = True
+        elif model_token == "mask":
             model.conv1 = nn.Conv2d(
                 args.seg_labels
                 + (3 if "inpt" in exp_tokens else 0)
@@ -150,6 +170,11 @@ def build_classifier(args):
             )
             model.fc = nn.Linear(rep_dim, args.num_classes)
             model = part_mask_model.PartMaskModel(args, segmenter, model)
+        elif model_token == "dino_resnet":
+            # This is for debugging only
+            model = dino_resnet.ResNet(args)
+            for param in model.parameters():
+                param.requires_grad = True
         elif model_token == "seg_cat":
             model.conv1 = nn.Conv2d(
                 (args.seg_labels - 1) * 3
@@ -225,13 +250,13 @@ def build_classifier(args):
         nt_seg = (
             sum(p.numel() for p in model.parameters() if p.requires_grad) / 1e6
         )
-        print(f"=> Model params (train/total): {nt_seg:.2f}M/{n_seg:.2f}M")
+        logger.info("=> Model params (train/total): %.2fM/%.2fM", nt_seg, n_seg)
     else:
-        print("=> Building a normal classifier...")
+        logger.info("=> Building a normal classifier...")
         model.fc = nn.Linear(rep_dim, args.num_classes)
         model = Classifier(model, normalize=normalize)
         n_model = sum(p.numel() for p in model.parameters()) / 1e6
-        print(f"=> Total params: {n_model:.2f}M")
+        logger.info("=> Total params: %.2fM", n_model)
 
     # Wrap model again under DistributedDataParallel or just DataParallel
     model = wrap_distributed(args, model)
@@ -282,7 +307,7 @@ def build_classifier(args):
 
     # Optionally resume from a checkpoint
     if not (args.evaluate or args.resume or args.resume_if_exist):
-        print("=> Model is randomly initialized.")
+        logger.info("=> Model is randomly initialized.")
         return model, optimizer, scaler
 
     if args.evaluate:
@@ -307,9 +332,9 @@ def build_classifier(args):
     elif args.resume:
         raise FileNotFoundError(f"=> No checkpoint found at {model_path}.")
     else:
-        print(
-            "=> resume_if_exist is True, but no checkpoint found at "
-            f"{model_path}."
+        logger.info(
+            "=> resume_if_exist is True, but no checkpoint found at %s",
+            model_path,
         )
 
     return model, optimizer, scaler
@@ -342,7 +367,7 @@ def build_segmentation(args):
     # Optionally resume from a checkpoint
     if args.resume and not args.evaluate:
         if os.path.isfile(args.resume):
-            print(f"=> loading resume checkpoint {args.resume}...")
+            logger.info("=> loading resume checkpoint %s...", args.resume)
             if args.gpu is None:
                 checkpoint = torch.load(args.resume)
             else:
@@ -355,9 +380,11 @@ def build_segmentation(args):
                 args.start_epoch = checkpoint["epoch"]
                 optimizer.load_state_dict(checkpoint["optimizer"])
                 scaler.load_state_dict(checkpoint["scaler"])
-            print(f'=> loaded resume checkpoint (epoch {checkpoint["epoch"]})')
+            logger.info(
+                "=> loaded resume checkpoint (epoch %d)", checkpoint["epoch"]
+            )
         else:
-            print(f"=> no checkpoint found at {args.resume}")
+            logger.info("=> no checkpoint found at %s", args.resume)
 
     return model, optimizer, scaler
 

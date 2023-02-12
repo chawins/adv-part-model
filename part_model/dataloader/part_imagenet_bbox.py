@@ -1,31 +1,25 @@
-import json
-import os
-import random
+"""Data loading for detection model (e.g., DINO).
 
-# from DINO.datasets.coco import ConvertCocoPolysToMask, dataset_hook_register
+TODO(nabeel@): Did you change things in this file significantly? Or did you just
+copy it from somewhere? Is there a way we can mostly just import from DINO and
+implment as needed?
+"""
+
+import json
+import random
 from pathlib import Path
 
-import numpy as np
+import PIL
 import torch
-import torch.utils.data as data
 import torchvision
-from PIL import Image
+from torchvision.transforms import RandomResizedCrop
 
+import DINO.datasets.transforms as T
 from DINO.datasets.coco import ConvertCocoPolysToMask
 from DINO.util.box_ops import box_cxcywh_to_xyxy, box_iou
 from part_model.dataloader.util import COLORMAP
 from part_model.utils import get_seg_type, np_temp_seed
 from part_model.utils.eval_sampler import DistributedEvalSampler
-from part_model.utils.image import get_seg_type
-
-# from .segmentation_transforms import (
-#     CenterCrop,
-#     Compose,
-#     RandomHorizontalFlip,
-#     RandomResizedCrop,
-#     Resize,
-#     ToTensor,
-# )
 
 CLASSES = {
     "Quadruped": 4,
@@ -708,6 +702,146 @@ def get_loader_sampler_bbox(args, transforms, split):
                 root / "annotations" / "test_sample.json",
             ),
         }
+
+        # PATHS = {
+        #     "train": (
+        #         root / "train",
+        #         root / "image_labels" / "train.json",
+        #         root / "annotations" / "train.json",
+        #     ),
+        #     "val": (
+        #         root / "val",
+        #         root / "image_labels" / "val.json",
+        #         root / "annotations" / "val.json",
+        #     ),
+        #     "test": (
+        #         root / "test",
+        #         root / "image_labels" / "test.json",
+        #         root / "annotations" / "test.json",
+        #     ),
+        # }
+    elif args.use_imagenet_classes:
+        if args.group_parts:
+            PATHS = {
+                "train": (
+                    root / "train",
+                    root
+                    / "image_labels"
+                    / "imagenet"
+                    / "grouped"
+                    / "train.json",
+                    root
+                    / "annotations"
+                    / "imagenet"
+                    / "grouped"
+                    / "train.json",
+                ),
+                "val": (
+                    root / "val",
+                    root / "image_labels" / "imagenet" / "grouped" / "val.json",
+                    root / "annotations" / "imagenet" / "grouped" / "val.json",
+                ),
+                "test": (
+                    root / "test",
+                    root
+                    / "image_labels"
+                    / "imagenet"
+                    / "grouped"
+                    / "test.json",
+                    root / "annotations" / "imagenet" / "grouped" / "test.json",
+                ),
+            }
+        else:
+            PATHS = {
+                "train": (
+                    root / "train",
+                    root / "image_labels" / "imagenet" / "all" / "train.json",
+                    root / "annotations" / "imagenet" / "all" / "train.json",
+                ),
+                "val": (
+                    root / "val",
+                    root / "image_labels" / "imagenet" / "all" / "val.json",
+                    root / "annotations" / "imagenet" / "all" / "val.json",
+                ),
+                "test": (
+                    root / "test",
+                    root / "image_labels" / "imagenet" / "all" / "test.json",
+                    root / "annotations" / "imagenet" / "all" / "test.json",
+                ),
+            }
+    else:
+        if args.group_parts:
+            PATHS = {
+                "train": (
+                    root / "train",
+                    root
+                    / "image_labels"
+                    / "partimagenet"
+                    / "grouped"
+                    / "train.json",
+                    root
+                    / "annotations"
+                    / "partimagenet"
+                    / "grouped"
+                    / "train.json",
+                ),
+                "val": (
+                    root / "val",
+                    root
+                    / "image_labels"
+                    / "partimagenet"
+                    / "grouped"
+                    / "val.json",
+                    root
+                    / "annotations"
+                    / "partimagenet"
+                    / "grouped"
+                    / "val.json",
+                ),
+                "test": (
+                    root / "test",
+                    root
+                    / "image_labels"
+                    / "partimagenet"
+                    / "grouped"
+                    / "test.json",
+                    root
+                    / "annotations"
+                    / "partimagenet"
+                    / "grouped"
+                    / "test.json",
+                ),
+            }
+        else:
+            PATHS = {
+                "train": (
+                    root / "train",
+                    root
+                    / "image_labels"
+                    / "partimagenet"
+                    / "all"
+                    / "train.json",
+                    root
+                    / "annotations"
+                    / "partimagenet"
+                    / "all"
+                    / "train.json",
+                ),
+                "val": (
+                    root / "val",
+                    root / "image_labels" / "partimagenet" / "all" / "val.json",
+                    root / "annotations" / "partimagenet" / "all" / "val.json",
+                ),
+                "test": (
+                    root / "test",
+                    root
+                    / "image_labels"
+                    / "partimagenet"
+                    / "all"
+                    / "test.json",
+                    root / "annotations" / "partimagenet" / "all" / "test.json",
+                ),
+            }
 
     img_folder, class_label_file, ann_file = PATHS[split]
 
