@@ -53,7 +53,7 @@ from part_model.utils.argparse import get_args_parser
 from part_model.utils.dataloader_visualizer import debug_dino_dataloader
 from part_model.utils.loss import get_train_criterion
 
-best_acc1 = 0
+BEST_ACC = 0
 
 
 def _write_metrics(save_metrics: Any) -> None:
@@ -68,7 +68,7 @@ def main() -> None:
     """Main function."""
     init_distributed_mode(args)
 
-    global best_acc1
+    global BEST_ACC
 
     # Fix the seed for reproducibility
     seed: int = args.seed + get_rank()
@@ -76,6 +76,7 @@ def main() -> None:
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
     np.random.seed(seed)
+    cudnn.benchmark = True
 
     # Data loading code
     print("=> Creating dataset...")
@@ -83,22 +84,21 @@ def main() -> None:
     train_loader, train_sampler, val_loader, test_loader = loaders
 
     # Debugging dataloader
-    debug = False
-    if debug:
+    if args.debug:
         debug_dino_dataloader(train_loader)
 
     # Create model
     print("=> Creating model...")
     model, optimizer, scaler = build_model(args)
 
-    cudnn.benchmark = True
-
     # Define loss function
     criterion, train_criterion = get_train_criterion(args)
 
     # Logging
     if is_main_process():
-        log_path: str = os.path.join(args.output_dir, "log.txt")
+        log_path: str = os.path.join(
+            os.path.expanduser(args.output_dir), "log.txt"
+        )
         logfile = open(log_path, "a", encoding="utf-8")
         logfile.write(str(args) + "\n")
         logfile.flush()
@@ -113,10 +113,7 @@ def main() -> None:
     no_attack = eval_attack[0][1]
     train_attack = setup_train_attacker(args, model)
     val_attack = setup_val_attacker(args, model)
-    save_metrics = {
-        "train": [],
-        "test": [],
-    }
+    save_metrics = {"train": [], "test": []}
 
     print(args)
 
@@ -144,7 +141,7 @@ def main() -> None:
             if (epoch + 1) % 2 == 0:
                 val_stats = _validate(val_loader, model, criterion, no_attack)
                 clean_acc1, acc1 = val_stats["acc1"], None
-                is_best = clean_acc1 > best_acc1
+                is_best = clean_acc1 > BEST_ACC
 
                 if args.adv_train != "none":
                     adv_val_stats = _validate(
@@ -153,24 +150,24 @@ def main() -> None:
                     acc1 = adv_val_stats["acc1"]
                     val_stats["adv_acc1"] = acc1
                     val_stats["adv_loss"] = adv_val_stats["loss"]
-                    is_best = clean_acc1 >= acc1 > best_acc1
+                    is_best = clean_acc1 >= acc1 > BEST_ACC
 
                 save_dict = {
                     "epoch": epoch + 1,
                     "state_dict": model.state_dict(),
                     "optimizer": optimizer.state_dict(),
                     "scaler": scaler.state_dict(),
-                    "best_acc1": best_acc1,
+                    "best_acc1": BEST_ACC,
                     "args": args,
                 }
 
                 if is_best:
                     print("=> Saving new best checkpoint...")
                     save_on_master(save_dict, args.output_dir, is_best=True)
-                    best_acc1 = (
-                        max(clean_acc1, best_acc1)
+                    BEST_ACC = (
+                        max(clean_acc1, BEST_ACC)
                         if acc1 is None
-                        else max(acc1, best_acc1)
+                        else max(acc1, BEST_ACC)
                     )
                 save_epoch = epoch + 1 if args.save_all_epochs else None
                 save_on_master(
@@ -255,7 +252,7 @@ def _train(train_loader, model, criterion, attack, optimizer, scaler, epoch):
         # Measure data loading time
         data_time.update(time.time() - end)
 
-        # TODO(nab-126@): Ideally we want to unify the data handling for both
+        # TODO(nabeel@): Ideally we want to unify the data handling for both
         # DINO and segmentation, or otherwise, make a separate training script.
         if args.obj_det_arch == "dino":
             nested_tensors, target_bbox, targets = samples
@@ -266,10 +263,7 @@ def _train(train_loader, model, criterion, attack, optimizer, scaler, epoch):
                 targets, device=masks.device, dtype=torch.long
             )
             target_bbox = [
-                {
-                    k: v.cuda(args.gpu, non_blocking=True)
-                    for k, v in t.items()
-                }
+                {k: v.cuda(args.gpu, non_blocking=True) for k, v in t.items()}
                 for t in target_bbox
             ]
         else:

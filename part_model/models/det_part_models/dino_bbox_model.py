@@ -108,6 +108,9 @@ class DinoBoundingBoxModel(nn.Module):
         else:
             dino_outputs = self.object_detector(nested_tensors)
 
+        # TODO(chawins@): We can consider not taking softmax if we have trouble
+        # with attack during adversarial training not working well, or we can
+        # use sigmoid to better replicate object detection models.
         dino_probs = F.softmax(dino_outputs["pred_logits"], dim=-1)
         dino_boxes = dino_outputs["pred_boxes"]
 
@@ -126,6 +129,7 @@ class DinoBoundingBoxModel(nn.Module):
             )
             dino_boxes = torch.gather(dino_boxes, 1, topk_boxes.repeat(1, 1, 4))
 
+        # features = torch.cat([dino_probs, dino_boxes * 2 - 1], dim=2)
         features = torch.cat([dino_probs, dino_boxes], dim=2)
 
         # Pass to classifier model
