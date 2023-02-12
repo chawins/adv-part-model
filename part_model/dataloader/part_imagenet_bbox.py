@@ -9,10 +9,8 @@ import json
 import random
 from pathlib import Path
 
-import PIL
 import torch
 import torchvision
-from torchvision.transforms import RandomResizedCrop
 
 import DINO.datasets.transforms as T
 from DINO.datasets.coco import ConvertCocoPolysToMask
@@ -703,24 +701,7 @@ def get_loader_sampler_bbox(args, transforms, split):
             ),
         }
 
-        # PATHS = {
-        #     "train": (
-        #         root / "train",
-        #         root / "image_labels" / "train.json",
-        #         root / "annotations" / "train.json",
-        #     ),
-        #     "val": (
-        #         root / "val",
-        #         root / "image_labels" / "val.json",
-        #         root / "annotations" / "val.json",
-        #     ),
-        #     "test": (
-        #         root / "test",
-        #         root / "image_labels" / "test.json",
-        #         root / "annotations" / "test.json",
-        #     ),
-        # }
-    elif args.use_imagenet_classes:
+    if args.use_imagenet_classes:
         if args.group_parts:
             PATHS = {
                 "train": (
@@ -845,14 +826,6 @@ def get_loader_sampler_bbox(args, transforms, split):
 
     img_folder, class_label_file, ann_file = PATHS[split]
 
-    # part_imagenet_dataset = PartImageNetBBOXDataset(
-    #     img_folder,
-    #     class_label_file,
-    #     ann_file,
-    #     transforms,
-    #     aux_target_hacks=None
-    # )
-
     # add some hooks to datasets
     aux_target_hacks_list = get_aux_target_hacks_list(split, args)
     part_imagenet_dataset = PartImageNetBBOXDataset(
@@ -924,9 +897,6 @@ def get_loader_sampler_bbox(args, transforms, split):
     # setattr(args, "seg_labels", seg_labels)
 
     return loader, sampler
-
-
-import DINO.datasets.transforms as T
 
 
 def make_coco_transforms(
