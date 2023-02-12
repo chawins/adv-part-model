@@ -288,14 +288,15 @@ def _train(train_loader, model, criterion, attack, optimizer, scaler, epoch):
                     "masks": masks,
                     "dino_targets": target_bbox,
                     "need_tgt_for_training": need_tgt_for_training,
-                    "return_mask": True,
+                    "return_mask": False,
                 }
                 images = attack(images, targets, **forward_args)
-
                 if args.adv_train in ("trades", "mat"):
                     masks = torch.cat([masks.detach(), masks.detach()], dim=0)
                     target_bbox = [*target_bbox, *target_bbox]
-
+                forward_args[
+                    "return_mask"
+                ] = True  # change to true to get dino outputs for map calculation
                 outputs, dino_outputs = model(images, **forward_args)
                 loss = criterion(outputs, dino_outputs, target_bbox, targets)
 
