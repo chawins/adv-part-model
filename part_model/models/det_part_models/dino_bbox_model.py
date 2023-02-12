@@ -1,3 +1,5 @@
+"""DINO as sequential part model."""
+
 from __future__ import annotations
 
 import logging
@@ -107,12 +109,6 @@ class DinoBoundingBoxModel(nn.Module):
         # Object Detection part
         nested_tensors = NestedTensor(images, masks)
 
-        # out = self.backbone(nested_tensors)
-
-        # out[0][-1].tensors
-        # import pdb
-        # pdb.set_trace()
-
         if need_tgt_for_training:
             dino_outputs = self.object_detector(nested_tensors, dino_targets)
         else:
@@ -147,5 +143,4 @@ class DinoBoundingBoxModel(nn.Module):
 
         if return_mask:
             return out, dino_outputs
-            # return out, outputs['pred_logits'], outputs['pred_boxes']
         return out

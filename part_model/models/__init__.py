@@ -170,11 +170,6 @@ def build_classifier(args):
             )
             model.fc = nn.Linear(rep_dim, args.num_classes)
             model = part_mask_model.PartMaskModel(args, segmenter, model)
-        elif model_token == "dino_resnet":
-            # This is for debugging only
-            model = dino_resnet.ResNet(args)
-            for param in model.parameters():
-                param.requires_grad = True
         elif model_token == "seg_cat":
             model.conv1 = nn.Conv2d(
                 (args.seg_labels - 1) * 3

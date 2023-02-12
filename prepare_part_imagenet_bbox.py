@@ -324,6 +324,7 @@ def main(split, label_dir, sample_proportion=0.10, bbox_discard_threshold=0.01):
             # load segmentation
             im = Image.open(filename)
             width, height = im.size
+            image_area = width * height
             imarray = np.array(im)
 
             if args.group_parts:
@@ -353,7 +354,7 @@ def main(split, label_dir, sample_proportion=0.10, bbox_discard_threshold=0.01):
 
             # get unique labels
             image_labels = list(np.unique(imarray))
-            
+
             # remove background class
             if 0 in image_labels:
                 image_labels.remove(0)
