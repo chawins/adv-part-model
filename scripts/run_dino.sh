@@ -1,6 +1,6 @@
 #!/bin/bash
 ID=9
-GPU=0
+GPU=1
 NUM_GPU=1
 BS=2
 AA_BS=32
@@ -43,21 +43,21 @@ EPOCHS=50
 
 
 ### Training
-OUTPUT_DIR='~/adv-part-model/models/part-image-net/trades/' # need to change
+EXP_NAME="part-seq-norm_img-semi"
+ADV_TRAIN="none"
+OUTPUT_DIR="./models/part-imagenet/$EXP_NAME/$ADV_TRAIN/"  # Change as needed
 ADV_BETA=0.6 # need to change
 # pretrain dino bbox part model
 CUDA_VISIBLE_DEVICES=$GPU torchrun \
     --standalone --nnodes=1 --max_restarts 0 --nproc_per_node=$NUM_GPU \
     main.py --dist-url tcp://localhost:$PORT \
     --seg-backbone resnet50 --obj-det-arch dino --full-precision --pretrained \
-    --data $DATAPATH --seg-label-dir $SEGPATH --bbox-label-dir $BBOXDIR --dataset $DATASET --batch-size $BS \
-    --adv-train none \
+    --dataset $DATASET --batch-size $BS --output-dir $OUTPUT_DIR \
+    --data $DATAPATH --seg-label-dir $SEGPATH --bbox-label-dir $BBOXDIR \
+    --adv-train $ADV_TRAIN --epochs $EPOCHS --experiment $EXP_NAME \
     --seg-const-trn 0.5 \
     --lr 0.0001 \
     --epsilon $EPS --atk-norm Linf \
-    --output-dir $OUTPUT_DIR/pretrained \
-    --epochs $EPOCHS \
-    --experiment part-seq-norm_img-semi \
     --seg-labels 41 \
     --config_file DINO/config/DINO/DINO_4scale_modified.py \
     --options dn_scalar=100 dn_label_coef=1.0 dn_bbox_coef=1.0

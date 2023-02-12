@@ -24,7 +24,7 @@ Our experiments indicate that these models also reduce texture bias and yield be
 - `torchmetrics` for computing IoU
 - `kornia` for custom transformations
 
-```[bash]
+```bash
 # Install dependencies with pip
 pip install -r requirements.txt
 
@@ -42,7 +42,7 @@ pip install -U kornia wandb segmentation-models-pytorch imagecorruptions foolbox
 
 ### Prepare Part-ImageNet Dataset
 
-```[bash]
+```bash
 pip install git+https://github.com/philferriere/cocoapi.git#subdirectory=PythonAPI
 
 # Download data from https://github.com/tacju/partimagenet manually or via gdown
@@ -64,7 +64,7 @@ rm -rf train test val train.zip test.zip val.zip
 
 To download Cityscapes with `wget` on a server, see [link](https://github.com/cemsaz/city-scapes-script) or use the following script with your username and password from the [Cityscapes website](https://www.cityscapes-dataset.com/downloads/).
 
-```[bash]
+```bash
 sh download_cityscapes.sh yourUsername yourPassword
 ```
 
@@ -80,7 +80,7 @@ rm -rf panoptic_parts
 
 ### Prepare PASCAL-Part Dataset
 
-```[bash]
+```bash
 mkdir pascal_part && cd pascal_part
 wget http://host.robots.ox.ac.uk/pascal/VOC/voc2010/VOCtrainval_03-May-2010.tar
 wget http://roozbehm.info/pascal-parts/trainval.tar.gz
@@ -103,7 +103,7 @@ rm -rf VOCdevkit/ trainval.tar.gz VOCtrainval_03-May-2010.tar
 We lazily use `--experiment` argument to define the types of model and data to use.
 The naming convention is explained below:
 
-```[bash]
+```
 --experiment <SEGTYPE>-<MODELTYPE>[-<MODELARGS>][-no_bg][-semi]
 ```
 
@@ -120,7 +120,7 @@ TODO(chawins): Add more explanation
 
 ### Example
 
-```[bash]
+```bash
 # Create dir for saving results, logs, and checkpoints
 mkdir results
 bash scripts/run_example.sh
@@ -147,7 +147,7 @@ export NCCL_DEBUG=INFO
 - `--dataset part-imagenet-mixed` for the spurious correlation benchmark.
 - `--dataset part-imagenet-corrupt` for the common corruption benchmark.
 
-```[bash]
+```bash
 cd ~/data/PartImageNet
 gdown https://drive.google.com/u/0/uc?id=1-CQ4MINuzJ88DJxkKMnY2vpzMLBphDkU&export=download
 gdown https://drive.google.com/u/0/uc?id=1jnwDFWn03YMhsXhtjSt87JIO83VNZ4iJ&export=download
