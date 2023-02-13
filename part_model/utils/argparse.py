@@ -87,7 +87,6 @@ def get_args_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--debug", action="store_true", help="Enable debug mode"
     )
-    # TODO
     parser.add_argument("--dataset", required=True, type=str, help="Dataset")
     parser.add_argument(
         "--num-classes", default=10, type=int, help="Number of classes"
@@ -161,7 +160,7 @@ def get_args_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
-        "--atk-steps", default=10, type=int, help="Number of attack iterations"
+        "--atk-steps", default=10, type=int, help="Number of attack iterations."
     )
     parser.add_argument(
         "--atk-norm",
@@ -173,7 +172,7 @@ def get_args_parser() -> argparse.ArgumentParser:
         "--adv-beta",
         default=6.0,
         type=float,
-        help="Beta parameter for TRADES or MAT (default: 6)",
+        help="Beta parameter for TRADES or MAT (default: 6.0).",
     )
     parser.add_argument(
         "--eval-attack",
