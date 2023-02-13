@@ -19,7 +19,7 @@ class PoolingFeatureExtractor(nn.Module):
             no_bg: If True, background channel of the mask is dropped.
         """
         super().__init__()
-        self.no_bg: bool = no_bg
+        self._no_bg: bool = no_bg
 
     def forward(
         self, logits_masks: torch.Tensor, from_logits: bool = True
@@ -40,7 +40,7 @@ class PoolingFeatureExtractor(nn.Module):
         else:
             masks = logits_masks
         # Remove background
-        if self.no_bg:
+        if self._no_bg:
             masks = masks[:, 1:]
         return masks
 
@@ -52,19 +52,22 @@ class PoolingModel(nn.Module):
         """Initialize Downsampled part model."""
         print("=> Initializing PoolingModel...")
         super().__init__()
-        self.segmenter = segmenter
-        self.no_bg = "nobg" in args.experiment
+        self._segmenter = segmenter
+        no_bg = "nobg" in args.experiment
         use_bn_after_pooling = "bn" in args.experiment
-        input_dim = args.seg_labels - (1 if self.no_bg else 0)
+        input_dim = args.seg_labels - (1 if no_bg else 0)
 
         idx = args.experiment.find("pooling")
         pool_size = int(args.experiment[idx:].split("-")[1])
         var_per_mask = 5
+        print(
+            f"Creating a downsampled part model (no_bg: {no_bg}, input_dim: "
+            f"{input_dim}, pool_size: {pool_size})..."
+        )
 
+        batchnorm = []
         if use_bn_after_pooling:
             batchnorm = [nn.BatchNorm2d(input_dim), nn.ReLU(inplace=True)]
-        else:
-            batchnorm = []
 
         self.core_model = nn.Sequential(
             nn.AdaptiveAvgPool2d(pool_size),
@@ -80,7 +83,7 @@ class PoolingModel(nn.Module):
             nn.ReLU(inplace=True),
             nn.Linear(50, args.num_classes),
         )
-        self.feature_extactor = PoolingFeatureExtractor(self.no_bg)
+        self.feature_extactor = PoolingFeatureExtractor(no_bg)
 
     def get_classifier(self):
         """Get model that takes logit mask and returns classification output."""
@@ -102,8 +105,8 @@ class PoolingModel(nn.Module):
         """
         _ = kwargs  # Unused
         # Segmentation part
-        logits_masks = self.segmenter(images)
-        masks = self.feature_extactor(logits_masks)
+        logits_masks = self._segmenter(images)
+        masks = self.feature_extactor(logits_masks, from_logits=True)
         out = self.core_model(masks)
         if return_mask:
             return out, logits_masks

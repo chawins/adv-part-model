@@ -21,12 +21,13 @@ import torch.utils.data.distributed
 import wandb
 from torch.backends import cudnn
 from torch.cuda import amp
-
-# from torchmetrics import IoU as IoU   # Use this for older version of torchmetrics
 from torchmetrics.classification import MulticlassJaccardIndex as IoU
+from torchmetrics.detection.mean_ap import MeanAveragePrecision
+from torchvision.ops import box_convert
 from torchvision.utils import save_image
 
-from DINO.util.utils import to_device
+from DINO.models.dino.dino import PostProcess
+from DINO.util.slconfig import SLConfig
 from part_model.attack import (
     setup_eval_attacker,
     setup_train_attacker,
@@ -49,7 +50,7 @@ from part_model.utils import (
 from part_model.utils.argparse import get_args_parser
 from part_model.utils.loss import get_train_criterion
 
-best_acc1 = 0
+BEST_ACC = 0
 
 
 def _write_metrics(save_metrics: Any) -> None:
@@ -64,101 +65,33 @@ def main() -> None:
     """Main function."""
     init_distributed_mode(args)
 
-    global best_acc1
-
-    # handling dino args
-    # TODO(nab-126@): Unify args, put this in argparser?
-    if args.config_file:
-        from DINO.util.slconfig import SLConfig
-
-        cfg = SLConfig.fromfile(args.config_file)
-
-        if args.options is not None:
-            cfg.merge_from_dict(args.options)
-
-        cfg_dict = cfg._cfg_dict.to_dict()
-        args_vars = vars(args)
-        for k, v in cfg_dict.items():
-            if k not in args_vars:
-                setattr(args, k, v)
-            else:
-                raise ValueError("Key {} can used by args only".format(k))
-
+    global BEST_ACC
+    
     # Fix the seed for reproducibility
     seed: int = args.seed + get_rank()
     random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
     np.random.seed(seed)
+    cudnn.benchmark = True
 
     # Data loading code
     print("=> Creating dataset...")
     loaders = load_dataset(args)
     train_loader, train_sampler, val_loader, test_loader = loaders
 
-    # TODO(nab-126@): remove or put in util?
-    debug = False
-    if debug:
-        # DEBUGGING DATALOADER
-        for i, samples in enumerate(train_loader):
-
-            import torchvision
-
-            images, target_bbox, targets = samples
-
-            images, mask = images.decompose()
-
-            debug_index = 0
-            torchvision.utils.save_image(
-                images[debug_index], f"example_images/img_{debug_index}.png"
-            )
-            torchvision.utils.save_image(
-                mask[debug_index] * 1.0,
-                f"example_images/mask_{debug_index}.png",
-            )
-            img_uint8 = torchvision.io.read_image(
-                f"example_images/img_{debug_index}.png"
-            )
-            shape = target_bbox[debug_index]["size"]
-            print(target_bbox[debug_index])
-
-            # xc, xy, w, h convert to xmin, ymin, xmax, ymax
-            boxes = target_bbox[debug_index]["boxes"]
-            boxes[:, ::2] = boxes[:, ::2] * shape[1]
-            boxes[:, 1::2] = boxes[:, 1::2] * shape[0]
-
-            box_width = boxes[:, 2]
-            box_height = boxes[:, 3]
-
-            boxes[:, 0] = boxes[:, 0] - box_width / 2
-            boxes[:, 2] = boxes[:, 0] + box_width
-            boxes[:, 1] = boxes[:, 1] - box_height / 2
-            boxes[:, 3] = boxes[:, 1] + box_height
-
-            boxes = torch.tensor(boxes, dtype=torch.int)
-            img_with_boxes = torchvision.utils.draw_bounding_boxes(
-                img_uint8, boxes=boxes, colors="red"
-            )
-            torchvision.utils.save_image(
-                img_with_boxes / 255,
-                f"example_images/img_{debug_index}_with_bbox.png",
-            )
-            import pdb
-
-            pdb.set_trace()
-
     # Create model
     print("=> Creating model...")
     model, optimizer, scaler = build_model(args)
-
-    cudnn.benchmark = True
 
     # Define loss function
     criterion, train_criterion = get_train_criterion(args)
 
     # Logging
     if is_main_process():
-        log_path: str = os.path.join(args.output_dir, "log.txt")
+        log_path: str = os.path.join(
+            os.path.expanduser(args.output_dir), "log.txt"
+        )
         logfile = open(log_path, "a", encoding="utf-8")
         logfile.write(str(args) + "\n")
         logfile.flush()
@@ -173,10 +106,7 @@ def main() -> None:
     no_attack = eval_attack[0][1]
     train_attack = setup_train_attacker(args, model)
     val_attack = setup_val_attacker(args, model)
-    save_metrics = {
-        "train": [],
-        "test": [],
-    }
+    save_metrics = {"train": [], "test": []}
 
     print(args)
 
@@ -204,7 +134,7 @@ def main() -> None:
             if (epoch + 1) % 2 == 0:
                 val_stats = _validate(val_loader, model, criterion, no_attack)
                 clean_acc1, acc1 = val_stats["acc1"], None
-                is_best = clean_acc1 > best_acc1
+                is_best = clean_acc1 > BEST_ACC
 
                 if args.adv_train != "none":
                     adv_val_stats = _validate(
@@ -213,24 +143,24 @@ def main() -> None:
                     acc1 = adv_val_stats["acc1"]
                     val_stats["adv_acc1"] = acc1
                     val_stats["adv_loss"] = adv_val_stats["loss"]
-                    is_best = clean_acc1 >= acc1 > best_acc1
+                    is_best = clean_acc1 >= acc1 > BEST_ACC
 
                 save_dict = {
                     "epoch": epoch + 1,
                     "state_dict": model.state_dict(),
                     "optimizer": optimizer.state_dict(),
                     "scaler": scaler.state_dict(),
-                    "best_acc1": best_acc1,
+                    "best_acc1": BEST_ACC,
                     "args": args,
                 }
 
                 if is_best:
                     print("=> Saving new best checkpoint...")
                     save_on_master(save_dict, args.output_dir, is_best=True)
-                    best_acc1 = (
-                        max(clean_acc1, best_acc1)
+                    BEST_ACC = (
+                        max(clean_acc1, BEST_ACC)
                         if acc1 is None
-                        else max(acc1, best_acc1)
+                        else max(acc1, BEST_ACC)
                     )
                 save_epoch = epoch + 1 if args.save_all_epochs else None
                 save_on_master(
@@ -303,47 +233,38 @@ def _train(train_loader, model, criterion, attack, optimizer, scaler, epoch):
     # Switch to train mode
     model.train()
 
+    segs, masks, target_bbox = None, None, None
+    need_tgt_for_training = True
+
     end = time.time()
     for i, samples in enumerate(train_loader):
         # Measure data loading time
         data_time.update(time.time() - end)
 
-        if len(samples) == 2:
-            images, targets = samples
-            segs = None
-        elif seg_only:
-            # If training segmenter only, `targets` is segmentation mask
-            images, targets, _ = samples
-            segs = None
+        # TODO(nabeel@): Ideally we want to unify the data handling for both
+        # DINO and segmentation, or otherwise, make a separate training script.
+        if args.obj_det_arch == "dino":
+            nested_tensors, target_bbox, targets = samples
+            images, masks = nested_tensors.decompose()
+            images = images.cuda(args.gpu, non_blocking=True)
+            masks = masks.cuda(args.gpu, non_blocking=True)
+            targets = torch.tensor(
+                targets, device=masks.device, dtype=torch.long
+            )
+            target_bbox = [
+                {k: v.cuda(args.gpu, non_blocking=True) for k, v in t.items()}
+                for t in target_bbox
+            ]
         else:
-            # TODO(nab-126@): handling dino training
-            if args.obj_det_arch == "dino":
-                # try:
-                #     need_tgt_for_training = args.use_dn
-                # except:
-                #     need_tgt_for_training = False
-                need_tgt_for_training = True
-                nested_tensors, target_bbox, targets = samples
-                images, masks = nested_tensors.decompose()
-                masks = masks.cuda(args.gpu, non_blocking=True)
-                targets = torch.tensor(
-                    targets, device=masks.device, dtype=torch.long
-                )
-                target_bbox = [
-                    {
-                        k: v.cuda(args.gpu, non_blocking=True)
-                        for k, v in t.items()
-                    }
-                    for t in target_bbox
-                ]
-            else:
+            # If training segmenter only, `targets` is segmentation mask
+            images, targets = samples[:2]
+            if len(samples) == 3 and not seg_only:
                 images, segs, targets = samples
                 segs = segs.cuda(args.gpu, non_blocking=True)
+            images = images.cuda(args.gpu, non_blocking=True)
+            targets = targets.cuda(args.gpu, non_blocking=True)
 
         batch_size: int = targets.size(0)
-        images = images.cuda(args.gpu, non_blocking=True)
-        targets = targets.cuda(args.gpu, non_blocking=True)
-
         with amp.autocast(enabled=not args.full_precision):
             if args.obj_det_arch == "dino":
                 forward_args = {
@@ -353,19 +274,13 @@ def _train(train_loader, model, criterion, attack, optimizer, scaler, epoch):
                     "return_mask": False,
                 }
                 images = attack(images, targets, **forward_args)
-
                 if args.adv_train in ("trades", "mat"):
                     masks = torch.cat([masks.detach(), masks.detach()], dim=0)
                     target_bbox = [*target_bbox, *target_bbox]
-
-                # TODO(nab-126@): Interface model with kwargs dict like above
-                outputs, dino_outputs = model(
-                    images,
-                    masks,
-                    target_bbox,
-                    need_tgt_for_training,
-                    return_mask=True,
-                )
+                forward_args[
+                    "return_mask"
+                ] = True  # change to true to get dino outputs for map calculation
+                outputs, dino_outputs = model(images, **forward_args)
                 loss = criterion(outputs, dino_outputs, target_bbox, targets)
 
                 if args.adv_train in ("trades", "mat"):
@@ -451,7 +366,19 @@ def _validate(val_loader, model, criterion, attack):
     # switch to evaluate mode
     model.eval()
 
+    need_tgt_for_training = True
+
     end = time.time()
+
+    if args.calculate_map:
+        map_metric = MeanAveragePrecision()
+        postprocessors = {
+            "bbox": PostProcess(
+                num_select=args.num_select,
+                nms_iou_threshold=args.nms_iou_threshold,
+            )
+        }
+
     for i, samples in enumerate(val_loader):
         # measure data loading time
         data_time.update(time.time() - end)
@@ -464,14 +391,6 @@ def _validate(val_loader, model, criterion, attack):
         else:
             # handling dino validation
             if args.obj_det_arch == "dino":
-                # try:
-                #     need_tgt_for_training = args.use_dn
-                # except:
-                #     need_tgt_for_training = False
-                need_tgt_for_training = True
-                # images, target_bbox, targets = samples
-                # import pdb
-                # pdb.set_trace()
                 nested_tensors, target_bbox, targets = samples
                 images, masks = nested_tensors.decompose()
                 masks = masks.cuda(args.gpu, non_blocking=True)
@@ -488,20 +407,6 @@ def _validate(val_loader, model, criterion, attack):
             else:
                 images, segs, targets = samples
                 segs = segs.cuda(args.gpu, non_blocking=True)
-
-            # # handling dino validation
-            # if args.obj_det_arch == "dino":
-            #     try:
-            #         need_tgt_for_training = args.use_dn
-            #     except:
-            #         need_tgt_for_training = False
-
-            #     images, target_bbox, targets = samples
-            #     targets = torch.Tensor(targets)
-
-            # else:
-            #     images, segs, targets = samples
-            #     segs = segs.cuda(args.gpu, non_blocking=True)
 
         # DEBUG
         if args.debug:
@@ -526,14 +431,33 @@ def _validate(val_loader, model, criterion, attack):
                     "return_mask": False,
                 }
                 images = attack(images, targets, **forward_args)
-                outputs = model(
-                    images,
-                    masks,
-                    target_bbox,
-                    need_tgt_for_training,
-                    return_mask=False,
-                )
+                forward_args[
+                    "return_mask"
+                ] = True  # change to true to get dino outputs for map calculation
+                outputs, dino_outputs = model(images, **forward_args)
                 loss = criterion(outputs, targets)
+
+                if args.calculate_map:
+                    orig_target_sizes = torch.stack(
+                        [t["orig_size"] for t in target_bbox], dim=0
+                    )
+                    results = postprocessors["bbox"](
+                        dino_outputs, orig_target_sizes
+                    )
+
+                    # target_bbox_copy = copy.deepcopy(targets)
+                    for ti, t in enumerate(target_bbox):
+                        shape = t["orig_size"]
+                        boxes = t["boxes"]
+                        boxes = box_convert(
+                            boxes, in_fmt="cxcywh", out_fmt="xyxy"
+                        )
+                        boxes[:, ::2] = boxes[:, ::2] * shape[1]
+                        boxes[:, 1::2] = boxes[:, 1::2] * shape[0]
+                        target_bbox[ti]["boxes"] = boxes
+
+                    map_metric.update(results, target_bbox)
+
             else:
                 images = attack(images, targets, seg_targets=segs)
 
@@ -597,6 +521,11 @@ def _validate(val_loader, model, criterion, attack):
     if seg_only:
         iou.synchronize()
         print(f"IoU: {iou.avg:.4f}")
+
+    if args.calculate_map:
+        print(" * IoU metric")
+        print(map_metric.compute())
+
     return {"acc1": top1.avg, "loss": losses.avg, "pixel-acc": pacc.avg}
 
 
@@ -605,5 +534,22 @@ if __name__ == "__main__":
         "Part Classification", parents=[get_args_parser()]
     )
     args = parser.parse_args()
+
+    # TODO: add to argparser?
+    # handling dino args
+    if args.config_file:
+        cfg = SLConfig.fromfile(args.config_file)
+
+        if args.options is not None:
+            cfg.merge_from_dict(args.options)
+
+        cfg_dict = cfg._cfg_dict.to_dict()
+        args_vars = vars(args)
+        for k, v in cfg_dict.items():
+            if k not in args_vars:
+                setattr(args, k, v)
+            else:
+                raise ValueError("Key {} can used by args only".format(k))
+
     os.makedirs(args.output_dir, exist_ok=True)
     main()

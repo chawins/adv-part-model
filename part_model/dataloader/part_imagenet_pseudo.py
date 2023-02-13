@@ -33,7 +33,7 @@ CLASSES = {
 }
 
 
-class PartImageNetGeirhosSegDataset(data.Dataset):
+class PartImageNetSegDataset(data.Dataset):
     def __init__(
         self,
         root,
@@ -45,7 +45,7 @@ class PartImageNetGeirhosSegDataset(data.Dataset):
         seg_fraction=1.0,
         seed=0,
     ):
-        """Load our processed Part-ImageNet-Geirhos dataset
+        """Load our processed Part-ImageNet dataset
 
         Args:
             root (str): Path to root directory
@@ -70,7 +70,7 @@ class PartImageNetGeirhosSegDataset(data.Dataset):
         self.num_classes = len(self.classes)
         self.num_seg_labels = sum([CLASSES[c] for c in self.classes])
 
-        self.images, self.labels, self.masks = self._get_data()
+        self.images, self.labels, self.masks, self.filenames = self._get_data()
         idx = np.arange(len(self.images))
         with np_temp_seed(seed):
             np.random.shuffle(idx)
@@ -90,6 +90,7 @@ class PartImageNetGeirhosSegDataset(data.Dataset):
     def __getitem__(self, index):
         _img = Image.open(self.images[index]).convert("RGB")
         _target = Image.open(self.masks[index])
+        _filename = self.filenames[index]
 
         if self.transform is not None:
             _img, _target = self.transform(_img, _target)
@@ -99,6 +100,7 @@ class PartImageNetGeirhosSegDataset(data.Dataset):
                 _target = self.part_to_object[_target]
             elif self.seg_type == "fg":
                 _target = (_target > 0).long()
+
             if index in self.seg_drop_idx:
                 # Drop segmentation mask by setting all pixels to -1 to ignore
                 # later at loss computation
@@ -106,29 +108,30 @@ class PartImageNetGeirhosSegDataset(data.Dataset):
 
             if self.use_label:
                 _label = self.labels[index]
-                return _img, _target, _label
-            return _img, _target
+                return _img, _target, _label, _filename
+            return _img, _target, _filename
 
         if self.use_label:
             _label = self.labels[index]
-            return _img, _label
-        return _img
+            return _img, _label, _filename
+        return _img, _filename
 
     def _get_data(self):
-        images, labels, masks = [], [], []
+        images, labels, masks, files = [], [], [], []
         for l, label in enumerate(self.classes):
-            img_path = os.path.join(self.root, "StyleJPEGImages")
+            img_path = os.path.join(self.root, "JPEGImages")
             part_path = os.path.join(self.path, label)
             # Read file names
             with open(f"{self.path}/{label}.txt", "r") as fns:
                 filenames = sorted([f.strip() for f in fns.readlines()])
-            images.extend([f"{img_path}/{f}.png" for f in filenames])
+            images.extend([f"{img_path}/{f}.JPEG" for f in filenames])
             masks.extend(
                 [f'{part_path}/{f.split("/")[1]}.png' for f in filenames]
             )
             labels.extend([l] * len(filenames))
+            files.extend(filenames)
         labels = torch.tensor(labels, dtype=torch.long)
-        return images, labels, masks
+        return images, labels, masks, files
 
     def _list_classes(self):
         dirs = os.listdir(self.path)
@@ -139,11 +142,12 @@ class PartImageNetGeirhosSegDataset(data.Dataset):
         return len(self.images)
 
 
-def get_loader_sampler(args, transform, split, distributed_sampler=True):
+def get_loader_sampler(args, transform, split):
+    # TODO: add mpgd if needed
     seg_type = get_seg_type(args)
     is_train = split == "train"
 
-    part_imagenet_geirhos_dataset = PartImageNetGeirhosSegDataset(
+    part_imagenet_dataset = PartImageNetSegDataset(
         args.data,
         args.seg_label_dir,
         split=split,
@@ -154,20 +158,29 @@ def get_loader_sampler(args, transform, split, distributed_sampler=True):
     )
 
     sampler = None
-    if args.distributed and distributed_sampler:
+    if args.distributed:
+        shuffle = None
         if is_train:
             sampler = torch.utils.data.distributed.DistributedSampler(
-                part_imagenet_geirhos_dataset
+                part_imagenet_dataset,
+                shuffle=True,
+                seed=args.seed,
+                drop_last=False,
             )
         else:
             # Use distributed sampler for validation but not testing
-            sampler = DistributedEvalSampler(part_imagenet_geirhos_dataset)
+            sampler = DistributedEvalSampler(
+                part_imagenet_dataset, shuffle=False, seed=args.seed
+            )
+    else:
+        # shuffle = is_train
+        shuffle = True
 
     batch_size = args.batch_size
     loader = torch.utils.data.DataLoader(
-        part_imagenet_geirhos_dataset,
+        part_imagenet_dataset,
         batch_size=batch_size,
-        shuffle=(sampler is None),
+        shuffle=shuffle,
         num_workers=args.workers,
         pin_memory=True,
         sampler=sampler,
@@ -175,18 +188,14 @@ def get_loader_sampler(args, transform, split, distributed_sampler=True):
     )
 
     # TODO: can we make this cleaner?
-    PART_IMAGENET_GEIRHOS[
-        "part_to_class"
-    ] = part_imagenet_geirhos_dataset.part_to_class
-    PART_IMAGENET_GEIRHOS[
-        "num_classes"
-    ] = part_imagenet_geirhos_dataset.num_classes
-    PART_IMAGENET_GEIRHOS[
+    PART_IMAGENET_PSEUDO["part_to_class"] = part_imagenet_dataset.part_to_class
+    PART_IMAGENET_PSEUDO["num_classes"] = part_imagenet_dataset.num_classes
+    PART_IMAGENET_PSEUDO[
         "num_seg_labels"
-    ] = part_imagenet_geirhos_dataset.num_seg_labels
+    ] = part_imagenet_dataset.num_seg_labels
 
-    setattr(args, "num_classes", part_imagenet_geirhos_dataset.num_classes)
-    pto = part_imagenet_geirhos_dataset.part_to_object
+    setattr(args, "num_classes", part_imagenet_dataset.num_classes)
+    pto = part_imagenet_dataset.part_to_object
     if seg_type == "part":
         seg_labels = len(pto)
     elif seg_type == "fg":
@@ -198,21 +207,23 @@ def get_loader_sampler(args, transform, split, distributed_sampler=True):
     return loader, sampler
 
 
-def load_part_imagenet_geirhos(args):
+def load_part_imagenet(args):
 
-    img_size = PART_IMAGENET_GEIRHOS["input_dim"][1]
+    img_size = PART_IMAGENET_PSEUDO["input_dim"][1]
 
     train_transforms = Compose(
         [
-            RandomResizedCrop(img_size),
+            # RandomResizedCrop(img_size),
+            Resize((224, 224)),
             RandomHorizontalFlip(0.5),
             ToTensor(),
         ]
     )
     val_transforms = Compose(
         [
-            Resize(int(img_size * 256 / 224)),
-            CenterCrop(img_size),
+            # Resize(int(img_size * 256 / 224)),
+            # CenterCrop(img_size),
+            Resize((224, 224)),
             ToTensor(),
         ]
     )
@@ -226,12 +237,12 @@ def load_part_imagenet_geirhos(args):
     return train_loader, train_sampler, val_loader, test_loader
 
 
-PART_IMAGENET_GEIRHOS = {
+PART_IMAGENET_PSEUDO = {
     "normalize": {
         "mean": [0.485, 0.456, 0.406],
         "std": [0.229, 0.224, 0.225],
     },
-    "loader": load_part_imagenet_geirhos,
+    "loader": load_part_imagenet,
     "input_dim": (3, 224, 224),
     "colormap": COLORMAP,
 }

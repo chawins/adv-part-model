@@ -163,7 +163,7 @@ class PartImageNetSegDataset(data.Dataset):
                 filenames = sorted([f.strip() for f in fns.readlines()])
             images.extend([f"{img_path}/{f}.JPEG" for f in filenames])
             masks.extend(
-                [f'{part_path}/{f.split("/")[1]}.tif' for f in filenames]
+                [f'{part_path}/{f.split("/")[1]}.png' for f in filenames]
             )
             labels.extend([label_idx] * len(filenames))
         labels = torch.tensor(labels, dtype=torch.long)

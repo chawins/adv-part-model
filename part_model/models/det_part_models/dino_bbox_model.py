@@ -1,27 +1,36 @@
+"""DINO as sequential part model."""
+
 from __future__ import annotations
 
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
+import logging
 
-from DINO.main import build_model_main
+import torch
+import torch.nn.functional as F
+from torch import nn
+
 from DINO.models.dino.dino import (
     DINO,
     build_backbone,
     build_deformable_transformer,
 )
 from DINO.util.misc import NestedTensor
+from part_model.utils.types import BatchImages, Logits
+
+logger = logging.getLogger(__name__)
 
 
 class DinoBoundingBoxModel(nn.Module):
-    def __init__(self, args):
-        print("=> Initializing DinoBoundingBoxModel...")
-        super().__init__()
+    """DINO as part model."""
 
-        # TODO: load weights if args.load_from_segmenter
+    def __init__(self, args):
+        """Initialize DinoBoundingBoxModel."""
+        logger.info("=> Initializing DinoBoundingBoxModel...")
+        super().__init__()
+        self._use_conv1d = "conv1d" in args.experiment
+        self._sort_dino_outputs = "sort_dino_outputs" in args.experiment
+        self._num_queries = args.num_queries
 
         backbone = build_backbone(args)
-
         transformer = build_deformable_transformer(args)
 
         try:
@@ -69,14 +78,17 @@ class DinoBoundingBoxModel(nn.Module):
             dn_labelbook_size=dn_labelbook_size,
         )
 
-        # setattr(args, 'num_classes', tmp_num_classes)
-        # logits for part labels and 4 for bounding box coords
-        input_dim = args.num_queries * (args.seg_labels + 4)
-        print("input_dim", input_dim)
+        input_dim = (
+            args.num_queries * (args.seg_labels + 4)
+            if not self._use_conv1d
+            else 10 * (args.seg_labels)
+        )
 
         # how did we get 50 here
         self.core_model = nn.Sequential(
-            nn.Identity(),
+            nn.Conv1d(args.num_queries, 10, 5)
+            if self._use_conv1d
+            else nn.Identity(),
             nn.Flatten(),
             nn.BatchNorm1d(input_dim),
             nn.Linear(input_dim, 50),
@@ -87,38 +99,48 @@ class DinoBoundingBoxModel(nn.Module):
 
     def forward(
         self,
-        images,
-        masks,
-        dino_targets,
-        need_tgt_for_training,
-        return_mask=False,
-        **kwargs
-    ):
+        images: BatchImages,
+        masks=None,
+        dino_targets=None,
+        need_tgt_for_training: bool = False,
+        return_mask: bool = False,
+    ) -> Logits | tuple[Logits, torch.Tensor]:
+        """Forward pass of sequential DINO part model."""
         # Object Detection part
         nested_tensors = NestedTensor(images, masks)
-
-        # out = self.backbone(nested_tensors)
-
-        # out[0][-1].tensors
-        # import pdb
-        # pdb.set_trace()
 
         if need_tgt_for_training:
             dino_outputs = self.object_detector(nested_tensors, dino_targets)
         else:
             dino_outputs = self.object_detector(nested_tensors)
 
-        # concatenate softmax'd logits and bounding box predictions
-        features = torch.cat(
-            [
-                F.softmax(dino_outputs["pred_logits"], dim=1),
-                dino_outputs["pred_boxes"],
-            ],
-            dim=2,
-        )
+        # TODO(chawins@): We can consider not taking softmax if we have trouble
+        # with attack during adversarial training not working well, or we can
+        # use sigmoid to better replicate object detection models.
+        dino_probs = F.softmax(dino_outputs["pred_logits"], dim=-1)
+        dino_boxes = dino_outputs["pred_boxes"]
+
+        if self._sort_dino_outputs:
+            # TODO(nabeel@): Don't leave unused variables (use "_") and
+            # remove commneted out line in code.
+            batch_size, _, num_classes = dino_probs.shape
+            topk_values, topk_indexes = torch.topk(
+                dino_probs.view(batch_size, -1), self._num_queries, dim=1
+            )
+            topk_boxes = topk_indexes // num_classes
+            # labels = top_indexes % out_logits.shape[2]
+            topk_boxes.unsqueeze_(-1)
+            dino_probs = torch.gather(
+                dino_probs, 1, topk_boxes.repeat(1, 1, num_classes)
+            )
+            dino_boxes = torch.gather(dino_boxes, 1, topk_boxes.repeat(1, 1, 4))
+
+        # features = torch.cat([dino_probs, dino_boxes * 2 - 1], dim=2)
+        features = torch.cat([dino_probs, dino_boxes], dim=2)
+
+        # Pass to classifier model
         out = self.core_model(features)
 
         if return_mask:
             return out, dino_outputs
-            # return out, outputs['pred_logits'], outputs['pred_boxes']
         return out

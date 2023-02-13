@@ -137,3 +137,5 @@ log/
 results
 tmp*
 temp*
+log.txt
+models/
