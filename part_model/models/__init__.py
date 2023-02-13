@@ -17,7 +17,7 @@ from part_model.models.det_part_models import (
     dino_bbox_model,
     multi_head_dino_bbox_model,
 )
-from part_model.models.model import Classifier
+from part_model.models.model import Classifier, SegClassifier
 from part_model.models.seg_part_models import (
     bbox_model,
     clean_mask_model,
@@ -31,7 +31,7 @@ from part_model.models.seg_part_models import (
     two_head_model,
     weighted_bbox_model,
 )
-from part_model.models.seg_part_models.util import SEGM_BUILDER, SegClassifier
+from part_model.models.seg_part_models.util import SEGM_BUILDER
 from part_model.utils.image import get_seg_type
 
 logger = logging.getLogger(__name__)
@@ -132,13 +132,12 @@ def build_classifier(args):
         if args.seg_arch is not None:
             logger.info("=> Building segmentation model...")
             segmenter = SEGM_BUILDER[args.seg_arch](args, normalize=False)
+            if args.freeze_seg:
+                # Froze all weights of the part segmentation model
+                for param in segmenter.parameters():
+                    param.requires_grad = False
         elif args.obj_det_arch is not None:
             logger.info("=> Building detection model...")
-
-        if args.freeze_seg:
-            # Froze all weights of the part segmentation model
-            for param in segmenter.parameters():
-                param.requires_grad = False
 
         if args.obj_det_arch == "dino":
             # two options, either sequential or two-headed model

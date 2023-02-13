@@ -49,6 +49,7 @@ def group_parts(array, mapping):
 
 
 def main(split, label_dir, sample_proportion=0.10, bbox_discard_threshold=0.01):
+    label_dir = os.path.expanduser(label_dir)
     root = Path(os.path.join(label_dir, "PartBoxSegmentations"))
     num_discarded_bbox = 0
 

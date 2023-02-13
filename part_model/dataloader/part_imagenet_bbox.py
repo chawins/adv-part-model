@@ -6,6 +6,7 @@ implment as needed?
 """
 
 import json
+import os
 import random
 from pathlib import Path
 
@@ -568,18 +569,18 @@ def get_aux_target_hacks_list(image_set, args):
 class PartImageNetBBOXDataset(torchvision.datasets.CocoDetection):
     def __init__(
         self,
-        img_folder,
-        class_label_file,
-        ann_file,
+        img_folder: str,
+        class_label_file: str,
+        ann_file: str,
         transforms,
         aux_target_hacks=None,
-    ):
-        super(PartImageNetBBOXDataset, self).__init__(img_folder, ann_file)
+    ) -> None:
+        super().__init__(img_folder, ann_file)
         self._transforms = transforms
         self.prepare = ConvertCocoPolysToMask(False)
         self.aux_target_hacks = aux_target_hacks
 
-        with open(class_label_file, "r") as openfile:
+        with open(class_label_file, "r", encoding="utf-8") as openfile:
             self.image_to_label = json.load(openfile)
 
         self.classes = list(sorted(set(self.image_to_label.values())))
@@ -657,12 +658,7 @@ class PartImageNetBBOXDataset(torchvision.datasets.CocoDetection):
 
 def get_loader_sampler_bbox(args, transforms, split):
     is_train = split == "train"
-
-    # TODO: add as arg
-    root = Path(args.bbox_label_dir)
-    # root = Path('/data/shared/PartImageNet/PartBoxSegmentations')
-    # root = Path('/data1/chawins/PartImageNet/PartBoxSegmentations')
-    # root = Path('/global/scratch/users/nabeel126/PartImageNet/PartBoxSegmentations')
+    root = Path(args.bbox_label_dir).expanduser()
 
     if not args.sample:
         PATHS = {
