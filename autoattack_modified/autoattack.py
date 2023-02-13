@@ -5,7 +5,7 @@ import numpy as np
 import torch
 
 from .flags import SET_MASK
-from .other_utils import Logger, get_pred
+from .other_utils import Logger, get_pred, mask_kwargs
 
 
 class AutoAttack:
@@ -164,16 +164,16 @@ class AutoAttack:
         # if version in ['standard', 'plus', 'rand']:
         self.set_version(version)
 
-    def get_logits(self, x):
+    def get_logits(self, x, **kwargs):
         if not self.is_tf_model:
-            return self.model(x)
+            return self.model(x, **kwargs)
         else:
             return self.model.predict(x)
 
     def get_seed(self):
         return time.time() if self.seed is None else self.seed
 
-    def run_standard_evaluation(self, x_orig, y_orig, bs=250):
+    def run_standard_evaluation(self, x_orig, y_orig, bs=250, **kwargs_orig):
         if self.verbose:
             print(
                 "using {} version including {}".format(
@@ -200,7 +200,7 @@ class AutoAttack:
                 # DEBUG
                 # output = self.get_logits(x)
                 # correct_batch = y.eq(output.max(dim=1)[1])
-                output = get_pred(self.get_logits(x))
+                output = get_pred(self.get_logits(x, **kwargs_orig))
                 correct_batch = y.eq(output)
                 robust_flags[start_idx:end_idx] = correct_batch.detach().to(
                     robust_flags.device
@@ -215,6 +215,7 @@ class AutoAttack:
 
             x_adv = x_orig.clone().detach()
             startt = time.time()
+
             for attack in self.attacks_to_run:
                 # item() is super important as pytorch int division uses floor rounding
                 num_robust = torch.sum(robust_flags).item()
@@ -238,6 +239,8 @@ class AutoAttack:
                     x = x_orig[batch_datapoint_idcs, :].clone().to(self.device)
                     y = y_orig[batch_datapoint_idcs].clone().to(self.device)
 
+                    kwargs = mask_kwargs(kwargs_orig, batch_datapoint_idcs)
+
                     # DEBUG: set mask for IN-9 dataset experiment
                     if SET_MASK:
                         # self.model.set_mask(batch_datapoint_idcs)
@@ -252,38 +255,34 @@ class AutoAttack:
                         # apgd on cross-entropy loss
                         self.apgd.loss = "ce"
                         self.apgd.seed = self.get_seed()
-                        adv_curr = self.apgd.perturb(x, y)  # cheap=True
-
+                        adv_curr = self.apgd.perturb(x, y, **kwargs)  # cheap=True
                     elif attack == "apgd-dlr":
                         # apgd on dlr loss
                         self.apgd.loss = "dlr"
                         self.apgd.seed = self.get_seed()
-                        adv_curr = self.apgd.perturb(x, y)  # cheap=True
+                        adv_curr = self.apgd.perturb(x, y, **kwargs)  # cheap=True
 
                     elif attack == "fab":
                         # fab
                         self.fab.targeted = False
                         self.fab.seed = self.get_seed()
-                        adv_curr = self.fab.perturb(x, y)
+                        adv_curr = self.fab.perturb(x, y, **kwargs)  # cheap=True
 
                     elif attack == "square":
                         # square
                         self.square.seed = self.get_seed()
-                        adv_curr = self.square.perturb(x, y)
+                        adv_curr = self.square.perturb(x, y, **kwargs)  # cheap=True
 
                     elif attack == "apgd-t":
                         # targeted apgd
                         self.apgd_targeted.seed = self.get_seed()
-                        adv_curr = self.apgd_targeted.perturb(
-                            x, y
-                        )  # cheap=True
-
+                        adv_curr = self.apgd_targeted.perturb(x, y, **kwargs)  # cheap=True
                     elif attack == "fab-t":
                         # fab targeted
                         self.fab.targeted = True
                         self.fab.n_restarts = 1
                         self.fab.seed = self.get_seed()
-                        adv_curr = self.fab.perturb(x, y)
+                        adv_curr = self.fab.perturb(x, y, **kwargs)  # cheap=True
 
                     else:
                         raise ValueError("Attack not supported")
@@ -295,7 +294,7 @@ class AutoAttack:
                     # DEBUG
                     # output = self.get_logits(adv_curr)
                     # false_batch = ~y.eq(output.max(dim=1)[1]).to(robust_flags.device)
-                    output = get_pred(self.get_logits(adv_curr))
+                    output = get_pred(self.get_logits(adv_curr, **kwargs))
                     false_batch = ~y.eq(output).to(robust_flags.device)
                     non_robust_lin_idcs = batch_datapoint_idcs[false_batch]
                     robust_flags[non_robust_lin_idcs] = False
