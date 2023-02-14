@@ -665,7 +665,7 @@ class PartImageNetBBOXDataset(torchvision.datasets.CocoDetection):
 def get_loader_sampler_bbox(args, transforms, split):
     is_train = split == "train"
 
-    root = Path(args.bbox_label_dir)
+    root = Path(args.bbox_label_dir).expanduser()
 
     if args.sample:
         PATHS = {
