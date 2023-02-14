@@ -1,6 +1,6 @@
 #!/bin/bash
 ID=9
-GPU=1
+GPU=0
 NUM_GPU=1
 BS=2
 AA_BS=32
@@ -17,9 +17,9 @@ PORT=1000$ID
 # DATASET=part-imagenet
 # DATAPATH=/data/shared/PartImageNet/
 # SEGPATH=$DATAPATH/PartSegmentations/All/
-# ============================== Part-ImageNet-BBox ============================== #
+# =========================== Part-ImageNet-BBox ============================ #
 DATASET="part-imagenet-bbox"
-DATAPATH=~/data/PartImageNet
+DATAPATH="$HOME/data/PartImageNet"
 SEGPATH="$DATAPATH/PartSegmentations/All/"
 BBOXDIR="$DATAPATH/PartBoxSegmentations"
 # 0.0156862745, 0.03137254901, 0.06274509803
@@ -28,19 +28,19 @@ EPS=0.03137254901
 EPOCHS=50
 
 ### Data Prep
-echo "Start data prep..."
-mkdir $DATAPATH/PartBoxSegmentations/train/
-mkdir $DATAPATH/PartBoxSegmentations/val/
-mkdir $DATAPATH/PartBoxSegmentations/test/
+# echo "Start data prep..."
+# mkdir $DATAPATH/PartBoxSegmentations/train/
+# mkdir $DATAPATH/PartBoxSegmentations/val/
+# mkdir $DATAPATH/PartBoxSegmentations/test/
 
-ln -s $DATAPATH/JPEGImages/* $DATAPATH/PartBoxSegmentations/train/
-ln -s $DATAPATH/JPEGImages/* $DATAPATH/PartBoxSegmentations/val/
-ln -s $DATAPATH/JPEGImages/* $DATAPATH/PartBoxSegmentations/test/
+# ln -s $DATAPATH/JPEGImages/* $DATAPATH/PartBoxSegmentations/train/
+# ln -s $DATAPATH/JPEGImages/* $DATAPATH/PartBoxSegmentations/val/
+# ln -s $DATAPATH/JPEGImages/* $DATAPATH/PartBoxSegmentations/test/
 
-python3 prepare_part_imagenet_bbox.py --label-dir $DATAPATH --split train
-python3 prepare_part_imagenet_bbox.py --label-dir $DATAPATH --split val
-python3 prepare_part_imagenet_bbox.py --label-dir $DATAPATH --split test
-echo "Done with data prep."
+# python3 prepare_part_imagenet_bbox.py --label-dir $DATAPATH --split train
+# python3 prepare_part_imagenet_bbox.py --label-dir $DATAPATH --split val
+# python3 prepare_part_imagenet_bbox.py --label-dir $DATAPATH --split test
+# echo "Done with data prep."
 
 ### Training
 EXP_NAME="part-seq-norm_img-semi"
