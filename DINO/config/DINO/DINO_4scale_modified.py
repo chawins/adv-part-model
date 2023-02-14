@@ -86,8 +86,8 @@ interm_loss_coef = 1.0
 no_interm_box_loss = False
 focal_alpha = 0.25
 
-decoder_sa_type = 'sa' # ['sa', 'ca_label', 'ca_content']
-matcher_type = 'HungarianMatcher' # or SimpleMinsumMatcher
+decoder_sa_type = 'sa'  # ['sa', 'ca_label', 'ca_content']
+matcher_type = 'HungarianMatcher'  # or SimpleMinsumMatcher
 decoder_module_seq = ['sa', 'ca', 'ffn']
 nms_iou_threshold = -1
 

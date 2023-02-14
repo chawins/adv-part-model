@@ -29,6 +29,7 @@ EPOCHS=50
 
 
 ### Data Prep
+echo "Start data prep..."
 mkdir $DATAPATH/PartBoxSegmentations/train/
 mkdir $DATAPATH/PartBoxSegmentations/val/
 mkdir $DATAPATH/PartBoxSegmentations/test/
@@ -40,7 +41,7 @@ ln -s $DATAPATH/JPEGImages/* $DATAPATH/PartBoxSegmentations/test/
 python3 prepare_part_imagenet_bbox.py --label-dir $DATAPATH --split train
 python3 prepare_part_imagenet_bbox.py --label-dir $DATAPATH --split val
 python3 prepare_part_imagenet_bbox.py --label-dir $DATAPATH --split test
-
+echo "Done with data prep."
 
 ### Training
 EXP_NAME="part-seq-norm_img-semi"

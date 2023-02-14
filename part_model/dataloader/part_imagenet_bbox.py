@@ -34,10 +34,7 @@ CLASSES = {
     "Bottle": 2,
 }
 
-
-######################################################
-# some hookers for training
-
+# Dataset hooks
 
 class label2compat:
     def __init__(self) -> None:
