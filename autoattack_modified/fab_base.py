@@ -15,7 +15,7 @@ import torch
 
 from .fab_projections import projection_l1, projection_l2, projection_linf
 from .flags import SET_MASK
-from .other_utils import get_pred
+from .other_utils import get_pred, mask_kwargs
 
 # from torch.autograd.gradcheck import zero_gradients
 
@@ -91,7 +91,7 @@ class FABAttack():
     def check_shape(self, x):
         return x if len(x.shape) > 0 else x.unsqueeze(0)
 
-    def _predict_fn(self, x):
+    def _predict_fn(self, x, **kwargs):
         raise NotImplementedError("Virtual function.")
 
     def _get_predicted_label(self, x):
@@ -103,7 +103,7 @@ class FABAttack():
     def get_diff_logits_grads_batch_targeted(self, imgs, la, la_target):
         raise NotImplementedError("Virtual function.")
 
-    def attack_single_run(self, x, y=None, use_rand_start=False, is_targeted=False):
+    def attack_single_run(self, x, y=None, use_rand_start=False, is_targeted=False, **kwargs):
         """
         :param x:             clean images
         :param y:             clean labels, if None we use the predicted labels
@@ -118,7 +118,7 @@ class FABAttack():
         x = x.detach().clone().float().to(self.device)
         #assert next(self.predict.parameters()).device == x.device
 
-        y_pred = self._get_predicted_label(x)
+        y_pred = self._get_predicted_label(x, **kwargs)
         if y is None:
             y = y_pred.detach().clone().long().to(self.device)
         else:
@@ -132,7 +132,7 @@ class FABAttack():
         pred = self.check_shape(pred.nonzero().squeeze())
 
         if is_targeted:
-            output = self._predict_fn(x)
+            output = self._predict_fn(x, **kwargs)
             la_target = output.sort(dim=-1)[1][:, -self.target_class]
             la_target2 = la_target[pred].detach().clone()
 
@@ -190,7 +190,7 @@ class FABAttack():
             while counter_iter < self.n_iter:
                 with torch.no_grad():
                     if is_targeted:
-                        df, dg = self.get_diff_logits_grads_batch_targeted(x1, la2, la_target2)
+                        df, dg = self.get_diff_logits_grads_batch_targeted(x1, la2, la_target2, **kwargs)
                     else:
                         df, dg = self.get_diff_logits_grads_batch(x1, la2)
                     if self.norm == 'Linf':
@@ -250,7 +250,7 @@ class FABAttack():
                     x1 = ((x1 + self.eta * d1) * (1 - alpha) +
                           (im2 + d2 * self.eta) * alpha).clamp(0.0, 1.0)
 
-                    is_adv = self._get_predicted_label(x1) != la2
+                    is_adv = self._get_predicted_label(x1, **kwargs) != la2
 
                     if is_adv.sum() > 0:
                         ind_adv = is_adv.nonzero().squeeze()
@@ -290,14 +290,14 @@ class FABAttack():
 
         return adv_c
 
-    def perturb(self, x, y):
+    def perturb(self, x, y, **kwargs_orig):
         if self.device is None:
             self.device = x.device
         adv = x.clone()
         with torch.no_grad():
             # DEBUG: handle binary classification
             # acc = self._predict_fn(x).max(1)[1] == y
-            acc = get_pred(self._predict_fn(x)) == y
+            acc = get_pred(self._predict_fn(x, **kwargs)) == y
 
             startt = time.time()
 
@@ -315,9 +315,12 @@ class FABAttack():
                         if SET_MASK:
                             # self.predict.set_mask(ind_to_fool)
                             self.model.set_mask(x_to_fool)
+
+                        kwargs = mask_kwargs(kwargs_orig, ind_to_fool)
+
                         adv_curr = self.attack_single_run(
                             x_to_fool, y_to_fool, use_rand_start=(counter > 0),
-                            is_targeted=False)
+                            is_targeted=False, **kwargs)
 
                         # DEBUG: handle binary classification
                         # acc_curr = self._predict_fn(adv_curr).max(1)[1] == y_to_fool
@@ -351,13 +354,17 @@ class FABAttack():
                             if SET_MASK:
                                 # self.predict.set_mask(ind_to_fool)
                                 self.model.set_mask(x_to_fool)
+
+                            kwargs = mask_kwargs(kwargs_orig, ind_to_fool)
+
                             adv_curr = self.attack_single_run(
                                 x_to_fool, y_to_fool, use_rand_start=(counter > 0),
-                                is_targeted=True)
+                                is_targeted=True,
+                                **kwargs)
 
                             # DEBUG: handle binary classification
                             # acc_curr = self._predict_fn(adv_curr).max(1)[1] == y_to_fool
-                            acc_curr = get_pred(self._predict_fn(adv_curr)) == y_to_fool
+                            acc_curr = get_pred(self._predict_fn(adv_curr, **kwargs)) == y_to_fool
                             if self.norm == 'Linf':
                                 res = (x_to_fool - adv_curr).abs().reshape(x_to_fool.shape[0], -1).max(1)[0]
                             elif self.norm == 'L2':

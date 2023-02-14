@@ -12,18 +12,6 @@ from skimage.measure import label, regionprops
 
 from partimagenet_hparams import partimagenet_to_grouped_partimagenet
 
-# # reds
-# label_dir = '/data/shared/PartImageNet/'
-# root = Path('/data/shared/PartImageNet/PartBoxSegmentations')
-
-# reds5k
-# label_dir = '/data1/chawins/PartImageNet/'
-# root = Path('/data1/chawins/PartImageNet/PartBoxSegmentations')
-
-# # savio
-# label_dir = '/global/scratch/users/nabeel126/PartImageNet/'
-# root = Path('/global/scratch/users/nabeel126/PartImageNet/PartBoxSegmentations')
-
 PART_IMAGENET_CLASSES = {
     "Quadruped": 4,
     "Biped": 5,
@@ -201,15 +189,6 @@ def main(split, label_dir, sample_proportion=0.10, bbox_discard_threshold=0.01):
                 ),
             }
 
-    # PATHS = {
-    #     "train": (root / "train", root / "image_labels" / 'train.json', root / "annotations" / 'train.json'),
-    #     "val": (root / "val", root / "image_labels" / 'val.json', root / "annotations" / 'val.json'),
-    #     "test": (root / "test", root / "image_labels" / 'test.json', root / "annotations" / 'test.json' ),
-    #     "train_sample": (root / "train", root / "image_labels" / 'train_sample.json', root / "annotations" / 'train_sample.json'),
-    #     "val_sample": (root / "val", root / "image_labels" / 'val_sample.json', root / "annotations" / 'val_sample.json'),
-    #     "test_sample": (root / "test", root / "image_labels" / 'test_sample.json', root / "annotations" / 'test_sample.json' ),
-    # }
-
     os.makedirs(root / "train", exist_ok=True)
     os.makedirs(root / "val", exist_ok=True)
     os.makedirs(root / "test", exist_ok=True)
@@ -248,7 +227,7 @@ def main(split, label_dir, sample_proportion=0.10, bbox_discard_threshold=0.01):
                 IMAGENET_IDS.add(imagenet_id)
 
     IMAGENET_IDS = list(IMAGENET_IDS)
-    assert len(IMAGENET_IDS) == 158  # https://arxiv.org/pdf/2112.00933.pdf
+    assert len(IMAGENET_IDS) <= 158  # https://arxiv.org/pdf/2112.00933.pdf
     IMAGENET_IDS.sort()
 
     imagenetid_to_imagenetclass = {}

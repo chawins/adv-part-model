@@ -508,14 +508,23 @@ def get_train_criterion(args):
                     beta=args.adv_beta,
                 )
             else:
+                # import pdb; pdb.set_trace()
                 train_criterion = SemiBBOXLoss(
-                    args.num_classes,
+                    args.seg_labels,
                     matcher=matcher,
                     weight_dict=weight_dict,
                     focal_alpha=args.focal_alpha,
                     losses=losses,
                     seg_const=args.seg_const_trn,
                 )
+                # train_criterion = SemiBBOXLoss(
+                #     args.num_classes,
+                #     matcher=matcher,
+                #     weight_dict=weight_dict,
+                #     focal_alpha=args.focal_alpha,
+                #     losses=losses,
+                #     seg_const=args.seg_const_trn,
+                # )
 
         else:
             train_criterion = SemiSumLoss(seg_const=args.seg_const_trn)
@@ -572,6 +581,7 @@ class SemiBBOXLoss(SetCriterion):
                 if k in self.weight_dict
             )
             loss += self.seg_const * bbox_loss
+
         if self.reduction == "mean":
             return loss.mean()
 

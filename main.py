@@ -21,6 +21,8 @@ import torch.utils.data.distributed
 import wandb
 from torch.backends import cudnn
 from torch.cuda import amp
+
+# from torchmetrics import IoU as IoU   # Use this for older version of torchmetrics
 from torchmetrics.classification import MulticlassJaccardIndex as IoU
 from torchmetrics.detection.mean_ap import MeanAveragePrecision
 from torchvision.ops import box_convert
@@ -48,6 +50,7 @@ from part_model.utils import (
     save_on_master,
 )
 from part_model.utils.argparse import get_args_parser
+from part_model.utils.dataloader_visualizer import debug_dino_dataloader
 from part_model.utils.loss import get_train_criterion
 
 BEST_ACC = 0
@@ -66,7 +69,7 @@ def main() -> None:
     init_distributed_mode(args)
 
     global BEST_ACC
-    
+
     # Fix the seed for reproducibility
     seed: int = args.seed + get_rank()
     random.seed(seed)
@@ -79,6 +82,10 @@ def main() -> None:
     print("=> Creating dataset...")
     loaders = load_dataset(args)
     train_loader, train_sampler, val_loader, test_loader = loaders
+
+    # Debugging dataloader
+    if args.debug:
+        debug_dino_dataloader(train_loader)
 
     # Create model
     print("=> Creating model...")
@@ -194,6 +201,10 @@ def main() -> None:
 
     # Running evaluation
     for attack in eval_attack:
+        # import pdb; pdb.set_trace()
+        # TODO: remove next line; only for debugging
+        # if attack[0] == "no_attack": continue
+
         # Use DataParallel (not distributed) model for AutoAttack.
         # Otherwise, DDP model can get timeout or c10d failure.
         stats = _validate(test_loader, model, criterion, attack[1])
