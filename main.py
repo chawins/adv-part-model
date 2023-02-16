@@ -86,6 +86,8 @@ def main() -> None:
     # Debugging dataloader
     if args.debug:
         debug_dino_dataloader(train_loader)
+        # debug_dino_dataloader(val_loader)
+        # debug_dino_dataloader(test_loader)
 
     # Create model
     print("=> Creating model...")

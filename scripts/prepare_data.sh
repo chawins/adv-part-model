@@ -33,6 +33,11 @@
 #     --data-dir ~/data/PartImageNet/ \
 #     --name All
 
+python -u prepare_part_imagenet.py \
+    --data-dir ~/data/PartImageNet/ \
+    --name All \
+    --use-box-seg
+
 DATAPATH=~/data/PartImageNet 
 
 # ### Data Prep
@@ -44,9 +49,9 @@ DATAPATH=~/data/PartImageNet
 # ln -s $DATAPATH/JPEGImages/* $DATAPATH/PartBoxSegmentations/val/
 # ln -s $DATAPATH/JPEGImages/* $DATAPATH/PartBoxSegmentations/test/
 
-python prepare_part_imagenet_bbox.py --label-dir $DATAPATH --split "train"
-python prepare_part_imagenet_bbox.py --label-dir $DATAPATH --split "val"
-python prepare_part_imagenet_bbox.py --label-dir $DATAPATH --split "test"
+# python prepare_part_imagenet_bbox.py --label-dir $DATAPATH --split "train"
+# python prepare_part_imagenet_bbox.py --label-dir $DATAPATH --split "val"
+# python prepare_part_imagenet_bbox.py --label-dir $DATAPATH --split "test"
 
 # python prepare_part_imagenet_bbox.py --label-dir $DATAPATH --split "train" --use-imagenet-classes
 # python prepare_part_imagenet_bbox.py --label-dir $DATAPATH --split "val" --use-imagenet-classes

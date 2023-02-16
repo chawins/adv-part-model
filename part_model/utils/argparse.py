@@ -219,12 +219,6 @@ def get_args_parser() -> argparse.ArgumentParser:
         help="Calculate mAP for object detection model",
     )
     parser.add_argument(
-        "--bbox-label-dir",
-        default="",
-        type=str,
-        help="Path to bounding-box labels.",
-    )
-    parser.add_argument(
         "--obj-det-arch",
         type=str,
         help="Architecture of object detection model.",

@@ -5,6 +5,8 @@ Usage examples:
 python prepare_pascal_part_v3.py --data-dir ~/data/pascal_part/ --name name
 """
 import argparse
+import copy
+import json
 import glob
 import os
 import random
@@ -81,9 +83,6 @@ def get_seg_masks(path, all_image_names, use_box_seg=False):
         # Get id's of the desired class
         cat_ids = coco.getCatIds(supNms=label)
 
-        # import pdb
-        # pdb.set_trace()
-
         # Iterate through all combinations of parts
         img_ids = []
         for ids in powerset(cat_ids):
@@ -115,6 +114,7 @@ def get_seg_masks(path, all_image_names, use_box_seg=False):
             for ann in anns:
                 if ann["area"] == 0:
                     continue
+
                 part_mask = coco.annToMask(ann)
                 seg_label = all_part_ids.index(ann["category_id"]) + 1
                 if use_box_seg:
@@ -154,6 +154,7 @@ def save_images_partition(partition, data_dict, idx, label, use_box_seg=False):
         filenames.append(img_paths[i])
     filenames.sort()
     filenames = [f + "\n" for f in filenames]
+
     with open(f"{path}/{label}.txt", "w") as path_file:
         path_file.writelines(filenames)
     # Write segmentation as tif file
@@ -162,7 +163,6 @@ def save_images_partition(partition, data_dict, idx, label, use_box_seg=False):
         # import pdb
         # pdb.set_trace()
         save_pil_image(seg_masks[i], os.path.join(label_path, name))
-
 
 # Load annotations from the annotation folder of PASCAL-Part dataset:
 if __name__ == "__main__":
@@ -198,17 +198,27 @@ if __name__ == "__main__":
             data_dict[k].extend(part_dict[k])
     print(f'Total number of samples {len(data_dict["seg_masks"])}.')
 
+    
+    all_indices = {}
+    all_indices['train'] = []
+    all_indices['val'] = []
+    all_indices['test'] = []
+
     # Randomly split data into train/test/val and keep the class ratio
     for l, label in enumerate(CLASSES):
         print(f"==> Writing {label} data...")
         idx = np.where(np.array(data_dict["labels"]) == l)[0]
         num_samples = len(idx)
         np.random.shuffle(idx)
-        # num_val, num_test = int(0.1 * num_samples), int(0.1 * num_samples)
-        num_val, num_test = int(0.008 * num_samples), int(0.92 * num_samples)
+        num_val, num_test = int(0.1 * num_samples), int(0.1 * num_samples)
         val_idx = idx[:num_val]
         test_idx = idx[num_val : num_val + num_test]
         train_idx = idx[num_val + num_test :]
+
+        all_indices['train'].extend(train_idx)
+        all_indices['val'].extend(val_idx)
+        all_indices['test'].extend(test_idx)
+        
         print(
             f"  ==> {num_samples} samples in total",
             len(train_idx),
@@ -227,3 +237,82 @@ if __name__ == "__main__":
                 label,
                 use_box_seg=args.use_box_seg,
             )
+
+
+
+    # save bounding box annotations
+    ann_data = {}
+    ann_data['images'] = []
+    ann_data['annotations'] = []
+    ann_data['categories'] = []
+
+    # combining all existing bbox annotations
+    new_image_id = 0
+    new_annotation_id = 0
+    for partition in ['train', 'val', 'test']:
+        ann_file_path = os.path.join(args.data_dir, f"{partition}.json")
+
+        with open(ann_file_path) as f:
+            partition_data = json.load(f)
+        
+        for image in partition_data['images']:            
+            original_image_id = image['id']
+            for ann_orig in partition_data['annotations']:
+                if ann_orig['image_id'] == original_image_id:
+                    ann = copy.deepcopy(ann_orig)
+                    ann['image_id'] = new_image_id
+                    ann['id'] = new_annotation_id
+                    ann_data['annotations'].append(ann)
+                    new_annotation_id += 1
+            
+            # assign image new id
+            image['id'] = new_image_id
+            ann_data['images'].append(image)
+            new_image_id += 1
+
+        if not ann_data['categories']:
+            ann_data['categories'].extend(partition_data['categories'])
+        print('num images: ', len(partition_data['images']))
+
+    img_paths = data_dict["img_paths"]
+    # reshufling the images and saving the new annotations in COCO format
+    for partition in ['train', 'val', 'test']:
+        partition_ann_data = {}
+        partition_ann_data['images'] = []
+        partition_ann_data['annotations'] = []
+        partition_ann_data['categories'] = ann_data['categories']
+
+        partition_indices = all_indices[partition]
+
+        # Write image paths to a file
+        partition_filenames = []
+        for i in partition_indices:
+            image_filename = img_paths[i].split('/')[-1] + '.JPEG'
+            partition_filenames.append(image_filename)
+
+        prev_image_ids_to_new_image_ids = {}
+        new_image_id = 0
+        new_annotation_id = 0
+        for image in ann_data['images']:
+            if image['file_name'] in partition_filenames:
+                original_image_id = image['id']
+                for ann_orig in ann_data['annotations']:
+                    if ann_orig['image_id'] == original_image_id:
+                        ann = copy.deepcopy(ann_orig)
+                        ann['image_id'] = new_image_id
+                        ann['id'] = new_annotation_id
+                        partition_ann_data['annotations'].append(ann)
+                        new_annotation_id += 1
+            
+                # assign image new id
+                image['id'] = new_image_id
+                
+                imagenet_id, part_imagenet_id = image['file_name'].split('_')
+                image['file_name'] = os.path.join(imagenet_id, image['file_name'])
+                partition_ann_data['images'].append(image)
+                new_image_id += 1
+                        
+        # save json to file
+        ann_file_path = os.path.join(args.data_dir, "PartBoxSegmentations", f"{partition}.json")
+        with open(ann_file_path, 'w') as f:
+            json.dump(partition_ann_data, f)
