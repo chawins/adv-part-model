@@ -72,11 +72,11 @@ class SquareAttack:
         self.device = device
         self.return_all = False
 
+    @torch.no_grad()
     def margin_and_loss(self, x, y, **kwargs):
         """
         :param y:        correct labels if untargeted else target labels
         """
-
         logits = self.predict(x, **kwargs)
         # EDIT: binary classification
         if logits.size(-1) == 1:
@@ -88,10 +88,8 @@ class SquareAttack:
             if not self.targeted:
                 if self.loss == "ce":
                     return y_corr, -1.0 * xent
-                elif self.loss == "margin":
-                    return y_corr, y_corr
-            else:
-                return -y_corr, xent
+                return y_corr, y_corr
+            return -y_corr, xent
 
         xent = F.cross_entropy(logits, y, reduction="none")
         u = torch.arange(x.shape[0])
@@ -102,10 +100,8 @@ class SquareAttack:
         if not self.targeted:
             if self.loss == "ce":
                 return y_corr - y_others, -1.0 * xent
-            elif self.loss == "margin":
-                return y_corr - y_others, y_corr - y_others
-        else:
-            return y_others - y_corr, xent
+            return y_corr - y_others, y_corr - y_others
+        return y_others - y_corr, xent
 
     def init_hyperparam(self, x):
         assert self.norm in ["Linf", "L2", "L1"]
@@ -254,7 +250,6 @@ class SquareAttack:
 
     def attack_single_run(self, x, y, **kwargs_orig):
         with torch.no_grad():
-            adv = x.clone()
             c, h, w = x.shape[1:]
             n_features = c * h * w
             n_ex_total = x.shape[0]
@@ -273,6 +268,7 @@ class SquareAttack:
 
                 for i_iter in range(self.n_queries):
                     idx_to_fool = (margin_min > 0.0).nonzero().squeeze()
+                    idx_to_fool = idx_to_fool.view(-1)
 
                     kwargs = mask_kwargs(kwargs_orig, idx_to_fool)
 
@@ -531,7 +527,6 @@ class SquareAttack:
                 x_best = x + delta_init + r_best
                 margin_min, loss_min = self.margin_and_loss(x_best, y, **kwargs)
                 n_queries = torch.ones(x.shape[0]).to(self.device)
-                s_init = int(math.sqrt(self.p_init * n_features / c))
 
                 for i_iter in range(self.n_queries):
                     idx_to_fool = (margin_min > 0.0).nonzero().squeeze()
@@ -664,11 +659,7 @@ class SquareAttack:
                             "- max pert={:.3f}".format(
                                 norms_image.max().item()
                             ),
-                            #'- old pert={:.3f}'.format(norms_image_old.max().item())
                         )
-
-                    assert (x_new != x_new).sum() == 0
-                    assert (x_best != x_best).sum() == 0
 
                     if ind_succ.numel() == n_ex_total:
                         break
@@ -766,6 +757,5 @@ class SquareAttack:
 
         if not self.return_all:
             return adv
-        else:
-            print("returning final points")
-            return adv_all
+        print("returning final points")
+        return adv_all
