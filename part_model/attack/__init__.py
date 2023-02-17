@@ -6,6 +6,7 @@ import math
 
 from torch import nn
 
+from DINO.models.dino.dino import SetCriterion
 import part_model.models as pm_models
 from part_model.attack.auto import AutoAttackModule
 from part_model.attack.auto_square import AutoAttackSPModule
@@ -24,12 +25,16 @@ from part_model.utils.loss import (
     SegGuidedCELoss,
     SemiSumLinearLoss,
     SemiSumLoss,
+    get_dino_loss_params
 )
-
 
 def _get_loss(args, option):
     if "seg-only" in args.experiment:
-        loss = PixelwiseCELoss(reduction="pixelmean").cuda(args.gpu)
+        if args.obj_det_arch == "dino":
+            matcher, weight_dict, losses = get_dino_loss_params(args)
+            loss = SetCriterion(args.seg_labels, matcher, weight_dict, args.focal_alpha, losses)
+        else:
+            loss = PixelwiseCELoss(reduction="pixelmean").cuda(args.gpu)
     elif option == "both":
         loss = [
             SemiSumLoss(seg_const=0).cuda(args.gpu),

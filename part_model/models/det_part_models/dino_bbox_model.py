@@ -54,7 +54,6 @@ class DinoBoundingBoxModel(nn.Module):
             backbone,
             transformer,
             num_classes=args.seg_labels,
-            # num_classes=num_classes,
             num_queries=args.num_queries,
             aux_loss=True,
             iter_update=True,
@@ -104,6 +103,7 @@ class DinoBoundingBoxModel(nn.Module):
         dino_targets=None,
         need_tgt_for_training: bool = False,
         return_mask: bool = False,
+        return_mask_only: bool = False,
     ) -> Logits | tuple[Logits, torch.Tensor]:
         """Forward pass of sequential DINO part model."""
         # Object Detection part
@@ -114,6 +114,9 @@ class DinoBoundingBoxModel(nn.Module):
         else:
             dino_outputs = self.object_detector(nested_tensors)
 
+        if return_mask_only:
+            return dino_outputs
+        
         # TODO(chawins@): We can consider not taking softmax if we have trouble
         # with attack during adversarial training not working well, or we can
         # use sigmoid to better replicate object detection models.

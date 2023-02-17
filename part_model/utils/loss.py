@@ -419,7 +419,11 @@ class SemiSegMATLoss(nn.Module):
 
 def get_train_criterion(args):
     if "seg-only" in args.experiment:
-        criterion = PixelwiseCELoss().cuda(args.gpu)
+        if args.obj_det_arch == "dino":
+            matcher, weight_dict, losses = get_dino_loss_params(args)
+            criterion = SetCriterion(args.seg_labels, matcher, weight_dict, args.focal_alpha, losses)
+        else:
+            criterion = PixelwiseCELoss().cuda(args.gpu)
     else:
         criterion = nn.CrossEntropyLoss().cuda(args.gpu)
     train_criterion = criterion
@@ -440,65 +444,10 @@ def get_train_criterion(args):
             train_criterion = SemiKeypointLoss(seg_const=args.seg_const_trn)
 
         if args.obj_det_arch == "dino":
-            losses = ["labels", "boxes", "cardinality"]
-
-            matcher = build_matcher(args)
-            # prepare weight dict
-            weight_dict = {
-                "loss_ce": args.cls_loss_coef,
-                "loss_bbox": args.bbox_loss_coef,
-            }
-            weight_dict["loss_giou"] = args.giou_loss_coef
-            clean_weight_dict_wo_dn = copy.deepcopy(weight_dict)
-
-            # for DN training
-            if args.use_dn:
-                weight_dict["loss_ce_dn"] = args.cls_loss_coef
-                weight_dict["loss_bbox_dn"] = args.bbox_loss_coef
-                weight_dict["loss_giou_dn"] = args.giou_loss_coef
-
-            if args.masks:
-                weight_dict["loss_mask"] = args.mask_loss_coef
-                weight_dict["loss_dice"] = args.dice_loss_coef
-            clean_weight_dict = copy.deepcopy(weight_dict)
-
-            # TODO(nab-126@): this is a hack
-            if args.aux_loss:
-                aux_weight_dict = {}
-                for i in range(args.dec_layers - 1):
-                    aux_weight_dict.update(
-                        {k + f"_{i}": v for k, v in clean_weight_dict.items()}
-                    )
-                weight_dict.update(aux_weight_dict)
-
-            if args.two_stage_type != "no":
-                interm_weight_dict = {}
-                try:
-                    no_interm_box_loss = args.no_interm_box_loss
-                except:
-                    no_interm_box_loss = False
-                _coeff_weight_dict = {
-                    "loss_ce": 1.0,
-                    "loss_bbox": 1.0 if not no_interm_box_loss else 0.0,
-                    "loss_giou": 1.0 if not no_interm_box_loss else 0.0,
-                }
-                try:
-                    interm_loss_coef = args.interm_loss_coef
-                except:
-                    interm_loss_coef = 1.0
-                interm_weight_dict.update(
-                    {
-                        f"{k}_interm": v
-                        * interm_loss_coef
-                        * _coeff_weight_dict[k]
-                        for k, v in clean_weight_dict_wo_dn.items()
-                    }
-                )
-                weight_dict.update(interm_weight_dict)
-
+            matcher, weight_dict, losses = get_dino_loss_params(args)
             if args.adv_train == "trades":
                 train_criterion = SemiBBOXTRADESLoss(
-                    args.num_classes,
+                    args.seg_labels,
                     matcher=matcher,
                     weight_dict=weight_dict,
                     focal_alpha=args.focal_alpha,
@@ -508,7 +457,6 @@ def get_train_criterion(args):
                     beta=args.adv_beta,
                 )
             else:
-                # import pdb; pdb.set_trace()
                 train_criterion = SemiBBOXLoss(
                     args.seg_labels,
                     matcher=matcher,
@@ -517,15 +465,6 @@ def get_train_criterion(args):
                     losses=losses,
                     seg_const=args.seg_const_trn,
                 )
-                # train_criterion = SemiBBOXLoss(
-                #     args.num_classes,
-                #     matcher=matcher,
-                #     weight_dict=weight_dict,
-                #     focal_alpha=args.focal_alpha,
-                #     losses=losses,
-                #     seg_const=args.seg_const_trn,
-                # )
-
         else:
             train_criterion = SemiSumLoss(seg_const=args.seg_const_trn)
     train_criterion = train_criterion.cuda(args.gpu)
@@ -660,3 +599,66 @@ class SemiBBOXTRADESLoss(SetCriterion):
         )
 
         return loss
+
+
+
+def get_dino_loss_params(args):
+    losses = ["labels", "boxes", "cardinality"]
+
+    matcher = build_matcher(args)
+    # prepare weight dict
+    weight_dict = {
+        "loss_ce": args.cls_loss_coef,
+        "loss_bbox": args.bbox_loss_coef,
+    }
+    weight_dict["loss_giou"] = args.giou_loss_coef
+    clean_weight_dict_wo_dn = copy.deepcopy(weight_dict)
+
+    # for DN training
+    if args.use_dn:
+        weight_dict["loss_ce_dn"] = args.cls_loss_coef
+        weight_dict["loss_bbox_dn"] = args.bbox_loss_coef
+        weight_dict["loss_giou_dn"] = args.giou_loss_coef
+
+    if args.masks:
+        weight_dict["loss_mask"] = args.mask_loss_coef
+        weight_dict["loss_dice"] = args.dice_loss_coef
+    clean_weight_dict = copy.deepcopy(weight_dict)
+
+    # TODO(nab-126@): this is a hack
+    if args.aux_loss:
+        aux_weight_dict = {}
+        for i in range(args.dec_layers - 1):
+            aux_weight_dict.update(
+                {k + f"_{i}": v for k, v in clean_weight_dict.items()}
+            )
+        weight_dict.update(aux_weight_dict)
+
+    if args.two_stage_type != "no":
+        interm_weight_dict = {}
+        try:
+            no_interm_box_loss = args.no_interm_box_loss
+        except:
+            no_interm_box_loss = False
+        _coeff_weight_dict = {
+            "loss_ce": 1.0,
+            "loss_bbox": 1.0 if not no_interm_box_loss else 0.0,
+            "loss_giou": 1.0 if not no_interm_box_loss else 0.0,
+        }
+        try:
+            interm_loss_coef = args.interm_loss_coef
+        except:
+            interm_loss_coef = 1.0
+        interm_weight_dict.update(
+            {
+                f"{k}_interm": v
+                * interm_loss_coef
+                * _coeff_weight_dict[k]
+                for k, v in clean_weight_dict_wo_dn.items()
+            }
+        )
+        weight_dict.update(interm_weight_dict)
+
+        
+    return matcher, weight_dict, losses
+
