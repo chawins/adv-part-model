@@ -202,8 +202,8 @@ def main() -> None:
     # Running evaluation
     for attack in eval_attack:
         # import pdb; pdb.set_trace()
-        # TODO: remove next line; only for debugging
-        if attack[0] == "no_attack": continue
+        # DEBUG: remove next line; only for debugging
+        # if attack[0] == "no_attack": continue
 
         # Use DataParallel (not distributed) model for AutoAttack.
         # Otherwise, DDP model can get timeout or c10d failure.
