@@ -30,9 +30,14 @@ class DinoBoundingBoxModel(nn.Module):
         self._sort_dino_outputs = "sort_dino_outputs" in args.experiment
         self._num_queries = args.num_queries
 
+        # Temporary model options
+        self._use_sigmoid = "sig" in args.experiment
+
         backbone = build_backbone(args)
         transformer = build_deformable_transformer(args)
 
+        # TODO(nab-126@): Remove the try/except block. Try to never use
+        # catch-all except.
         try:
             match_unstable_error = args.match_unstable_error
             dn_labelbook_size = args.dn_labelbook_size
@@ -78,23 +83,27 @@ class DinoBoundingBoxModel(nn.Module):
             dn_labelbook_size=dn_labelbook_size,
         )
 
-        input_dim = (
-            args.num_queries * (args.seg_labels + 4)
-            if not self._use_conv1d
-            else 10 * (args.seg_labels)
-        )
+        feature_dim: int = args.seg_labels + 4
+        hidden_dim1: int = 16
+        hidden_dim2: int = 64
+        if self._use_conv1d:
+            first_layer = nn.Conv1d(
+                args.num_queries, hidden_dim1, feature_dim, stride=feature_dim
+            )
+            input_dim = args.num_queries * hidden_dim1
+        else:
+            first_layer = nn.Identity()
+            input_dim = args.num_queries * feature_dim
 
-        # how did we get 50 here
+        # Input to core model is [batch_size, num_queries, num_classes + 4]
         self.core_model = nn.Sequential(
-            nn.Conv1d(args.num_queries, 10, 5)
-            if self._use_conv1d
-            else nn.Identity(),
+            first_layer,
             nn.Flatten(),
             nn.BatchNorm1d(input_dim),
-            nn.Linear(input_dim, 50),
+            nn.Linear(input_dim, hidden_dim2),
             nn.ReLU(),
-            nn.BatchNorm1d(50),
-            nn.Linear(50, args.num_classes),
+            nn.BatchNorm1d(hidden_dim2),
+            nn.Linear(hidden_dim2, args.num_classes),
         )
 
     def forward(
@@ -114,21 +123,23 @@ class DinoBoundingBoxModel(nn.Module):
         else:
             dino_outputs = self.object_detector(nested_tensors)
 
-        # TODO(chawins@): We can consider not taking softmax if we have trouble
-        # with attack during adversarial training not working well, or we can
-        # use sigmoid to better replicate object detection models.
-        dino_probs = F.softmax(dino_outputs["pred_logits"], dim=-1)
+        if self._use_sigmoid:
+            # We can consider not taking softmax if we have trouble
+            # with attack during adversarial training not working well, or we can
+            # use sigmoid to better replicate object detection models.
+            dino_probs = F.sigmoid(dino_outputs["pred_logits"])
+        else:
+            dino_probs = F.softmax(dino_outputs["pred_logits"], dim=-1)
         dino_boxes = dino_outputs["pred_boxes"]
 
         if self._sort_dino_outputs:
             # TODO(nabeel@): Don't leave unused variables (use "_") and
             # remove commneted out line in code.
             batch_size, _, num_classes = dino_probs.shape
-            topk_values, topk_indexes = torch.topk(
+            _, topk_indexes = torch.topk(
                 dino_probs.view(batch_size, -1), self._num_queries, dim=1
             )
             topk_boxes = topk_indexes // num_classes
-            # labels = top_indexes % out_logits.shape[2]
             topk_boxes.unsqueeze_(-1)
             dino_probs = torch.gather(
                 dino_probs, 1, topk_boxes.repeat(1, 1, num_classes)
