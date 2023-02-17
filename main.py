@@ -382,12 +382,12 @@ def _validate(val_loader, model, criterion, attack):
     end = time.time()
 
     if args.calculate_map:
-        map_metric = MeanAveragePrecision()
+        map_metric = MeanAveragePrecision().cuda(args.gpu)
         postprocessors = {
             "bbox": PostProcess(
                 num_select=args.num_select,
                 nms_iou_threshold=args.nms_iou_threshold,
-            )
+            ).cuda(args.gpu)
         }
 
     for i, samples in enumerate(val_loader):
