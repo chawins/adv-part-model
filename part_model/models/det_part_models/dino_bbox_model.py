@@ -17,6 +17,45 @@ from part_model.utils.types import BatchImages, Logits
 logger = logging.getLogger(__name__)
 
 
+class FeatureExtractor(nn.Module):
+    """Feature extractor for DINO."""
+
+    def __init__(self, args, hidden_dim: int = 16) -> None:
+        """Initialize FeatureExtractor."""
+        super().__init__()
+        feature_dim: int = args.seg_labels + 4
+        self.layer, self.pooling = None, None
+        self.output_dim = feature_dim * args.num_queries
+        # TODO(chawins@): Consider self-attention layer.
+        if "conv1d" in args.experiment:
+            self.layer = nn.Conv1d(feature_dim, hidden_dim, 1)
+            self.output_dim = hidden_dim * args.num_queries
+        if "pool" in args.experiment:
+            self.pooling = nn.AdaptiveMaxPool1d(1)
+            self.output_dim = hidden_dim
+
+    def forward(self, inputs: torch.FloatTensor) -> torch.FloatTensor:
+        """Forward pass.
+
+        Args:
+            inputs: [batch_size, num_queries, feature_dim]
+
+        Returns:
+            Outputs of vary shapes depending on the layers.
+        """
+        # x.shape: [batch_size, num_queries, feature_dim]
+        if self.layer is not None:
+            inputs = inputs.permute(0, 2, 1)
+            # Output shape: [batch_size, hidden_dim, num_queries]
+            inputs = self.layer(inputs)
+        if self.pooling is not None:
+            if self.layer is None:
+                inputs = inputs.permute(0, 2, 1)
+            # Output shape: [batch_size, hidden_dim, 1]
+            inputs = self.pooling(inputs)
+        return inputs
+
+
 class DinoBoundingBoxModel(nn.Module):
     """DINO as part model."""
 
@@ -81,24 +120,16 @@ class DinoBoundingBoxModel(nn.Module):
             dn_labelbook_size=dn_labelbook_size,
         )
 
-        feature_dim: int = args.seg_labels + 4
         hidden_dim1: int = 16
         hidden_dim2: int = 64
-        if self._use_conv1d:
-            first_layer = nn.Conv1d(
-                args.num_queries, hidden_dim1, feature_dim, stride=feature_dim
-            )
-            input_dim = args.num_queries * hidden_dim1
-        else:
-            first_layer = nn.Identity()
-            input_dim = args.num_queries * feature_dim
+        first_layer = FeatureExtractor(args, hidden_dim1)
 
         # Input to core model is [batch_size, num_queries, num_classes + 4]
         self.core_model = nn.Sequential(
             first_layer,
             nn.Flatten(),
-            nn.BatchNorm1d(input_dim),
-            nn.Linear(input_dim, hidden_dim2),
+            nn.BatchNorm1d(first_layer.output_dim),
+            nn.Linear(first_layer.output_dim, hidden_dim2),
             nn.ReLU(),
             nn.BatchNorm1d(hidden_dim2),
             nn.Linear(hidden_dim2, args.num_classes),
@@ -144,7 +175,6 @@ class DinoBoundingBoxModel(nn.Module):
             )
             dino_boxes = torch.gather(dino_boxes, 1, topk_boxes.repeat(1, 1, 4))
 
-        # features = torch.cat([dino_probs, dino_boxes * 2 - 1], dim=2)
         features = torch.cat([dino_probs, dino_boxes], dim=2)
 
         # Pass to classifier model
