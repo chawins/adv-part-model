@@ -96,7 +96,7 @@ def load_checkpoint(
             new_state_dict[new_name] = weights
         model.load_state_dict(new_state_dict, strict=False)
 
-    if not args.load_weight_only or resume_opt_state:
+    if not args.load_weight_only and resume_opt_state:
         args.start_epoch = checkpoint["epoch"]
         optimizer.load_state_dict(checkpoint["optimizer"])
         scaler.load_state_dict(checkpoint["scaler"])
