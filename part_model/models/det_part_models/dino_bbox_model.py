@@ -6,6 +6,7 @@ import logging
 
 import torch
 import torch.nn.functional as F
+import torchvision
 from torch import nn
 
 from DINO.models.dino.backbone import Backbone, Joiner, build_position_encoding
@@ -173,13 +174,18 @@ def _build_backbone(args):
     return_interm_indices = args.return_interm_indices
     assert return_interm_indices in [[0, 1, 2, 3], [1, 2, 3], [3]]
 
+    if args.batch_norm_type == "FrozenBatchNorm2d":
+        batch_norm_layer = torchvision.ops.FrozenBatchNorm2d
+    else:
+        batch_norm_layer = getattr(torch.nn, args.batch_norm_type)
+
     if args.backbone in ["resnet50", "resnet101"]:
         backbone = Backbone(
             args.backbone,
             train_backbone,
             args.dilation,
             return_interm_indices,
-            batch_norm=getattr(torch.nn, args.batch_norm_type),
+            batch_norm=batch_norm_layer,
         )
         bb_num_channels = backbone.num_channels
     else:
