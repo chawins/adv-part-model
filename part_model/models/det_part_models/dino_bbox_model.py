@@ -96,7 +96,6 @@ class DinoBoundingBoxModel(nn.Module):
             backbone,
             transformer,
             num_classes=args.seg_labels,
-            # num_classes=num_classes,
             num_queries=args.num_queries,
             aux_loss=True,
             iter_update=True,
@@ -142,6 +141,7 @@ class DinoBoundingBoxModel(nn.Module):
         dino_targets=None,
         need_tgt_for_training: bool = False,
         return_mask: bool = False,
+        return_mask_only: bool = False,
     ) -> Logits | tuple[Logits, torch.Tensor]:
         """Forward pass of sequential DINO part model."""
         # Object Detection part

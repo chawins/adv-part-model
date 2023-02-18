@@ -22,9 +22,10 @@ import wandb
 from torch.backends import cudnn
 from torch.cuda import amp
 
-# from torchmetrics import IoU as IoU   # Use this for older version of torchmetrics
-from torchmetrics.classification import MulticlassJaccardIndex as IoU
-from torchmetrics.detection.mean_ap import MeanAveragePrecision
+from torchmetrics import IoU as IoU   # Use this for older version of torchmetrics
+# from torchmetrics.classification import MulticlassJaccardIndex as IoU
+# from torchmetrics.detection.mean_ap import MeanAveragePrecision
+from torchmetrics.detection import MAP as MeanAveragePrecision
 from torchvision.ops import box_convert
 from torchvision.utils import save_image
 
@@ -86,6 +87,8 @@ def main() -> None:
     # Debugging dataloader
     if args.debug:
         debug_dino_dataloader(train_loader)
+        # debug_dino_dataloader(val_loader)
+        # debug_dino_dataloader(test_loader)
 
     # Create model
     print("=> Creating model...")
@@ -140,14 +143,24 @@ def main() -> None:
 
             if (epoch + 1) % 2 == 0:
                 val_stats = _validate(val_loader, model, criterion, no_attack)
-                clean_acc1, acc1 = val_stats["acc1"], None
-                is_best = clean_acc1 > BEST_ACC
+
+                # TODO: clean/unify
+                if 'seg-only' in args.experiment and args.obj_det_arch == 'dino':
+                    clean_acc1, acc1 = val_stats["map"], None
+                    is_best = clean_acc1 > BEST_ACC
+                else:
+                    clean_acc1, acc1 = val_stats["acc1"], None
+                    is_best = clean_acc1 > BEST_ACC
 
                 if args.adv_train != "none":
                     adv_val_stats = _validate(
                         val_loader, model, criterion, val_attack
                     )
-                    acc1 = adv_val_stats["acc1"]
+                    # TODO: clean/unify
+                    if 'seg-only' in args.experiment and args.obj_det_arch == 'dino':
+                        acc1 = adv_val_stats["map"]
+                    else:
+                        acc1 = adv_val_stats["acc1"]
                     val_stats["adv_acc1"] = acc1
                     val_stats["adv_loss"] = adv_val_stats["loss"]
                     is_best = clean_acc1 >= acc1 > BEST_ACC
@@ -201,10 +214,6 @@ def main() -> None:
 
     # Running evaluation
     for attack in eval_attack:
-        # import pdb; pdb.set_trace()
-        # DEBUG: remove next line; only for debugging
-        # if attack[0] == "no_attack": continue
-
         # Use DataParallel (not distributed) model for AutoAttack.
         # Otherwise, DDP model can get timeout or c10d failure.
         stats = _validate(test_loader, model, criterion, attack[1])
@@ -240,6 +249,8 @@ def _train(train_loader, model, criterion, attack, optimizer, scaler, epoch):
     )
     compute_acc = get_compute_acc(args)
     seg_only = "seg-only" in args.experiment
+    if args.obj_det_arch == 'dino' and seg_only:
+        compute_acc = lambda x, y: torch.tensor(0) # dummy
 
     # Switch to train mode
     model.train()
@@ -283,16 +294,27 @@ def _train(train_loader, model, criterion, attack, optimizer, scaler, epoch):
                     "dino_targets": target_bbox,
                     "need_tgt_for_training": need_tgt_for_training,
                     "return_mask": False,
+                    "return_mask_only": seg_only,
                 }
-                images = attack(images, targets, **forward_args)
+                if seg_only:
+                    images = attack(images, target_bbox, **forward_args)
+                else:
+                    images = attack(images, targets, **forward_args)
+                
                 if args.adv_train in ("trades", "mat"):
                     masks = torch.cat([masks.detach(), masks.detach()], dim=0)
                     target_bbox = [*target_bbox, *target_bbox]
-                forward_args[
-                    "return_mask"
-                ] = True  # change to true to get dino outputs for map calculation
-                outputs, dino_outputs = model(images, **forward_args)
-                loss = criterion(outputs, dino_outputs, target_bbox, targets)
+                
+
+                if seg_only:
+                    outputs = model(images, **forward_args)        
+                    loss = criterion(outputs, target_bbox)
+                else:
+                    forward_args[
+                        "return_mask"
+                    ] = True  # change to true to get dino outputs for map calculation
+                    outputs, dino_outputs = model(images, **forward_args)                
+                    loss = criterion(outputs, dino_outputs, target_bbox, targets)
 
                 if args.adv_train in ("trades", "mat"):
                     outputs = outputs[batch_size:]
@@ -373,6 +395,16 @@ def _validate(val_loader, model, criterion, attack):
     )
     compute_acc = get_compute_acc(args)
     compute_iou = IoU(args.seg_labels).cuda(args.gpu)
+    # if args.calculate_map:
+    if (args.obj_det_arch == 'dino' and seg_only) or args.calculate_map:
+        compute_acc = lambda x, y: torch.tensor(0) # dummy
+        map_metric = MeanAveragePrecision()
+        postprocessors = {
+            "bbox": PostProcess(
+                num_select=args.num_select,
+                nms_iou_threshold=args.nms_iou_threshold,
+            ).cuda(args.gpu)
+        }
 
     # switch to evaluate mode
     model.eval()
@@ -381,22 +413,13 @@ def _validate(val_loader, model, criterion, attack):
 
     end = time.time()
 
-    if args.calculate_map:
-        map_metric = MeanAveragePrecision().cuda(args.gpu)
-        postprocessors = {
-            "bbox": PostProcess(
-                num_select=args.num_select,
-                nms_iou_threshold=args.nms_iou_threshold,
-            ).cuda(args.gpu)
-        }
-
     for i, samples in enumerate(val_loader):
         # measure data loading time
         data_time.update(time.time() - end)
         if len(samples) == 2:
             images, targets = samples
             segs = None
-        elif seg_only:
+        elif seg_only and args.obj_det_arch != 'dino':
             images, targets, _ = samples
             segs = None
         else:
@@ -440,20 +463,27 @@ def _validate(val_loader, model, criterion, attack):
                     "dino_targets": target_bbox,
                     "need_tgt_for_training": need_tgt_for_training,
                     "return_mask": False,
+                    "return_mask_only": seg_only
                 }
-                images = attack(images, targets, **forward_args)
-                forward_args[
-                    "return_mask"
-                ] = True  # change to true to get dino outputs for map calculation
-                outputs, dino_outputs = model(images, **forward_args)
-                loss = criterion(outputs, targets)
 
-                if args.calculate_map:
+                if seg_only:
+                    images = attack(images, target_bbox, **forward_args)
+                    outputs = model(images, **forward_args)        
+                    loss = criterion(outputs, target_bbox)
+                else:
+                    images = attack(images, targets, **forward_args)
+                    forward_args[
+                        "return_mask"
+                    ] = True  # change to true to get dino outputs for map calculation
+                    outputs, dino_outputs = model(images, **forward_args)                
+                    loss = criterion(outputs, dino_outputs, target_bbox, targets)
+
+                if seg_only or args.calculate_map:
                     orig_target_sizes = torch.stack(
                         [t["orig_size"] for t in target_bbox], dim=0
                     )
                     results = postprocessors["bbox"](
-                        dino_outputs, orig_target_sizes
+                        outputs, orig_target_sizes
                     )
 
                     # target_bbox_copy = copy.deepcopy(targets)
@@ -510,7 +540,7 @@ def _validate(val_loader, model, criterion, attack):
         acc1 = compute_acc(outputs, targets)
         losses.update(loss.item(), batch_size)
         top1.update(acc1.item(), batch_size)
-        if seg_only:
+        if seg_only and args.obj_det_arch != "dino":
             iou.update(compute_iou(outputs, targets).item(), images.size(0))
 
         # measure elapsed time
@@ -529,15 +559,16 @@ def _validate(val_loader, model, criterion, attack):
     if pacc.count > 0:
         pacc.synchronize()
         print(f"Pixelwise accuracy: {pacc.avg:.4f}")
-    if seg_only:
-        iou.synchronize()
-        print(f"IoU: {iou.avg:.4f}")
-
-    if args.calculate_map:
-        print(" * IoU metric")
-        print(map_metric.compute())
-
-    return {"acc1": top1.avg, "loss": losses.avg, "pixel-acc": pacc.avg}
+    if seg_only or args.calculate_map:
+        if args.obj_det_arch == "dino":
+            print(" * mAP metric")
+            map_dict = map_metric.compute()
+            print(map_dict)
+        else:
+            iou.synchronize()
+            print(f"IoU: {iou.avg:.4f}")
+        
+    return {"acc1": top1.avg, "loss": losses.avg, "pixel-acc": pacc.avg, "map": map_dict["map"].item()}
 
 
 if __name__ == "__main__":

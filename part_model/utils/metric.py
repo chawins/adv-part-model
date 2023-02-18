@@ -102,14 +102,12 @@ def accuracy(output, target, topk=(1,)):
         # Return only top1
         return res[0]
 
-
 def pixel_accuracy(output, target):
     with torch.no_grad():
         pred = output.argmax(1)
         acc = (pred == target).float().mean() * 100
         return acc
-
-
+    
 def get_compute_acc(args):
     if "seg-only" in args.experiment:
         return pixel_accuracy

@@ -24,12 +24,17 @@ from part_model.utils.loss import (
     SegGuidedCELoss,
     SemiSumLinearLoss,
     SemiSumLoss,
+    BBOXLoss,
+    get_dino_loss_params
 )
-
 
 def _get_loss(args, option):
     if "seg-only" in args.experiment:
-        loss = PixelwiseCELoss(reduction="pixelmean").cuda(args.gpu)
+        if args.obj_det_arch == "dino":
+            matcher, weight_dict, losses = get_dino_loss_params(args)
+            loss = BBOXLoss(args.seg_labels, matcher, weight_dict, args.focal_alpha, losses)
+        else:
+            loss = PixelwiseCELoss(reduction="pixelmean").cuda(args.gpu)
     elif option == "both":
         loss = [
             SemiSumLoss(seg_const=0).cuda(args.gpu),

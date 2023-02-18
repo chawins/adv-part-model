@@ -1,5 +1,21 @@
 import torchvision
 
+CLASSES = {
+    "Quadruped": 4,
+    "Biped": 5,
+    "Fish": 4,
+    "Bird": 5,
+    "Snake": 2,
+    "Reptile": 4,
+    "Car": 3,
+    "Bicycle": 4,
+    "Boat": 2,
+    "Aeroplane": 5,
+    "Bottle": 2,
+}
+CLASSES = CLASSES.keys()
+CLASSES = sorted(CLASSES)
+
 def debug_dino_dataloader(loader):
     for i, samples in enumerate(loader):
         images, target_bbox, targets = samples
@@ -36,6 +52,7 @@ def debug_dino_dataloader(loader):
             img_with_boxes / 255,
             f"example_images/img_{debug_index}_with_bbox.png",
         )
+        print('image label:', CLASSES[targets[debug_index]])
         import pdb
 
         pdb.set_trace()
