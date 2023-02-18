@@ -471,20 +471,22 @@ def _validate(val_loader, model, criterion, attack):
                 # return_mask_only to control the output
                 if seg_only:
                     images = attack(images, target_bbox, **forward_args)
-                    outputs = model(images, **forward_args)
-                    loss = criterion(outputs, target_bbox)
+                    dino_outputs = model(images, **forward_args)
+                    loss = criterion(dino_outputs, target_bbox)
                 else:
                     images = attack(images, targets, **forward_args)
                     # Change to true to get dino outputs for map calculation
                     forward_args["return_mask"] = True
-                    outputs, _ = model(images, **forward_args)
+                    outputs, dino_outputs = model(images, **forward_args)
                     loss = criterion(outputs, targets)
 
                 if seg_only or args.calculate_map:
                     orig_target_sizes = torch.stack(
                         [t["orig_size"] for t in target_bbox], dim=0
                     )
-                    results = postprocessors["bbox"](outputs, orig_target_sizes)
+                    results = postprocessors["bbox"](
+                        dino_outputs, orig_target_sizes
+                    )
 
                     # target_bbox_copy = copy.deepcopy(targets)
                     for ti, t in enumerate(target_bbox):
