@@ -22,9 +22,10 @@ import wandb
 from torch.backends import cudnn
 from torch.cuda import amp
 
-# from torchmetrics import IoU as IoU   # Use this for older version of torchmetrics
-from torchmetrics.classification import MulticlassJaccardIndex as IoU
-from torchmetrics.detection.mean_ap import MeanAveragePrecision
+from torchmetrics import IoU as IoU   # Use this for older version of torchmetrics
+# from torchmetrics.classification import MulticlassJaccardIndex as IoU
+# from torchmetrics.detection.mean_ap import MeanAveragePrecision
+from torchmetrics.detection import MAP as MeanAveragePrecision
 from torchvision.ops import box_convert
 from torchvision.utils import save_image
 
@@ -395,14 +396,14 @@ def _validate(val_loader, model, criterion, attack):
     compute_acc = get_compute_acc(args)
     compute_iou = IoU(args.seg_labels).cuda(args.gpu)
     # if args.calculate_map:
-    if args.obj_det_arch == 'dino' and seg_only:
+    if (args.obj_det_arch == 'dino' and seg_only) or args.calculate_map:
         compute_acc = lambda x, y: torch.tensor(0) # dummy
         map_metric = MeanAveragePrecision()
         postprocessors = {
             "bbox": PostProcess(
                 num_select=args.num_select,
                 nms_iou_threshold=args.nms_iou_threshold,
-            )
+            ).cuda(args.gpu)
         }
 
     # switch to evaluate mode
@@ -477,7 +478,7 @@ def _validate(val_loader, model, criterion, attack):
                     outputs, dino_outputs = model(images, **forward_args)                
                     loss = criterion(outputs, dino_outputs, target_bbox, targets)
 
-                if seg_only:
+                if seg_only or args.calculate_map:
                     orig_target_sizes = torch.stack(
                         [t["orig_size"] for t in target_bbox], dim=0
                     )
@@ -558,7 +559,7 @@ def _validate(val_loader, model, criterion, attack):
     if pacc.count > 0:
         pacc.synchronize()
         print(f"Pixelwise accuracy: {pacc.avg:.4f}")
-    if seg_only:
+    if seg_only or args.calculate_map:
         if args.obj_det_arch == "dino":
             print(" * mAP metric")
             map_dict = map_metric.compute()

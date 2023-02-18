@@ -97,7 +97,7 @@ def load_checkpoint(
             new_state_dict[new_name] = weights
         model.load_state_dict(new_state_dict, strict=False)
 
-    if not args.load_weight_only or resume_opt_state:
+    if not args.load_weight_only and resume_opt_state:
         args.start_epoch = checkpoint["epoch"]
         optimizer.load_state_dict(checkpoint["optimizer"])
         scaler.load_state_dict(checkpoint["scaler"])
@@ -308,9 +308,12 @@ def build_classifier(args):
         model_path = f"{args.output_dir}/checkpoint_best.pt"
         resume_opt_state = False
     else:
+        # Try to resume training from the last checkpoint
         model_path = f"{args.output_dir}/checkpoint_last.pt"
         resume_opt_state = True
         if not args.resume_if_exist or not os.path.isfile(model_path):
+            # If resume_if_exist is False, or the last checkpoint does not
+            # exist, use user-specified checkpoint
             model_path = args.resume
             resume_opt_state = False
 

@@ -255,34 +255,46 @@ class AutoAttack:
                         # apgd on cross-entropy loss
                         self.apgd.loss = "ce"
                         self.apgd.seed = self.get_seed()
-                        adv_curr = self.apgd.perturb(x, y, **kwargs)  # cheap=True
+                        adv_curr = self.apgd.perturb(
+                            x, y, **kwargs
+                        )  # cheap=True
                     elif attack == "apgd-dlr":
                         # apgd on dlr loss
                         self.apgd.loss = "dlr"
                         self.apgd.seed = self.get_seed()
-                        adv_curr = self.apgd.perturb(x, y, **kwargs)  # cheap=True
+                        adv_curr = self.apgd.perturb(
+                            x, y, **kwargs
+                        )  # cheap=True
 
                     elif attack == "fab":
                         # fab
                         self.fab.targeted = False
                         self.fab.seed = self.get_seed()
-                        adv_curr = self.fab.perturb(x, y, **kwargs)  # cheap=True
+                        adv_curr = self.fab.perturb(
+                            x, y, **kwargs
+                        )  # cheap=True
 
                     elif attack == "square":
                         # square
                         self.square.seed = self.get_seed()
-                        adv_curr = self.square.perturb(x, y, **kwargs)  # cheap=True
+                        adv_curr = self.square.perturb(
+                            x, y, **kwargs
+                        )  # cheap=True
 
                     elif attack == "apgd-t":
                         # targeted apgd
                         self.apgd_targeted.seed = self.get_seed()
-                        adv_curr = self.apgd_targeted.perturb(x, y, **kwargs)  # cheap=True
+                        adv_curr = self.apgd_targeted.perturb(
+                            x, y, **kwargs
+                        )  # cheap=True
                     elif attack == "fab-t":
                         # fab targeted
                         self.fab.targeted = True
                         self.fab.n_restarts = 1
                         self.fab.seed = self.get_seed()
-                        adv_curr = self.fab.perturb(x, y, **kwargs)  # cheap=True
+                        adv_curr = self.fab.perturb(
+                            x, y, **kwargs
+                        )  # cheap=True
 
                     else:
                         raise ValueError("Attack not supported")
@@ -432,7 +444,6 @@ class AutoAttack:
                 self.attacks_to_run = ["apgd-ce", "apgd-t", "fab-t", "square"]
             else:
                 self.attacks_to_run = ["apgd-ce", "fab", "square"]
-                # self.attacks_to_run = ['fab']
             if self.norm in ["Linf", "L2"]:
                 self.apgd.n_restarts = 1
                 self.apgd_targeted.n_target_classes = 9
@@ -465,7 +476,7 @@ class AutoAttack:
             self.fab.n_target_classes = 9
             self.apgd_targeted.n_target_classes = 9
             self.square.n_queries = 5000
-            if not self.norm in ["Linf", "L2"]:
+            if self.norm not in ["Linf", "L2"]:
                 print(
                     '"{}" version is used with {} norm: please check'.format(
                         version, self.norm

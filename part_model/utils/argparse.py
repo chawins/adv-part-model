@@ -1,7 +1,9 @@
 """Utility functions for argument parsing."""
 
 import argparse
+
 from DINO.util.slconfig import DictAction
+
 
 def get_args_parser() -> argparse.ArgumentParser:
     """Create argparser for common main function."""
@@ -30,9 +32,12 @@ def get_args_parser() -> argparse.ArgumentParser:
     parser.add_argument("--start-epoch", default=0, type=int)
     parser.add_argument(
         "--batch-size",
-        default=256,
+        default=128,
         type=int,
-        help="mini-batch size per device.",
+        help=(
+            "Mini-batch size per device, i.e., total batch size is batch_size "
+            "* num gpus used for training."
+        ),
     )
     parser.add_argument("--full-precision", action="store_true")
     parser.add_argument("--warmup-epochs", default=0, type=int)
@@ -224,7 +229,9 @@ def get_args_parser() -> argparse.ArgumentParser:
         help="Architecture of object detection model.",
     )
     parser.add_argument(
-        "--use-imagenet-classes", action="store_true", help="Use imagenet classes instead of part imagenet classes"
+        "--use-imagenet-classes",
+        action="store_true",
+        help="If True, use imagenet classes instead of part imagenet classes.",
     )
     parser.add_argument(
         "--group-parts", action="store_true", help="Group part imagenet classes"

@@ -6,17 +6,54 @@ import logging
 
 import torch
 import torch.nn.functional as F
+import torchvision
 from torch import nn
 
-from DINO.models.dino.dino import (
-    DINO,
-    build_backbone,
-    build_deformable_transformer,
-)
+from DINO.models.dino.backbone import Backbone, Joiner, build_position_encoding
+from DINO.models.dino.dino import DINO, build_deformable_transformer
 from DINO.util.misc import NestedTensor
 from part_model.utils.types import BatchImages, Logits
 
 logger = logging.getLogger(__name__)
+
+
+class FeatureExtractor(nn.Module):
+    """Feature extractor for DINO."""
+
+    def __init__(self, args, hidden_dim: int = 16) -> None:
+        """Initialize FeatureExtractor."""
+        super().__init__()
+        feature_dim: int = args.seg_labels + 4
+        self.layer, self.pooling = None, None
+        self.output_dim = feature_dim * args.num_queries
+        # TODO(chawins@): Consider self-attention layer.
+        if "conv1d" in args.experiment:
+            self.layer = nn.Conv1d(feature_dim, hidden_dim, 1)
+            self.output_dim = hidden_dim * args.num_queries
+        if "pool" in args.experiment:
+            self.pooling = nn.AdaptiveMaxPool1d(1)
+            self.output_dim = hidden_dim
+
+    def forward(self, inputs: torch.FloatTensor) -> torch.FloatTensor:
+        """Forward pass.
+
+        Args:
+            inputs: [batch_size, num_queries, feature_dim]
+
+        Returns:
+            Outputs of vary shapes depending on the layers.
+        """
+        # x.shape: [batch_size, num_queries, feature_dim]
+        if self.layer is not None:
+            inputs = inputs.permute(0, 2, 1)
+            # Output shape: [batch_size, hidden_dim, num_queries]
+            inputs = self.layer(inputs)
+        if self.pooling is not None:
+            if self.layer is None:
+                inputs = inputs.permute(0, 2, 1)
+            # Output shape: [batch_size, hidden_dim, 1]
+            inputs = self.pooling(inputs)
+        return inputs
 
 
 class DinoBoundingBoxModel(nn.Module):
@@ -30,9 +67,14 @@ class DinoBoundingBoxModel(nn.Module):
         self._sort_dino_outputs = "sort_dino_outputs" in args.experiment
         self._num_queries = args.num_queries
 
-        backbone = build_backbone(args)
+        # Temporary model options
+        self._use_sigmoid = "sig" in args.experiment
+
+        backbone = _build_backbone(args)
         transformer = build_deformable_transformer(args)
 
+        # TODO(nab-126@): Remove the try/except block. Try to never use
+        # catch-all except.
         try:
             match_unstable_error = args.match_unstable_error
             dn_labelbook_size = args.dn_labelbook_size
@@ -77,22 +119,19 @@ class DinoBoundingBoxModel(nn.Module):
             dn_labelbook_size=dn_labelbook_size,
         )
 
-        input_dim = (
-            args.num_queries * (args.seg_labels + 4)
-            if not self._use_conv1d
-            else 10 * (args.seg_labels)
-        )
+        hidden_dim1: int = 16
+        hidden_dim2: int = 64
+        first_layer = FeatureExtractor(args, hidden_dim1)
 
+        # Input to core model is [batch_size, num_queries, num_classes + 4]
         self.core_model = nn.Sequential(
-            nn.Conv1d(args.num_queries, 10, 5)
-            if self._use_conv1d
-            else nn.Identity(),
+            first_layer,
             nn.Flatten(),
-            nn.BatchNorm1d(input_dim),
-            nn.Linear(input_dim, 50),
+            nn.BatchNorm1d(first_layer.output_dim),
+            nn.Linear(first_layer.output_dim, hidden_dim2),
             nn.ReLU(),
-            nn.BatchNorm1d(50),
-            nn.Linear(50, args.num_classes),
+            nn.BatchNorm1d(hidden_dim2),
+            nn.Linear(hidden_dim2, args.num_classes),
         )
 
     def forward(
@@ -113,31 +152,29 @@ class DinoBoundingBoxModel(nn.Module):
         else:
             dino_outputs = self.object_detector(nested_tensors)
 
-        if return_mask_only:
-            return dino_outputs
-        
-        # TODO(chawins@): We can consider not taking softmax if we have trouble
-        # with attack during adversarial training not working well, or we can
-        # use sigmoid to better replicate object detection models.
-        dino_probs = F.softmax(dino_outputs["pred_logits"], dim=-1)
+        if self._use_sigmoid:
+            # We can consider not taking softmax if we have trouble
+            # with attack during adversarial training not working well, or we can
+            # use sigmoid to better replicate object detection models.
+            dino_probs = F.sigmoid(dino_outputs["pred_logits"])
+        else:
+            dino_probs = F.softmax(dino_outputs["pred_logits"], dim=-1)
         dino_boxes = dino_outputs["pred_boxes"]
 
         if self._sort_dino_outputs:
             # TODO(nabeel@): Don't leave unused variables (use "_") and
             # remove commneted out line in code.
             batch_size, _, num_classes = dino_probs.shape
-            topk_values, topk_indexes = torch.topk(
+            _, topk_indexes = torch.topk(
                 dino_probs.view(batch_size, -1), self._num_queries, dim=1
             )
             topk_boxes = topk_indexes // num_classes
-            # labels = top_indexes % out_logits.shape[2]
             topk_boxes.unsqueeze_(-1)
             dino_probs = torch.gather(
                 dino_probs, 1, topk_boxes.repeat(1, 1, num_classes)
             )
             dino_boxes = torch.gather(dino_boxes, 1, topk_boxes.repeat(1, 1, 4))
 
-        # features = torch.cat([dino_probs, dino_boxes * 2 - 1], dim=2)
         features = torch.cat([dino_probs, dino_boxes], dim=2)
 
         # Pass to classifier model
@@ -146,3 +183,53 @@ class DinoBoundingBoxModel(nn.Module):
         if return_mask:
             return out, dino_outputs
         return out
+
+
+def _build_backbone(args):
+    """Build backbone for DINO. Modified from DINO/models/dino/backbone.py.
+
+    Useful args:
+        - backbone: backbone name
+        - lr_backbone:
+        - dilation
+        - return_interm_indices: available: [0,1,2,3], [1,2,3], [3]
+        - backbone_freeze_keywords:
+        - use_checkpoint: for swin only for now
+    """
+    position_embedding = build_position_encoding(args)
+    # This can be removed
+    train_backbone = args.lr_backbone > 0
+    if not train_backbone:
+        raise ValueError("Please set lr_backbone > 0")
+    return_interm_indices = args.return_interm_indices
+    assert return_interm_indices in [[0, 1, 2, 3], [1, 2, 3], [3]]
+
+    if args.batch_norm_type == "FrozenBatchNorm2d":
+        batch_norm_layer = torchvision.ops.FrozenBatchNorm2d
+    else:
+        batch_norm_layer = getattr(torch.nn, args.batch_norm_type)
+
+    if args.backbone in ["resnet50", "resnet101"]:
+        backbone = Backbone(
+            args.backbone,
+            train_backbone,
+            args.dilation,
+            return_interm_indices,
+            batch_norm=batch_norm_layer,
+        )
+        bb_num_channels = backbone.num_channels
+    else:
+        raise NotImplementedError(
+            "Only resnet50 and resnet101 are supported for now!"
+        )
+    assert len(bb_num_channels) == len(return_interm_indices), (
+        f"len(bb_num_channels) {len(bb_num_channels)} != "
+        f"len(return_interm_indices) {len(return_interm_indices)}"
+    )
+
+    model = Joiner(backbone, position_embedding)
+    model.num_channels = bb_num_channels
+    assert isinstance(
+        bb_num_channels, list
+    ), f"bb_num_channels is expected to be a List but {type(bb_num_channels)}!"
+    return model

@@ -17,16 +17,17 @@ PORT=1000$ID
 # DATASET=part-imagenet
 # DATAPATH=/data/shared/PartImageNet/
 # SEGPATH=$DATAPATH/PartSegmentations/All/
-# ============================== Part-ImageNet-BBox ============================== #
+# =========================== Part-ImageNet-BBox ============================ #
 DATASET="part-imagenet-bbox"
-DATAPATH=~/data/PartImageNet
+DATAPATH="$HOME/data/PartImageNet"
 SEGPATH="$DATAPATH/PartSegmentations/All/"
 # 0.0156862745, 0.03137254901, 0.06274509803
 EPS=0.03137254901
 
 EPOCHS=50
 
-# ### Data Prep
+### Data Prep
+# echo "Start data prep..."
 # mkdir $DATAPATH/PartBoxSegmentations/train/
 # mkdir $DATAPATH/PartBoxSegmentations/val/
 # mkdir $DATAPATH/PartBoxSegmentations/test/
@@ -38,7 +39,7 @@ EPOCHS=50
 # python3 prepare_part_imagenet_bbox.py --label-dir $DATAPATH --split train
 # python3 prepare_part_imagenet_bbox.py --label-dir $DATAPATH --split val
 # python3 prepare_part_imagenet_bbox.py --label-dir $DATAPATH --split test
-
+# echo "Done with data prep."
 
 ### Training
 EXP_NAME="part-seq-norm_img-semi"
@@ -160,8 +161,6 @@ CUDA_VISIBLE_DEVICES=$GPU torchrun \
     --config_file "DINO/config/DINO/DINO_4scale_increased_backbone_lr.py" \
     --options dn_scalar=100 dn_label_coef=1.0 dn_bbox_coef=1.0 &> $OUTPUT_DIR/pretrained/train_logs.txt
     
-    # --seg-labels 40 \
-
 # adv train dino bbox part model with 10-step PGD
 # CUDA_VISIBLE_DEVICES=$GPU torchrun \
 #     --standalone --nnodes=1 --max_restarts 0 --nproc_per_node=$NUM_GPU \
