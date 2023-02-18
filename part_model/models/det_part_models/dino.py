@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 
 import torch
-import torch.nn.functional as F
 from torch import nn
 
 from DINO.models.dino.dino import (
@@ -80,10 +79,10 @@ class DinoModel(nn.Module):
         masks=None,
         dino_targets=None,
         need_tgt_for_training: bool = False,
-        return_mask: bool = False,
-        return_mask_only: bool = False,
+        **kwargs,
     ) -> Logits | tuple[Logits, torch.Tensor]:
         """Forward pass of sequential DINO part model."""
+        _ = kwargs  # Unused
         # Object Detection part
         nested_tensors = NestedTensor(images, masks)
 
@@ -92,4 +91,3 @@ class DinoModel(nn.Module):
         else:
             dino_outputs = self.object_detector(nested_tensors)
         return dino_outputs
-        

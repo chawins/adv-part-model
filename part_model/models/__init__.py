@@ -14,7 +14,7 @@ from torch.cuda import amp
 
 from part_model.dataloader import DATASET_DICT
 from part_model.models.det_part_models import (
-    # dino,  # TODO(nab-126@): Fix this please.
+    dino,
     dino_bbox_model,
     multi_head_dino_bbox_model,
 )
