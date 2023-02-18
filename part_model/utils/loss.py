@@ -421,7 +421,14 @@ def get_train_criterion(args):
     if "seg-only" in args.experiment:
         if args.obj_det_arch == "dino":
             matcher, weight_dict, losses = get_dino_loss_params(args)
-            criterion = SetCriterion(args.seg_labels, matcher, weight_dict, args.focal_alpha, losses)
+            # criterion = SetCriterion(args.seg_labels, matcher, weight_dict, args.focal_alpha, losses)
+            criterion = BBOXLoss(
+                    args.seg_labels,
+                    matcher=matcher,
+                    weight_dict=weight_dict,
+                    focal_alpha=args.focal_alpha,
+                    losses=losses,
+            )
         else:
             criterion = PixelwiseCELoss().cuda(args.gpu)
     else:
@@ -470,6 +477,46 @@ def get_train_criterion(args):
     train_criterion = train_criterion.cuda(args.gpu)
     return criterion, train_criterion
 
+
+
+class BBOXLoss(SetCriterion):
+    def __init__(
+        self,
+        num_classes,
+        matcher,
+        weight_dict,
+        focal_alpha,
+        losses,
+        reduction: str = "mean",
+    ):
+        super().__init__(num_classes, matcher, weight_dict, focal_alpha, losses)
+        self.weight_dict = weight_dict
+
+    def forward(
+        self,
+        dino_outputs: dict,
+        dino_targets: list,
+        return_indices=False,
+        **kwargs,
+    ):
+        """This performs the loss computation.
+        Parameters:
+            outputs: dict of tensors, see the output specification of the model for the format
+            targets: list of dicts, such that len(targets) == batch_size.
+                    The expected keys in each dict depends on the losses applied, see each loss' doc
+
+            return_indices: used for vis. if True, the layer0-5 indices will be returned as well.
+
+        """
+        loss_dict = super().forward(
+            dino_outputs, dino_targets, return_indices
+        )
+        bbox_loss = sum(
+            loss_dict[k] * self.weight_dict[k]
+            for k in loss_dict.keys()
+            if k in self.weight_dict
+        )
+        return bbox_loss
 
 class SemiBBOXLoss(SetCriterion):
     def __init__(

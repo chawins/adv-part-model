@@ -14,6 +14,7 @@ from torch.cuda import amp
 
 from part_model.dataloader import DATASET_DICT
 from part_model.models.det_part_models import (
+    dino,
     dino_bbox_model,
     multi_head_dino_bbox_model,
 )
@@ -106,7 +107,6 @@ def load_checkpoint(
 def build_classifier(args):
 
     assert args.dataset in DATASET_DICT
-
     normalize = DATASET_DICT[args.dataset]["normalize"]
     if args.arch == "resnet101":
         # timm does not have pretrained resnet101
@@ -138,7 +138,7 @@ def build_classifier(args):
                     param.requires_grad = False
         elif args.obj_det_arch is not None:
             logger.info("=> Building detection model...")
-
+        
         if args.obj_det_arch == "dino":
             # two options, either sequential or two-headed model
             if model_token == "seq":
@@ -383,7 +383,82 @@ def build_segmentation(args):
     return model, optimizer, scaler
 
 
+def build_detector(args):
+    model = dino.DinoModel(args)
+    for param in model.parameters():
+        param.requires_grad = True
+
+    model = wrap_distributed(args, model)
+
+    backbone_params, non_backbone_params = [], []
+    for name, param in model.named_parameters():
+        if not param.requires_grad:
+            continue
+        if "backbone" in name:
+            backbone_params.append(param)
+        else:
+            non_backbone_params.append(param)
+    optim_params = [
+        {"params": non_backbone_params},
+        {"params": backbone_params, "lr": args.lr_backbone},
+    ]
+
+    if args.optim == "sgd":
+        optimizer = torch.optim.SGD(
+            optim_params,
+            lr=args.lr,
+            momentum=args.momentum,
+            weight_decay=args.wd,
+        )
+    else:
+        optimizer = torch.optim.AdamW(
+            optim_params,
+            lr=args.lr,
+            betas=args.betas,
+            eps=args.eps,
+            weight_decay=args.wd,
+        )
+
+    scaler = amp.GradScaler(enabled=not args.full_precision)
+
+    # Optionally resume from a checkpoint
+    if not (args.evaluate or args.resume or args.resume_if_exist):
+        logger.info("=> Model is randomly initialized.")
+        return model, optimizer, scaler
+
+    if args.evaluate:
+        model_path = f"{args.output_dir}/checkpoint_best.pt"
+        resume_opt_state = False
+    else:
+        model_path = f"{args.output_dir}/checkpoint_last.pt"
+        resume_opt_state = True
+        if not args.resume_if_exist or not os.path.isfile(model_path):
+            model_path = args.resume
+            resume_opt_state = False
+
+    if os.path.isfile(model_path):
+        load_checkpoint(
+            args,
+            model,
+            model_path=model_path,
+            resume_opt_state=resume_opt_state,
+            optimizer=optimizer,
+            scaler=scaler,
+        )
+    elif args.resume:
+        raise FileNotFoundError(f"=> No checkpoint found at {model_path}.")
+    else:
+        logger.info(
+            "=> resume_if_exist is True, but no checkpoint found at %s",
+            model_path,
+        )
+
+    return model, optimizer, scaler
+
 def build_model(args):
     if "seg-only" in args.experiment:
-        return build_segmentation(args)
+        if args.obj_det_arch == 'dino':
+            return build_detector(args)
+        else:
+            return build_segmentation(args)
     return build_classifier(args)

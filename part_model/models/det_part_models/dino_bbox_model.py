@@ -83,7 +83,6 @@ class DinoBoundingBoxModel(nn.Module):
             else 10 * (args.seg_labels)
         )
 
-        # how did we get 50 here
         self.core_model = nn.Sequential(
             nn.Conv1d(args.num_queries, 10, 5)
             if self._use_conv1d

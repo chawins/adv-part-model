@@ -144,7 +144,7 @@ def main() -> None:
                 val_stats = _validate(val_loader, model, criterion, no_attack)
 
                 # TODO: clean/unify
-                if 'seg-only' in args.experiment_name and args.obj_det_arch == 'dino':
+                if 'seg-only' in args.experiment and args.obj_det_arch == 'dino':
                     clean_acc1, acc1 = val_stats["map"], None
                     is_best = clean_acc1 > BEST_ACC
                 else:
@@ -156,7 +156,7 @@ def main() -> None:
                         val_loader, model, criterion, val_attack
                     )
                     # TODO: clean/unify
-                    if 'seg-only' in args.experiment_name and args.obj_det_arch == 'dino':
+                    if 'seg-only' in args.experiment and args.obj_det_arch == 'dino':
                         acc1 = adv_val_stats["map"]
                     else:
                         acc1 = adv_val_stats["acc1"]
@@ -248,6 +248,8 @@ def _train(train_loader, model, criterion, attack, optimizer, scaler, epoch):
     )
     compute_acc = get_compute_acc(args)
     seg_only = "seg-only" in args.experiment
+    if args.obj_det_arch == 'dino' and seg_only:
+        compute_acc = lambda x, y: torch.tensor(0) # dummy
 
     # Switch to train mode
     model.train()
@@ -257,8 +259,6 @@ def _train(train_loader, model, criterion, attack, optimizer, scaler, epoch):
 
     end = time.time()
     for i, samples in enumerate(train_loader):
-        if i == 10:
-            break
         # Measure data loading time
         data_time.update(time.time() - end)
 
@@ -295,15 +295,19 @@ def _train(train_loader, model, criterion, attack, optimizer, scaler, epoch):
                     "return_mask": False,
                     "return_mask_only": seg_only,
                 }
-                images = attack(images, targets, **forward_args)
+                if seg_only:
+                    images = attack(images, target_bbox, **forward_args)
+                else:
+                    images = attack(images, targets, **forward_args)
+                
                 if args.adv_train in ("trades", "mat"):
                     masks = torch.cat([masks.detach(), masks.detach()], dim=0)
                     target_bbox = [*target_bbox, *target_bbox]
                 
 
                 if seg_only:
-                    dino_outputs = model(images, **forward_args)        
-                    loss = criterion(dino_outputs, target_bbox)
+                    outputs = model(images, **forward_args)        
+                    loss = criterion(outputs, target_bbox)
                 else:
                     forward_args[
                         "return_mask"
@@ -409,14 +413,12 @@ def _validate(val_loader, model, criterion, attack):
     end = time.time()
 
     for i, samples in enumerate(val_loader):
-        if i == 10:
-            break
         # measure data loading time
         data_time.update(time.time() - end)
         if len(samples) == 2:
             images, targets = samples
             segs = None
-        elif seg_only:
+        elif seg_only and args.obj_det_arch != 'dino':
             images, targets, _ = samples
             segs = None
         else:
@@ -462,26 +464,25 @@ def _validate(val_loader, model, criterion, attack):
                     "return_mask": False,
                     "return_mask_only": seg_only
                 }
-                images = attack(images, targets, **forward_args)
+
                 if seg_only:
-                    dino_outputs = model(images, **forward_args)        
-                    loss = criterion(dino_outputs, target_bbox)
+                    images = attack(images, target_bbox, **forward_args)
+                    outputs = model(images, **forward_args)        
+                    loss = criterion(outputs, target_bbox)
                 else:
+                    images = attack(images, targets, **forward_args)
                     forward_args[
                         "return_mask"
                     ] = True  # change to true to get dino outputs for map calculation
                     outputs, dino_outputs = model(images, **forward_args)                
                     loss = criterion(outputs, dino_outputs, target_bbox, targets)
 
-                outputs, dino_outputs = model(images, **forward_args)
-                loss = criterion(outputs, targets)
-
                 if seg_only:
                     orig_target_sizes = torch.stack(
                         [t["orig_size"] for t in target_bbox], dim=0
                     )
                     results = postprocessors["bbox"](
-                        dino_outputs, orig_target_sizes
+                        outputs, orig_target_sizes
                     )
 
                     # target_bbox_copy = copy.deepcopy(targets)
@@ -558,15 +559,15 @@ def _validate(val_loader, model, criterion, attack):
         pacc.synchronize()
         print(f"Pixelwise accuracy: {pacc.avg:.4f}")
     if seg_only:
-        if args.obj_det_arch != "dino":
-            print(" * IoU metric")
+        if args.obj_det_arch == "dino":
+            print(" * mAP metric")
             map_dict = map_metric.compute()
             print(map_dict)
         else:
             iou.synchronize()
             print(f"IoU: {iou.avg:.4f}")
         
-    return {"acc1": top1.avg, "loss": losses.avg, "pixel-acc": pacc.avg, "map": map_dict["map"]}
+    return {"acc1": top1.avg, "loss": losses.avg, "pixel-acc": pacc.avg, "map": map_dict["map"].item()}
 
 
 if __name__ == "__main__":

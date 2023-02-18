@@ -38,7 +38,7 @@ python -u prepare_part_imagenet.py \
     --name All \
     --use-box-seg
 
-DATAPATH=~/data/PartImageNet 
+# DATAPATH=~/data/PartImageNet 
 
 # ### Data Prep
 # mkdir $DATAPATH/PartBoxSegmentations/train/

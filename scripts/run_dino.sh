@@ -1,8 +1,8 @@
 #!/bin/bash
 ID=9
-GPU=1
-NUM_GPU=1
-BS=2
+GPU=0,1
+NUM_GPU=2
+BS=32
 AA_BS=32
 PORT=1000$ID
 # =============================== PASCAL-Part =============================== #
@@ -144,8 +144,9 @@ ADV_BETA=0.6 # need to change
 
 EXP_NAME="part-seq-seg-only"
 ADV_TRAIN="pgd"
-OUTPUT_DIR="./models/part-imagenet/$EXP_NAME/$ADV_TRAIN/"  # Change as needed
-ADV_BETA=0.6 # need to change
+OUTPUT_DIR="./models/part-imagenet/det/$EXP_NAME/$ADV_TRAIN"  # Change as needed
+mkdir -p $OUTPUT_DIR/pretrained
+mkdir -p $OUTPUT_DIR/advtrained
 # pretrain dino bbox part model 
 CUDA_VISIBLE_DEVICES=$GPU torchrun \
     --standalone --nnodes=1 --max_restarts 0 --nproc_per_node=$NUM_GPU \
@@ -153,11 +154,11 @@ CUDA_VISIBLE_DEVICES=$GPU torchrun \
     --seg-backbone "resnet50" --obj-det-arch "dino" --full-precision --pretrained \
     --dataset $DATASET --batch-size $BS --output-dir $OUTPUT_DIR/pretrained \
     --data $DATAPATH --seg-label-dir $SEGPATH \
-    --adv-train $ADV_TRAIN --epochs $EPOCHS --experiment $EXP_NAME \
+    --adv-train none --epochs $EPOCHS --experiment $EXP_NAME \
     --epsilon $EPS \
-    --lr 0.01 \
+    --lr 0.0001 \
     --config_file "DINO/config/DINO/DINO_4scale_increased_backbone_lr.py" \
-    --options dn_scalar=100 dn_label_coef=1.0 dn_bbox_coef=1.0
+    --options dn_scalar=100 dn_label_coef=1.0 dn_bbox_coef=1.0 &> $OUTPUT_DIR/pretrained/train_logs.txt
     
     # --seg-labels 40 \
 
