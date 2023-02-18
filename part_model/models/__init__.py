@@ -14,7 +14,7 @@ from torch.cuda import amp
 
 from part_model.dataloader import DATASET_DICT
 from part_model.models.det_part_models import (
-    dino,
+    # dino,  # TODO(nab-126@): Fix this please.
     dino_bbox_model,
     multi_head_dino_bbox_model,
 )
@@ -138,7 +138,7 @@ def build_classifier(args):
                     param.requires_grad = False
         elif args.obj_det_arch is not None:
             logger.info("=> Building detection model...")
-        
+
         if args.obj_det_arch == "dino":
             # two options, either sequential or two-headed model
             if model_token == "seq":
@@ -458,10 +458,10 @@ def build_detector(args):
 
     return model, optimizer, scaler
 
+
 def build_model(args):
     if "seg-only" in args.experiment:
-        if args.obj_det_arch == 'dino':
+        if args.obj_det_arch == "dino":
             return build_detector(args)
-        else:
-            return build_segmentation(args)
+        return build_segmentation(args)
     return build_classifier(args)

@@ -22,10 +22,14 @@ import wandb
 from torch.backends import cudnn
 from torch.cuda import amp
 
-from torchmetrics import IoU as IoU   # Use this for older version of torchmetrics
+# Use this for older version of torchmetrics. torchmetrics <= 0.6.0 is
+# supposedly a lot faster at computing mAP scores.
+# https://github.com/Lightning-AI/metrics/pull/1389
+from torchmetrics import IoU
+from torchmetrics.detection import MAP as MeanAveragePrecision
+
 # from torchmetrics.classification import MulticlassJaccardIndex as IoU
 # from torchmetrics.detection.mean_ap import MeanAveragePrecision
-from torchmetrics.detection import MAP as MeanAveragePrecision
 from torchvision.ops import box_convert
 from torchvision.utils import save_image
 
@@ -57,6 +61,10 @@ from part_model.utils.loss import get_train_criterion
 BEST_ACC = 0
 
 
+def _dummy_compute_acc(x, y):
+    return torch.zeros(1)
+
+
 def _write_metrics(save_metrics: Any) -> None:
     if is_main_process():
         # Save metrics to pickle file if not exists else append
@@ -68,6 +76,8 @@ def _write_metrics(save_metrics: Any) -> None:
 def main() -> None:
     """Main function."""
     init_distributed_mode(args)
+    # TODO(chawins@): Have to change this when adding new detection models
+    use_det = "seg-only" in args.experiment and args.obj_det_arch == "dino"
 
     global BEST_ACC
 
@@ -86,6 +96,7 @@ def main() -> None:
 
     # Debugging dataloader
     if args.debug:
+        # TODO(nab-126@): What is this debugging code for? Is it still needed?
         debug_dino_dataloader(train_loader)
         # debug_dino_dataloader(val_loader)
         # debug_dino_dataloader(test_loader)
@@ -143,24 +154,15 @@ def main() -> None:
 
             if (epoch + 1) % 2 == 0:
                 val_stats = _validate(val_loader, model, criterion, no_attack)
-
-                # TODO: clean/unify
-                if 'seg-only' in args.experiment and args.obj_det_arch == 'dino':
-                    clean_acc1, acc1 = val_stats["map"], None
-                    is_best = clean_acc1 > BEST_ACC
-                else:
-                    clean_acc1, acc1 = val_stats["acc1"], None
-                    is_best = clean_acc1 > BEST_ACC
+                metric_name = "map" if use_det else "acc1"
+                clean_acc1, acc1 = val_stats[metric_name], None
+                is_best = clean_acc1 > BEST_ACC
 
                 if args.adv_train != "none":
                     adv_val_stats = _validate(
                         val_loader, model, criterion, val_attack
                     )
-                    # TODO: clean/unify
-                    if 'seg-only' in args.experiment and args.obj_det_arch == 'dino':
-                        acc1 = adv_val_stats["map"]
-                    else:
-                        acc1 = adv_val_stats["acc1"]
+                    acc1 = adv_val_stats[metric_name]
                     val_stats["adv_acc1"] = acc1
                     val_stats["adv_loss"] = adv_val_stats["loss"]
                     is_best = clean_acc1 >= acc1 > BEST_ACC
@@ -249,8 +251,8 @@ def _train(train_loader, model, criterion, attack, optimizer, scaler, epoch):
     )
     compute_acc = get_compute_acc(args)
     seg_only = "seg-only" in args.experiment
-    if args.obj_det_arch == 'dino' and seg_only:
-        compute_acc = lambda x, y: torch.tensor(0) # dummy
+    if args.obj_det_arch == "dino" and seg_only:
+        compute_acc = _dummy_compute_acc
 
     # Switch to train mode
     model.train()
@@ -297,24 +299,26 @@ def _train(train_loader, model, criterion, attack, optimizer, scaler, epoch):
                     "return_mask_only": seg_only,
                 }
                 if seg_only:
+                    # TODO(nab-126@): target_bbox is being passed in
+                    # forward_args already. Do we still need it as arg here?
                     images = attack(images, target_bbox, **forward_args)
                 else:
                     images = attack(images, targets, **forward_args)
-                
+
                 if args.adv_train in ("trades", "mat"):
                     masks = torch.cat([masks.detach(), masks.detach()], dim=0)
                     target_bbox = [*target_bbox, *target_bbox]
-                
 
                 if seg_only:
-                    outputs = model(images, **forward_args)        
+                    outputs = model(images, **forward_args)
                     loss = criterion(outputs, target_bbox)
                 else:
-                    forward_args[
-                        "return_mask"
-                    ] = True  # change to true to get dino outputs for map calculation
-                    outputs, dino_outputs = model(images, **forward_args)                
-                    loss = criterion(outputs, dino_outputs, target_bbox, targets)
+                    # Change to true to get dino outputs for map calculation
+                    forward_args["return_mask"] = True
+                    outputs, dino_outputs = model(images, **forward_args)
+                    loss = criterion(
+                        outputs, dino_outputs, target_bbox, targets
+                    )
 
                 if args.adv_train in ("trades", "mat"):
                     outputs = outputs[batch_size:]
@@ -395,9 +399,8 @@ def _validate(val_loader, model, criterion, attack):
     )
     compute_acc = get_compute_acc(args)
     compute_iou = IoU(args.seg_labels).cuda(args.gpu)
-    # if args.calculate_map:
-    if (args.obj_det_arch == 'dino' and seg_only) or args.calculate_map:
-        compute_acc = lambda x, y: torch.tensor(0) # dummy
+    if (args.obj_det_arch == "dino" and seg_only) or args.calculate_map:
+        compute_acc = _dummy_compute_acc
         map_metric = MeanAveragePrecision()
         postprocessors = {
             "bbox": PostProcess(
@@ -408,9 +411,7 @@ def _validate(val_loader, model, criterion, attack):
 
     # switch to evaluate mode
     model.eval()
-
     need_tgt_for_training = True
-
     end = time.time()
 
     for i, samples in enumerate(val_loader):
@@ -419,7 +420,7 @@ def _validate(val_loader, model, criterion, attack):
         if len(samples) == 2:
             images, targets = samples
             segs = None
-        elif seg_only and args.obj_det_arch != 'dino':
+        elif seg_only and args.obj_det_arch != "dino":
             images, targets, _ = samples
             segs = None
         else:
@@ -463,28 +464,27 @@ def _validate(val_loader, model, criterion, attack):
                     "dino_targets": target_bbox,
                     "need_tgt_for_training": need_tgt_for_training,
                     "return_mask": False,
-                    "return_mask_only": seg_only
+                    "return_mask_only": seg_only,
                 }
 
                 if seg_only:
                     images = attack(images, target_bbox, **forward_args)
-                    outputs = model(images, **forward_args)        
+                    outputs = model(images, **forward_args)
                     loss = criterion(outputs, target_bbox)
                 else:
                     images = attack(images, targets, **forward_args)
-                    forward_args[
-                        "return_mask"
-                    ] = True  # change to true to get dino outputs for map calculation
-                    outputs, dino_outputs = model(images, **forward_args)                
-                    loss = criterion(outputs, dino_outputs, target_bbox, targets)
+                    # Change to true to get dino outputs for map calculation
+                    forward_args["return_mask"] = True
+                    outputs, dino_outputs = model(images, **forward_args)
+                    loss = criterion(
+                        outputs, dino_outputs, target_bbox, targets
+                    )
 
                 if seg_only or args.calculate_map:
                     orig_target_sizes = torch.stack(
                         [t["orig_size"] for t in target_bbox], dim=0
                     )
-                    results = postprocessors["bbox"](
-                        outputs, orig_target_sizes
-                    )
+                    results = postprocessors["bbox"](outputs, orig_target_sizes)
 
                     # target_bbox_copy = copy.deepcopy(targets)
                     for ti, t in enumerate(target_bbox):
@@ -567,8 +567,13 @@ def _validate(val_loader, model, criterion, attack):
         else:
             iou.synchronize()
             print(f"IoU: {iou.avg:.4f}")
-        
-    return {"acc1": top1.avg, "loss": losses.avg, "pixel-acc": pacc.avg, "map": map_dict["map"].item()}
+
+    return {
+        "acc1": top1.avg,
+        "loss": losses.avg,
+        "pixel-acc": pacc.avg,
+        "map": map_dict["map"].item(),
+    }
 
 
 if __name__ == "__main__":

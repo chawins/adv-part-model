@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 import torch
 import torch.nn.functional as F
@@ -137,8 +138,8 @@ class DinoBoundingBoxModel(nn.Module):
     def forward(
         self,
         images: BatchImages,
-        masks=None,
-        dino_targets=None,
+        masks: torch.Tensor | None = None,
+        dino_targets: dict[str, Any] | None = None,
         need_tgt_for_training: bool = False,
         return_mask: bool = False,
         return_mask_only: bool = False,
@@ -180,6 +181,8 @@ class DinoBoundingBoxModel(nn.Module):
         # Pass to classifier model
         out = self.core_model(features)
 
+        if return_mask_only:
+            return dino_outputs
         if return_mask:
             return out, dino_outputs
         return out
