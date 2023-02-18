@@ -467,6 +467,8 @@ def _validate(val_loader, model, criterion, attack):
                     "return_mask_only": seg_only,
                 }
 
+                # TODO(chawins@): This if-else should be merged and use
+                # return_mask_only to control the output
                 if seg_only:
                     images = attack(images, target_bbox, **forward_args)
                     outputs = model(images, **forward_args)
@@ -475,10 +477,8 @@ def _validate(val_loader, model, criterion, attack):
                     images = attack(images, targets, **forward_args)
                     # Change to true to get dino outputs for map calculation
                     forward_args["return_mask"] = True
-                    outputs, dino_outputs = model(images, **forward_args)
-                    loss = criterion(
-                        outputs, dino_outputs, target_bbox, targets
-                    )
+                    outputs, _ = model(images, **forward_args)
+                    loss = criterion(outputs, targets)
 
                 if seg_only or args.calculate_map:
                     orig_target_sizes = torch.stack(
@@ -518,7 +518,6 @@ def _validate(val_loader, model, criterion, attack):
                     outputs = model(images)
                 elif "groundtruth" in args.experiment:
                     outputs = model(images, segs=segs)
-                    loss = criterion(outputs, targets)
                 else:
                     outputs, masks = model(images, return_mask=True)
                     if "centroid" in args.experiment:
@@ -556,6 +555,12 @@ def _validate(val_loader, model, criterion, attack):
     progress.synchronize()
     print(f" * Acc@1 {top1.avg:.3f}")
 
+    return_dict = {
+        "acc1": top1.avg,
+        "loss": losses.avg,
+        "pixel-acc": pacc.avg,
+    }
+
     if pacc.count > 0:
         pacc.synchronize()
         print(f"Pixelwise accuracy: {pacc.avg:.4f}")
@@ -564,16 +569,13 @@ def _validate(val_loader, model, criterion, attack):
             print(" * mAP metric")
             map_dict = map_metric.compute()
             print(map_dict)
+            return_dict["map"] = map_dict["map"].item()
         else:
             iou.synchronize()
             print(f"IoU: {iou.avg:.4f}")
+            return_dict["iou"] = iou.avg
 
-    return {
-        "acc1": top1.avg,
-        "loss": losses.avg,
-        "pixel-acc": pacc.avg,
-        "map": map_dict["map"].item(),
-    }
+    return return_dict
 
 
 if __name__ == "__main__":
