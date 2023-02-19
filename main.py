@@ -10,6 +10,7 @@ import pickle
 import random
 import sys
 import time
+from pprint import pprint
 from typing import Any
 
 import numpy as np
@@ -61,7 +62,8 @@ from part_model.utils.loss import get_train_criterion
 BEST_ACC = 0
 
 
-def _dummy_compute_acc(x, y):
+def _dummy_compute_acc(outputs, targets):
+    _ = outputs, targets  # Unused
     return torch.zeros(1)
 
 
@@ -392,6 +394,7 @@ def _validate(val_loader, model, criterion, attack):
     pacc = AverageMeter("PixelAcc", ":6.2f")
     mem = AverageMeter("Mem (GB)", ":6.1f")
     iou = AverageMeter("IoU", ":6.2f")
+    mAP = AverageMeter("mAP", ":6.2f")
     progress = ProgressMeter(
         len(val_loader),
         [batch_time, data_time, losses, top1, mem],
@@ -402,7 +405,7 @@ def _validate(val_loader, model, criterion, attack):
     if (args.obj_det_arch == "dino" and seg_only) or args.calculate_map:
         if seg_only:
             compute_acc = _dummy_compute_acc
-        map_metric = MeanAveragePrecision()
+        map_metric = MeanAveragePrecision().cuda(args.gpu)
         postprocessors = {
             "bbox": PostProcess(
                 num_select=args.num_select,
@@ -490,15 +493,15 @@ def _validate(val_loader, model, criterion, attack):
                     )
 
                     # target_bbox_copy = copy.deepcopy(targets)
-                    for ti, t in enumerate(target_bbox):
-                        shape = t["orig_size"]
-                        boxes = t["boxes"]
+                    for j, tbox in enumerate(target_bbox):
+                        shape = tbox["orig_size"]
+                        boxes = tbox["boxes"]
                         boxes = box_convert(
                             boxes, in_fmt="cxcywh", out_fmt="xyxy"
                         )
                         boxes[:, ::2] = boxes[:, ::2] * shape[1]
                         boxes[:, 1::2] = boxes[:, 1::2] * shape[0]
-                        target_bbox[ti]["boxes"] = boxes
+                        target_bbox[j]["boxes"] = boxes
 
                     map_metric.update(results, target_bbox)
 
@@ -554,7 +557,6 @@ def _validate(val_loader, model, criterion, attack):
         if i % args.print_freq == 0:
             progress.display(i)
 
-    # TODO: this should also be done with the ProgressMeter
     progress.synchronize()
     print(f" * Acc@1 {top1.avg:.3f}")
 
@@ -571,8 +573,14 @@ def _validate(val_loader, model, criterion, attack):
         if args.obj_det_arch == "dino":
             print(" * mAP metric")
             map_dict = map_metric.compute()
-            print(map_dict)
-            return_dict["map"] = map_dict["map"].item()
+            mAP.update(map_dict["map"].item(), 1)
+            mAP.synchronize()
+            # Average mAP across workers in DDP. This is not strictly correct,
+            # but should be good enough for logging. Not sure if there is a
+            # correct way: https://github.com/Lightning-AI/metrics/issues/53.
+            print(f"mAP: {mAP.avg:.4f}")
+            return_dict["map"] = mAP.avg
+            pprint({k: v.item() for k, v in map_dict.items()})
         else:
             iou.synchronize()
             print(f"IoU: {iou.avg:.4f}")
@@ -587,7 +595,7 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    # TODO: add to argparser?
+    # TODO(nab-126@): add to argparser?
     # handling dino args
     if args.config_file:
         cfg = SLConfig.fromfile(args.config_file)
@@ -601,7 +609,7 @@ if __name__ == "__main__":
             if k not in args_vars:
                 setattr(args, k, v)
             else:
-                raise ValueError("Key {} can used by args only".format(k))
+                raise ValueError(f"Key {k} can used by args only")
 
     os.makedirs(args.output_dir, exist_ok=True)
     main()
