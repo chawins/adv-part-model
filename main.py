@@ -400,7 +400,8 @@ def _validate(val_loader, model, criterion, attack):
     compute_acc = get_compute_acc(args)
     compute_iou = IoU(args.seg_labels).cuda(args.gpu)
     if (args.obj_det_arch == "dino" and seg_only) or args.calculate_map:
-        compute_acc = _dummy_compute_acc
+        if seg_only:
+            compute_acc = _dummy_compute_acc
         map_metric = MeanAveragePrecision()
         postprocessors = {
             "bbox": PostProcess(
