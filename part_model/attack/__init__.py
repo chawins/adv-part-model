@@ -20,19 +20,22 @@ from part_model.attack.seg_guide import SegGuidedAttack
 from part_model.attack.seg_inverse import SegInverseAttack
 from part_model.attack.trades import TRADESAttack
 from part_model.utils.loss import (
+    BBOXLoss,
     PixelwiseCELoss,
     SegGuidedCELoss,
     SemiSumLinearLoss,
     SemiSumLoss,
-    BBOXLoss,
-    get_dino_loss_params
+    get_dino_loss_params,
 )
+
 
 def _get_loss(args, option):
     if "seg-only" in args.experiment:
         if args.obj_det_arch == "dino":
             matcher, weight_dict, losses = get_dino_loss_params(args)
-            loss = BBOXLoss(args.seg_labels, matcher, weight_dict, args.focal_alpha, losses)
+            loss = BBOXLoss(
+                args.seg_labels, matcher, weight_dict, args.focal_alpha, losses
+            )
         else:
             loss = PixelwiseCELoss(reduction="pixelmean").cuda(args.gpu)
     elif option == "both":
@@ -140,9 +143,7 @@ def setup_eval_attacker(args, model, num_classes=None, guide_dataloader=None):
             # L2-norm of sqrt(d) in logit space
             attack_config["mask_l2_eps"] = 224 * math.sqrt(args.seg_labels)
             attack_config["num_restarts"] = 2
-            attack = SegInverseAttack(
-                attack_config, model, None, norm, eps
-            )
+            attack = SegInverseAttack(attack_config, model, None, norm, eps)
         elif "seg-" in atk:
             attack = PGDAttack(
                 attack_config, model, _get_loss(args, atk), norm, eps

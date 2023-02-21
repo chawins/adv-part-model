@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import math
 import os
 import pickle
@@ -59,8 +60,6 @@ from part_model.utils.argparse import get_args_parser
 from part_model.utils.dataloader_visualizer import debug_dino_dataloader
 from part_model.utils.loss import get_train_criterion
 
-BEST_ACC = 0
-
 
 def _dummy_compute_acc(outputs, targets):
     _ = outputs, targets  # Unused
@@ -80,8 +79,6 @@ def main() -> None:
     init_distributed_mode(args)
     # TODO(chawins@): Have to change this when adding new detection models
     use_det = "seg-only" in args.experiment and args.obj_det_arch == "dino"
-
-    global BEST_ACC
 
     # Fix the seed for reproducibility
     seed: int = args.seed + get_rank()
@@ -135,6 +132,7 @@ def main() -> None:
 
     if not args.evaluate:
         print("=> Beginning training...")
+        best_acc = 0
         val_stats = {}
         for epoch in range(args.start_epoch, args.epochs):
             is_best = False
@@ -158,7 +156,7 @@ def main() -> None:
                 val_stats = _validate(val_loader, model, criterion, no_attack)
                 metric_name = "map" if use_det else "acc1"
                 clean_acc1, acc1 = val_stats[metric_name], None
-                is_best = clean_acc1 > BEST_ACC
+                is_best = clean_acc1 > best_acc
 
                 if args.adv_train != "none":
                     adv_val_stats = _validate(
@@ -167,24 +165,24 @@ def main() -> None:
                     acc1 = adv_val_stats[metric_name]
                     val_stats["adv_acc1"] = acc1
                     val_stats["adv_loss"] = adv_val_stats["loss"]
-                    is_best = clean_acc1 >= acc1 > BEST_ACC
+                    is_best = clean_acc1 >= acc1 > best_acc
 
                 save_dict = {
                     "epoch": epoch + 1,
                     "state_dict": model.state_dict(),
                     "optimizer": optimizer.state_dict(),
                     "scaler": scaler.state_dict(),
-                    "best_acc1": BEST_ACC,
+                    "best_acc1": best_acc,
                     "args": args,
                 }
 
                 if is_best:
                     print("=> Saving new best checkpoint...")
                     save_on_master(save_dict, args.output_dir, is_best=True)
-                    BEST_ACC = (
-                        max(clean_acc1, BEST_ACC)
+                    best_acc = (
+                        max(clean_acc1, best_acc)
                         if acc1 is None
-                        else max(acc1, BEST_ACC)
+                        else max(acc1, best_acc)
                     )
                 save_epoch = epoch + 1 if args.save_all_epochs else None
                 save_on_master(
@@ -610,6 +608,14 @@ if __name__ == "__main__":
                 setattr(args, k, v)
             else:
                 raise ValueError(f"Key {k} can used by args only")
+
+    # Set logging config
+    logging.basicConfig(
+        stream=sys.stdout,
+        format="[%(asctime)s - %(name)s - %(levelname)s]: %(message)s",
+        level=logging.DEBUG if args.debug else logging.INFO,
+        force=True,
+    )
 
     os.makedirs(args.output_dir, exist_ok=True)
     main()

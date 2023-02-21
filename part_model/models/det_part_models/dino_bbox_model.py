@@ -6,7 +6,6 @@ import logging
 from typing import Any
 
 import torch
-import torch.nn.functional as F
 import torchvision
 from torch import nn
 
@@ -157,9 +156,9 @@ class DinoBoundingBoxModel(nn.Module):
             # We can consider not taking softmax if we have trouble
             # with attack during adversarial training not working well, or we can
             # use sigmoid to better replicate object detection models.
-            dino_probs = F.sigmoid(dino_outputs["pred_logits"])
+            dino_probs = torch.sigmoid(dino_outputs["pred_logits"])
         else:
-            dino_probs = F.softmax(dino_outputs["pred_logits"], dim=-1)
+            dino_probs = torch.softmax(dino_outputs["pred_logits"], dim=-1)
         dino_boxes = dino_outputs["pred_boxes"]
 
         if self._sort_dino_outputs:
