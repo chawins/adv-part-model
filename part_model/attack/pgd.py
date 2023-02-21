@@ -21,7 +21,7 @@ class PGDAttack(AttackModule):
         self,
         attack_config: dict[str, Any],
         core_model: nn.Module,
-        loss_fn: Callable[..., torch.Tensor],
+        loss_fn: _Loss,
         norm: str = "Linf",
         eps: float = 8 / 255,
         **kwargs,
