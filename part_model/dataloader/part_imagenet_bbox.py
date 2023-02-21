@@ -86,10 +86,6 @@ class PartImageNetBBOXDataset(torchvision.datasets.CocoDetection):
             if supercategory in CLASSES:
                 self.category_id_to_supercategory[category_id] = CLASSES.index(supercategory)
 
-        # print()
-        # print(self.category_id_to_supercategory)
-        # print()
-
         self.num_seg_classes = len(self.category_id_to_supercategory)
         
         self.imageid_to_label = {}
@@ -100,12 +96,6 @@ class PartImageNetBBOXDataset(torchvision.datasets.CocoDetection):
                 self.imageid_to_label[image_id] = self.category_id_to_supercategory[category_id]
             else:
                 assert self.imageid_to_label[image_id] == self.category_id_to_supercategory[category_id]
-                # if self.imageid_to_label[image_id] != self.category_id_to_supercategory[category_id]:
-                #     print('image_id', image_id)
-                #     print(self.imageid_to_label[image_id])
-                #     print(self.category_id_to_supercategory[category_id])
-                #     print(ann)
-                #     qqq
 
     def __getitem__(self, idx):
         """

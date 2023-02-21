@@ -6,11 +6,15 @@ import os
 from typing import Any, Callable, Optional
 
 import numpy as np
+import json
 import torch
 from PIL import Image
 from PIL.Image import Image as _ImageType
 from torch.utils import data
+import torchvision
+from torchvision.ops import box_convert
 
+from DINO.datasets.coco import ConvertCocoPolysToMask
 from part_model.dataloader.segmentation_transforms import (
     CenterCrop,
     Compose,
@@ -25,7 +29,9 @@ from part_model.utils.eval_sampler import DistributedEvalSampler
 from part_model.utils.image import get_seg_type
 
 
-class PartImageNetSegDataset(data.Dataset):
+# TODO: change name of class
+# class PartImageNetDataset(data.Dataset):
+class PartImageNetSegDataset(torchvision.datasets.CocoDetection):
     """PartImageNet Dataset."""
 
     CLASSES = {
@@ -46,6 +52,7 @@ class PartImageNetSegDataset(data.Dataset):
         self,
         root: str = "~/data/",
         seg_path: str = "~/data/",
+        ann_path: str = "~/data/",
         split: str = "train",
         transform: Callable[..., Any] = None,
         use_label: bool = False,
@@ -71,6 +78,13 @@ class PartImageNetSegDataset(data.Dataset):
             use_atta: If True, use ATTA (fast adversarial training) and return
                 transform params during training.
         """
+        # TODO: change to use root directly
+        img_folder = os.path.join(root, "JPEGImages")
+        super(PartImageNetSegDataset, self).__init__(img_folder, ann_path)
+
+        # TODO: is this used?
+        self.prepare = ConvertCocoPolysToMask(False)
+
         self._root: str = root
         self._split: str = split
         self._seg_path: str = os.path.join(seg_path, split)
@@ -103,6 +117,32 @@ class PartImageNetSegDataset(data.Dataset):
             self.part_to_class.extend([base] * self.CLASSES[label])
         self.part_to_object = torch.tensor(part_to_object, dtype=torch.long)
 
+        # bounding boxes
+        self.category_id_to_supercategory = {}
+        with open(ann_path) as f:
+            annotations = json.load(f)
+
+        self.imageid_to_filename = {}
+        for ann in annotations["images"]:
+            self.imageid_to_filename[ann["id"]] = ann["file_name"].split(".JPEG")[0]
+            
+        for ann in annotations["categories"]:
+            category_id = ann["id"]
+            supercategory = ann["supercategory"]
+            if supercategory in self.classes:
+                self.category_id_to_supercategory[category_id] = self.classes.index(supercategory)
+
+        self.num_seg_classes = len(self.category_id_to_supercategory)
+        
+        self.imageid_to_label = {}
+        for ann in annotations["annotations"]:
+            image_id = ann["image_id"]
+            category_id = ann["category_id"]
+            if image_id not in self.imageid_to_label:
+                self.imageid_to_label[image_id] = self.category_id_to_supercategory[category_id]
+            else:
+                assert self.imageid_to_label[image_id] == self.category_id_to_supercategory[category_id]
+
     def __getitem__(self, index: int) -> tuple[torch.Tensor, ...]:
         """Get sample at index.
 
@@ -116,39 +156,76 @@ class PartImageNetSegDataset(data.Dataset):
         # Collect variables to return
         return_items: list[Any] = []
         atta_data: list[torch.Tensor] | None = None
-        _img: _ImageType = Image.open(self.images[index]).convert("RGB")
-        _target: _ImageType = Image.open(self.masks[index])
-        width, height = _img.size
 
+        try:
+            img, bbox_target = super(PartImageNetSegDataset, self).__getitem__(index)
+        except:
+            print("Error index: {}".format(index))
+            index += 1
+            img, bbox_target = super(PartImageNetSegDataset, self).__getitem__(index)
+        
+        image_id = self.ids[index]
+        _label = self.imageid_to_label[image_id]
+
+        bbox_target = {"image_id": image_id, "annotations": bbox_target}
+        img, bbox_target = self.prepare(img, bbox_target)
+        width, height = img.size
+
+        part_path = os.path.join(self._seg_path, self.classes[_label])
+        filename = self.imageid_to_filename[image_id]
+        seg_mask_path = f'{part_path}/{filename.split("/")[1]}.tif'
+        seg_mask_target: _ImageType = Image.open(seg_mask_path)
+        
         if self._transform is not None:
-            tf_out = self._transform(_img, _target)
-            if len(tf_out) == 3:
+            tf_out = self._transform(img, seg_mask_target, bbox_target)
+
+            if len(tf_out) == 4:
                 # In ATTA, transform params are also returned
-                _img, _target, params = tf_out
+                img, seg_mask_target, bbox_target, params = tf_out
                 atta_data = [torch.tensor(index), torch.tensor((height, width))]
                 for p in params:
                     atta_data.append(torch.tensor(p))
             else:
-                _img, _target = tf_out
-        return_items.append(_img)
+                img, seg_mask_target, bbox_target = tf_out
+       
+        # add image to return items
+        return_items.append(img)
 
+        # add segmentation mask to return items
         if self._seg_type is not None:
             if self._seg_type == "object":
-                _target = self.part_to_object[_target]
+                seg_mask_target = self.part_to_object[seg_mask_target]
             elif self._seg_type == "fg":
-                _target = (_target > 0).long()
+                seg_mask_target = (seg_mask_target > 0).long()
             if index in self.seg_drop_idx:
                 # Drop segmentation mask by setting all pixels to -1 to ignore
                 # later at loss computation
-                _target.mul_(0).add_(-1)
-            return_items.append(_target)
+                seg_mask_target.mul_(0).add_(-1)
+        else:
+            seg_mask_target = None
+        return_items.append(seg_mask_target)
 
-        if self._use_label:
-            _label = self.labels[index]
-            return_items.append(_label)
+        # add bbox target to return items
+        # normalize bbox target
+        h, w = img.shape[-2:]
+        if "boxes" in bbox_target:
+            boxes = bbox_target["boxes"]
+            boxes = box_convert(boxes, in_fmt="xyxy", out_fmt="cxcywh")
+            boxes = boxes / torch.tensor([w, h, w, h], dtype=torch.float32)
+            bbox_target["boxes"] = boxes
+        return_items.append(bbox_target)
+
+        # add class label to return items
+        if not self._use_label:
+            _label = None
+        return_items.append(_label)
+        
+
+        # add atta data to return items
         if atta_data is not None:
             for ad in atta_data:
                 return_items.append(ad)
+                
         return return_items
 
     def _get_data(self):
@@ -176,8 +253,8 @@ class PartImageNetSegDataset(data.Dataset):
         ]
         return sorted(dirs)
 
-    def __len__(self):
-        return len(self.images)
+    # def __len__(self):
+    #     return len(self.images)
 
 
 def get_loader_sampler(args, transform, split: str):
@@ -185,9 +262,15 @@ def get_loader_sampler(args, transform, split: str):
     is_train: bool = split == "train"
     use_atta: bool = args.adv_train == "atta"
 
+    # TODO: add as arg instead?
+    ann_file_path = os.path.join(
+        os.path.expanduser(args.data), "PartBoxSegmentations", f"{split}.json"
+    )
+
     part_imagenet_dataset = PartImageNetSegDataset(
         args.data,
         args.seg_label_dir,
+        ann_file_path, 
         split=split,
         transform=transform,
         seg_type=seg_type,
@@ -214,14 +297,17 @@ def get_loader_sampler(args, transform, split: str):
             )
 
     batch_size = args.batch_size
+
+    
     loader = torch.utils.data.DataLoader(
         part_imagenet_dataset,
         batch_size=batch_size,
         shuffle=shuffle,
-        num_workers=args.workers,
+        num_workers=1, # TODO: change back to args.workers
         pin_memory=True,
         sampler=sampler,
         drop_last=is_train,
+        collate_fn=collate_fn,
     )
 
     # TODO(chawins@): can we make this cleaner?
@@ -243,11 +329,12 @@ def get_loader_sampler(args, transform, split: str):
     if is_train:
         setattr(args, "num_train", len(part_imagenet_dataset))
 
-    return loader, sampler
+    return loader, sampler, part_imagenet_dataset
 
+def collate_fn(batch):
+    return tuple(zip(*batch))
 
 def load_part_imagenet(args):
-
     img_size = PART_IMAGENET["input_dim"][1]
     use_atta: bool = args.adv_train == "atta"
 
@@ -260,19 +347,20 @@ def load_part_imagenet(args):
     )
     val_transforms = Compose(
         [
+            # Resize([int(img_size), int(img_size)]),
             Resize(int(img_size * 256 / 224)),
             CenterCrop(img_size),
             ToTensor(),
         ]
     )
-
-    train_loader, train_sampler = get_loader_sampler(
+    
+    train_loader, train_sampler, train_dataset = get_loader_sampler(
         args, train_transforms, "train"
     )
-    val_loader, _ = get_loader_sampler(args, val_transforms, "val")
-    test_loader, _ = get_loader_sampler(args, val_transforms, "test")
+    val_loader, _, val_dataset = get_loader_sampler(args, val_transforms, "val")
+    test_loader, _, test_dataset = get_loader_sampler(args, val_transforms, "test")
 
-    return train_loader, train_sampler, val_loader, test_loader
+    return train_loader, train_sampler, val_loader, test_loader, train_dataset, val_dataset, test_dataset
 
 
 PART_IMAGENET = {

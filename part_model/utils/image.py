@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import numpy as np
-
+from torchvision.utils import save_image, draw_bounding_boxes
 
 def get_seg_type(args):
     seg_type = args.experiment.split("-")[0]
@@ -111,3 +111,26 @@ def get_part_box_square(mask, pad, **pad_kwargs):
     part_mask = np.zeros_like(mask)
     part_mask[ymin:ymax, xmin:xmax] = 1
     return part_mask
+
+def plot_img_bbox(images, target_bbox, orig_target_sizes=None):
+    batch_size = images.shape[0]
+    # output_masks = outputs.argmax(1).unsqueeze(dim=1)
+    # save_image((output_masks.cpu() * 1.0), "test_preds.png")
+    save_image(images, "test.png")
+    images_with_boxes = []
+    for bi in range(batch_size):
+        img_uint8 = (images[bi].cpu() * 255).byte()
+        boxes = target_bbox[bi]["boxes"]
+        # shape = orig_target_sizes[bi]
+        labels = [str(int(l)) for l in target_bbox[bi]["labels"]]
+        
+        if boxes.shape[0] > 0:
+            # boxes[:, ::2] = boxes[:, ::2] * shape[1]
+            # boxes[:, 1::2] = boxes[:, 1::2] * shape[0]
+            img_with_boxes = draw_bounding_boxes(
+                img_uint8, boxes=boxes, colors="red", labels=labels
+            )
+        else:
+            img_with_boxes = img_uint8
+        images_with_boxes.append(img_with_boxes / 255.0)
+    save_image(images_with_boxes, "test_box_labels.png")

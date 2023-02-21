@@ -362,7 +362,8 @@ def build_segmentation(args):
     scaler = amp.GradScaler(enabled=not args.full_precision)
 
     # Optionally resume from a checkpoint
-    if args.resume and not args.evaluate:
+    # if args.resume and not args.evaluate:
+    if args.resume or args.evaluate:
         if os.path.isfile(args.resume):
             logger.info("=> loading resume checkpoint %s...", args.resume)
             if args.gpu is None:
@@ -382,7 +383,7 @@ def build_segmentation(args):
             )
         else:
             logger.info("=> no checkpoint found at %s", args.resume)
-
+    
     return model, optimizer, scaler
 
 
