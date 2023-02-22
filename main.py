@@ -290,8 +290,6 @@ def _train(train_loader, model, criterion, attack, optimizer, scaler, epoch):
 
     end = time.time()
     for i, samples in enumerate(train_loader):
-        if i == 20:
-            break
         # Measure data loading time
         data_time.update(time.time() - end)
 
@@ -334,8 +332,9 @@ def _train(train_loader, model, criterion, attack, optimizer, scaler, epoch):
                 
 
                 if seg_only:
-                    outputs = model(images, **forward_args)        
-                    loss = criterion(outputs, target_bbox)
+                    dino_outputs = model(images, **forward_args)        
+                    loss = criterion(dino_outputs, target_bbox)
+                    outputs = dino_outputs
                 else:
                     forward_args[
                         "return_mask"
@@ -345,6 +344,7 @@ def _train(train_loader, model, criterion, attack, optimizer, scaler, epoch):
 
                 if args.adv_train in ("trades", "mat"):
                     outputs = outputs[batch_size:]
+
             else:
                 images = attack(images, targets)
                 if attack.dual_losses:
@@ -440,7 +440,7 @@ def _validate(val_loader, model, criterion, attack, val_dataset=None):
 
 
         compute_acc = lambda x, y: torch.tensor(0) # dummy
-        map_metric = MeanAveragePrecision() # box_format='xyxy'
+        map_metric = MeanAveragePrecision(dist_sync_on_step=True) # box_format='xyxy'
         postprocessors = {
             "bbox": PostProcess(
                 # num_select=args.num_select,
@@ -560,11 +560,6 @@ def _validate(val_loader, model, criterion, attack, val_dataset=None):
                         boxes[:, ::2] = boxes[:, ::2] * shape[1]
                         boxes[:, 1::2] = boxes[:, 1::2] * shape[0]
                         target_bbox[j]["boxes"] = boxes
-
-                        # result_boxes = results[j]["boxes"]
-                        # result_boxes[:, ::2] = result_boxes[:, ::2] * shape[0]
-                        # result_boxes[:, 1::2] = result_boxes[:, 1::2] * shape[1]
-                        # results[j]["boxes"] = result_boxes
 
                     map_metric.update(results, target_bbox)
 

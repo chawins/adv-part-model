@@ -347,7 +347,6 @@ def load_part_imagenet(args):
     )
     val_transforms = Compose(
         [
-            # Resize([int(img_size), int(img_size)]),
             Resize(int(img_size * 256 / 224)),
             CenterCrop(img_size),
             ToTensor(),

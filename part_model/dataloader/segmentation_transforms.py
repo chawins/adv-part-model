@@ -79,7 +79,7 @@ def hflip_bbox(image, target):
     return target
 
 # adapted from DINO.datasets.transforms
-def resize_bbox(image, rescaled_image, target, size, max_size=None):
+def resize_bbox(image, target, size, max_size=None):
     # size can be min_size (scalar) or (w, h) tuple
     def get_size_with_aspect_ratio(image_size, size, max_size=None):
         w, h = image_size
@@ -109,7 +109,7 @@ def resize_bbox(image, rescaled_image, target, size, max_size=None):
 
     size = get_size(image.size, size, max_size)
 
-    ratios = tuple(float(s) / float(s_orig) for s, s_orig in zip(rescaled_image.size, image.size))
+    ratios = tuple(float(s) / float(s_orig) for s, s_orig in zip(size, image.size))
     ratio_width, ratio_height = ratios
 
     target = target.copy()
@@ -151,7 +151,7 @@ class Resize(object):
             interpolation=T.InterpolationMode.NEAREST,
             antialias=True,
         )
-        bbox_target = resize_bbox(image, resized_image, bbox_target, self.size)
+        bbox_target = resize_bbox(image, bbox_target, resized_image.size[::-1])
         return resized_image, mask_target, bbox_target
 
 
@@ -233,22 +233,25 @@ class RandomResizedCrop(object):
         crop_params = T.RandomResizedCrop.get_params(
             image, self.scale, self.ratio
         )
-        image = F.crop(image, *crop_params)
+        cropped_image = F.crop(image, *crop_params)
         mask_target = F.crop(mask_target, *crop_params)
-        image = F.resize(image, (self.size, self.size), antialias=True)
+        bbox_target = crop_bbox(bbox_target, crop_params)
+        
+        resized_image = F.resize(cropped_image, (self.size, self.size), antialias=True)
         mask_target = F.resize(
             mask_target,
             (self.size, self.size),
             interpolation=T.InterpolationMode.NEAREST,
         )
-        bbox_target = crop_bbox(bbox_target, crop_params)
+        bbox_target = resize_bbox(cropped_image, bbox_target, (self.size, self.size))
+        
         if self.return_params:
             if params is None:
                 params = [crop_params]
             else:
                 params.append(crop_params)
             return image, mask_target, bbox_target, params
-        return image, mask_target, bbox_target
+        return resized_image, mask_target, bbox_target
 
 
 class CenterCrop(object):
