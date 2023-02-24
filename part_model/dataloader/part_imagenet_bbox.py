@@ -22,6 +22,7 @@ from DINO.util.misc import collate_fn
 from part_model.dataloader.util import COLORMAP
 from part_model.utils.eval_sampler import DistributedEvalSampler
 
+
 class RandomCrop(object):
     def __init__(
         self,
@@ -35,6 +36,7 @@ class RandomCrop(object):
         region = RandomResizedCrop.get_params(img, self.scale, self.ratio)
         img, target = crop(img, target, region)
         return img, target
+
 
 class Resize(object):
     def __init__(self, size) -> None:
@@ -73,9 +75,9 @@ class PartImageNetBBOXDataset(torchvision.datasets.CocoDetection):
         }
         CLASSES = CLASSES.keys()
         CLASSES = sorted(CLASSES)
-        
+
         self.num_classes = len(CLASSES)
-        
+
         self.category_id_to_supercategory = {}
         with open(ann_file) as f:
             annotations = json.load(f)
@@ -84,22 +86,29 @@ class PartImageNetBBOXDataset(torchvision.datasets.CocoDetection):
             category_id = ann["id"]
             supercategory = ann["supercategory"]
             if supercategory in CLASSES:
-                self.category_id_to_supercategory[category_id] = CLASSES.index(supercategory)
+                self.category_id_to_supercategory[category_id] = CLASSES.index(
+                    supercategory
+                )
 
         # print()
         # print(self.category_id_to_supercategory)
         # print()
 
         self.num_seg_classes = len(self.category_id_to_supercategory)
-        
+
         self.imageid_to_label = {}
         for ann in annotations["annotations"]:
             image_id = ann["image_id"]
             category_id = ann["category_id"]
             if image_id not in self.imageid_to_label:
-                self.imageid_to_label[image_id] = self.category_id_to_supercategory[category_id]
+                self.imageid_to_label[
+                    image_id
+                ] = self.category_id_to_supercategory[category_id]
             else:
-                assert self.imageid_to_label[image_id] == self.category_id_to_supercategory[category_id]
+                assert (
+                    self.imageid_to_label[image_id]
+                    == self.category_id_to_supercategory[category_id]
+                )
                 # if self.imageid_to_label[image_id] != self.category_id_to_supercategory[category_id]:
                 #     print('image_id', image_id)
                 #     print(self.imageid_to_label[image_id])
@@ -129,17 +138,15 @@ class PartImageNetBBOXDataset(torchvision.datasets.CocoDetection):
 
         if self._transforms is not None:
             img, target = self._transforms(img, target)
-       
+
         class_label = self.imageid_to_label[image_id]
         return img, target, class_label
 
 
 def get_loader_sampler_bbox(args, transforms, split):
     is_train = split == "train"
-    img_folder_path = os.path.join(
-        os.path.expanduser(args.data), "JPEGImages"
-    )
-    
+    img_folder_path = os.path.join(os.path.expanduser(args.data), "JPEGImages")
+
     ann_file_path = os.path.join(
         os.path.expanduser(args.data), "PartBoxSegmentations", f"{split}.json"
     )
@@ -186,7 +193,9 @@ def get_loader_sampler_bbox(args, transforms, split):
     PART_IMAGENET_BBOX["num_classes"] = part_imagenet_dataset.num_classes
     setattr(args, "num_classes", part_imagenet_dataset.num_classes)
 
-    PART_IMAGENET_BBOX["num_seg_classes"] = part_imagenet_dataset.num_seg_classes
+    PART_IMAGENET_BBOX[
+        "num_seg_classes"
+    ] = part_imagenet_dataset.num_seg_classes
     setattr(args, "seg_labels", part_imagenet_dataset.num_seg_classes)
 
     return loader, sampler

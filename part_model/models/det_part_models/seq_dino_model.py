@@ -56,7 +56,7 @@ class FeatureExtractor(nn.Module):
         return inputs
 
 
-class DinoBoundingBoxModel(nn.Module):
+class SeqDinoModel(nn.Module):
     """DINO as part model."""
 
     def __init__(self, args):
@@ -70,7 +70,7 @@ class DinoBoundingBoxModel(nn.Module):
         # Temporary model options
         self._use_sigmoid = "sig" in args.experiment
 
-        backbone = _build_backbone(args)
+        backbone = build_backbone(args)
         transformer = build_deformable_transformer(args)
 
         # TODO(nab-126@): Remove the try/except block. Try to never use
@@ -187,7 +187,7 @@ class DinoBoundingBoxModel(nn.Module):
         return out
 
 
-def _build_backbone(args):
+def build_backbone(args):
     """Build backbone for DINO. Modified from DINO/models/dino/backbone.py.
 
     Useful args:

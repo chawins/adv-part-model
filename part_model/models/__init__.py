@@ -15,8 +15,8 @@ from torch.cuda import amp
 from part_model.dataloader import DATASET_DICT
 from part_model.models.det_part_models import (
     dino,
-    dino_bbox_model,
-    multi_head_dino_bbox_model,
+    multi_head_dino_model,
+    seq_dino_model,
 )
 from part_model.models.model import Classifier, SegClassifier
 from part_model.models.seg_part_models import (
@@ -68,6 +68,17 @@ def load_checkpoint(
     optimizer: torch.optim.Optimizer | None = None,
     scaler: amp.GradScaler | None = None,
 ) -> None:
+    """Load checkpoint in-place.
+
+    Args:
+        args: Arguments.
+        model: Model.
+        model_path: Path to checkpoint. Defaults to None.
+        resume_opt_state: If True, also load optimizer and scaler in addition to
+            model's weights. Defaults to True.
+        optimizer: Optimizer. Defaults to None.
+        scaler: GradScaler. Defaults to None.
+    """
     logger.info("=> Loading resume checkpoint %s...", model_path)
     if args.gpu is None:
         checkpoint = torch.load(model_path)
@@ -105,8 +116,8 @@ def load_checkpoint(
 
 
 def build_classifier(args):
-
-    assert args.dataset in DATASET_DICT
+    """Build classifier model based on args."""
+    assert args.dataset in DATASET_DICT, f"Invalid dataset ({args.dataset})!"
     normalize = DATASET_DICT[args.dataset]["normalize"]
     if args.arch == "resnet101":
         # timm does not have pretrained resnet101
@@ -142,13 +153,9 @@ def build_classifier(args):
         if args.obj_det_arch == "dino":
             # two options, either sequential or two-headed model
             if model_token == "seq":
-                model = dino_bbox_model.DinoBoundingBoxModel(args)
+                model = seq_dino_model.SeqDinoModel(args)
             elif model_token == "2heads":
-                model = (
-                    multi_head_dino_bbox_model.MultiHeadDinoBoundingBoxModel(
-                        args
-                    )
-                )
+                model = multi_head_dino_model.MultiHeadDinoModel(args)
             else:
                 raise NotImplementedError(
                     f"Invalid model type ({model_token}) for DINO!"
@@ -222,16 +229,6 @@ def build_classifier(args):
             model = two_head_model.TwoHeadModel(args, segmenter, "e")
         elif model_token == "pixel":
             model = pixel_count_model.PixelCountModel(args, segmenter, None)
-        elif model_token == "bbox_2heads_d":
-            model = multi_head_dino_bbox_model.MultiHeadDinoBoundingBoxModel(
-                args
-            )
-        elif model_token == "bbox":
-            # two options, either bbox model from object detection or bbox from segmentation model
-            if args.obj_det_arch == "dino":
-                model = dino_bbox_model.DinoBoundingBoxModel(args)
-            else:
-                model = bbox_model.BoundingBoxModel(args, segmenter)
         elif model_token == "wbbox":
             model = weighted_bbox_model.WeightedBBoxModel(args, segmenter)
         elif model_token == "fc":

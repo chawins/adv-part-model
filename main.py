@@ -29,9 +29,9 @@ from torch.cuda import amp
 # https://github.com/Lightning-AI/metrics/pull/1389
 # from torchmetrics import IoU
 # from torchmetrics.detection import MAP as MeanAveragePrecision
-
 from torchmetrics.classification import MulticlassJaccardIndex as IoU
 from torchmetrics.detection.mean_ap import MeanAveragePrecision
+
 from torchvision.ops import box_convert
 from torchvision.utils import save_image
 

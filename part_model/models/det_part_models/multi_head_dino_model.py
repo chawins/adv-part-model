@@ -1,51 +1,46 @@
+"""Multi-head DINO model for bounding box detection and classification."""
+
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
+from torch import nn
 
-from DINO.main import build_model_main
-from DINO.models.dino.dino import (
-    DINO,
-    build_backbone,
-    build_deformable_transformer,
-)
+from DINO.models.dino.dino import DINO, build_deformable_transformer
 from DINO.util.misc import NestedTensor
+from part_model.models.det_part_models.seq_dino_model import build_backbone
+from part_model.utils.types import BatchImages, Logits
+
+logger = logging.getLogger(__name__)
 
 
-class MultiHeadDinoBoundingBoxModel(nn.Module):
-    def __init__(self, args):
-        print("=> Initializing DinoBoundingBoxModel...")
+class MultiHeadDinoModel(nn.Module):
+    """Multi-head DINO model for bounding box detection and classification."""
+
+    def __init__(self, args) -> None:
+        """Initialize MultiHeadDinoModel.
+
+        Args:
+            args: Arguments.
+        """
+        logger.info("=> Initializing MultiHeadDinoModel...")
         super().__init__()
 
         self.backbone = build_backbone(args)
-
         transformer = build_deformable_transformer(args)
-
         try:
-            match_unstable_error = args.match_unstable_error
             dn_labelbook_size = args.dn_labelbook_size
-        except:
-            match_unstable_error = True
-            # dn_labelbook_size = num_classes
+        except AttributeError:
             dn_labelbook_size = args.seg_labels
-
-        try:
-            dec_pred_class_embed_share = args.dec_pred_class_embed_share
-        except:
-            dec_pred_class_embed_share = True
-        try:
-            dec_pred_bbox_embed_share = args.dec_pred_bbox_embed_share
-        except:
-            dec_pred_bbox_embed_share = True
+        dec_pred_class_embed_share = True
+        dec_pred_bbox_embed_share = True
 
         self.object_detector_head = DINO(
             self.backbone,
             transformer,
             num_classes=args.seg_labels,
-            # num_classes=num_classes,
             num_queries=args.num_queries,
             aux_loss=True,
             iter_update=True,
@@ -69,39 +64,45 @@ class MultiHeadDinoBoundingBoxModel(nn.Module):
             dn_labelbook_size=dn_labelbook_size,
         )
 
-        # TODO: don't hardcode
+        # Output of backbone at the last feature level is of shape
+        # [batch_size, 2048, 7, 7] for ResNet-50.
+        # TODO(nab-126@): Find a way to not hardcode in_features.
         self.classifier_head = nn.Sequential(
             nn.AdaptiveAvgPool2d(output_size=(1, 1)),
             nn.Flatten(),
-            nn.Linear(
-                in_features=2048, out_features=args.num_classes, bias=True
-            ),
+            nn.Linear(in_features=2048, out_features=args.num_classes),
         )
-
-        self.num_classes = args.num_classes
 
     def forward(
         self,
-        images: torch.Tensor,
-        masks: torch.Tensor,
-        dino_targets: dict[str, Any],
-        need_tgt_for_training: bool = True,
+        images: BatchImages,
+        masks: torch.Tensor | None = None,
+        dino_targets: dict[str, Any] | None = None,
+        need_tgt_for_training: bool = False,
         return_mask: bool = False,
+        return_mask_only: bool = False,
         **kwargs,
-    ) -> torch.Tensor:
+    ) -> Logits | tuple[Logits, torch.Tensor]:
+        """Forward pass."""
         _ = kwargs  # Unused
         nested_tensors = NestedTensor(images, masks)
+
+        # out[0] is output of backbone, out[1] is output of position encoder.
         out = self.backbone(nested_tensors)
 
         if need_tgt_for_training:
-            out_object_detector_head = self.object_detector_head(
+            out_obj_det_head = self.object_detector_head(
                 nested_tensors, dino_targets
             )
         else:
-            out_object_detector_head = self.object_detector_head(nested_tensors)
+            out_obj_det_head = self.object_detector_head(nested_tensors)
 
-        out_classifier_head = self.classifier_head(out[0][-1].tensors)
+        # out[0][i] is output of i-th feature level which is a nested tensor
+        # consisting of tensors and mask.
+        out_clf_head = self.classifier_head(out[0][-1].tensors)
 
+        if return_mask_only:
+            return out_obj_det_head
         if return_mask:
-            return out_classifier_head, out_object_detector_head
-        return out_classifier_head
+            return out_clf_head, out_obj_det_head
+        return out_clf_head
