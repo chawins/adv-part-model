@@ -6,12 +6,11 @@ import logging
 from typing import Any
 
 import torch
-import torchvision
 from torch import nn
 
-from DINO.models.dino.backbone import Backbone, Joiner, build_position_encoding
 from DINO.models.dino.dino import DINO, build_deformable_transformer
 from DINO.util.misc import NestedTensor
+from part_model.models.det_part_models.backbone import build_backbone
 from part_model.utils.types import BatchImages, Logits
 
 logger = logging.getLogger(__name__)
@@ -76,13 +75,9 @@ class SeqDinoModel(nn.Module):
         # TODO(nab-126@): Remove the try/except block. Try to never use
         # catch-all except.
         try:
-            match_unstable_error = args.match_unstable_error
             dn_labelbook_size = args.dn_labelbook_size
         except:
-            match_unstable_error = True
-            # dn_labelbook_size = num_classes
             dn_labelbook_size = args.seg_labels
-
         try:
             dec_pred_class_embed_share = args.dec_pred_class_embed_share
         except:
@@ -185,53 +180,3 @@ class SeqDinoModel(nn.Module):
         if return_mask:
             return out, dino_outputs
         return out
-
-
-def build_backbone(args):
-    """Build backbone for DINO. Modified from DINO/models/dino/backbone.py.
-
-    Useful args:
-        - backbone: backbone name
-        - lr_backbone:
-        - dilation
-        - return_interm_indices: available: [0,1,2,3], [1,2,3], [3]
-        - backbone_freeze_keywords:
-        - use_checkpoint: for swin only for now
-    """
-    position_embedding = build_position_encoding(args)
-    # This can be removed
-    train_backbone = args.lr_backbone > 0
-    if not train_backbone:
-        raise ValueError("Please set lr_backbone > 0")
-    return_interm_indices = args.return_interm_indices
-    assert return_interm_indices in [[0, 1, 2, 3], [1, 2, 3], [3]]
-
-    if args.batch_norm_type == "FrozenBatchNorm2d":
-        batch_norm_layer = torchvision.ops.FrozenBatchNorm2d
-    else:
-        batch_norm_layer = getattr(torch.nn, args.batch_norm_type)
-
-    if args.backbone in ["resnet50", "resnet101"]:
-        backbone = Backbone(
-            args.backbone,
-            train_backbone,
-            args.dilation,
-            return_interm_indices,
-            batch_norm=batch_norm_layer,
-        )
-        bb_num_channels = backbone.num_channels
-    else:
-        raise NotImplementedError(
-            "Only resnet50 and resnet101 are supported for now!"
-        )
-    assert len(bb_num_channels) == len(return_interm_indices), (
-        f"len(bb_num_channels) {len(bb_num_channels)} != "
-        f"len(return_interm_indices) {len(return_interm_indices)}"
-    )
-
-    model = Joiner(backbone, position_embedding)
-    model.num_channels = bb_num_channels
-    assert isinstance(
-        bb_num_channels, list
-    ), f"bb_num_channels is expected to be a List but {type(bb_num_channels)}!"
-    return model

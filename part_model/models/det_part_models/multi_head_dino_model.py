@@ -10,7 +10,7 @@ from torch import nn
 
 from DINO.models.dino.dino import DINO, build_deformable_transformer
 from DINO.util.misc import NestedTensor
-from part_model.models.det_part_models.seq_dino_model import build_backbone
+from part_model.models.det_part_models.backbone import build_backbone
 from part_model.utils.types import BatchImages, Logits
 
 logger = logging.getLogger(__name__)
