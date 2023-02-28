@@ -164,10 +164,20 @@ def main(args):
         model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu], find_unused_parameters=args.find_unused_params)
         model_without_ddp = model.module
     n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print('n_parameters', n_parameters)
     logger.info('number of params:'+str(n_parameters))
     logger.info("params:\n"+json.dumps({n: p.numel() for n, p in model.named_parameters() if p.requires_grad}, indent=2))
 
     param_dicts = get_param_dict(args, model_without_ddp)
+    # n_parameters 46670782
+    # print('param_dicts', param_dicts)
+    # qqq
+    # tmp1 = args.lr
+    # tmp2 = args.lr_backbone
+    # tmp3 = args.weight_decay
+    # print(tmp1, tmp2, tmp3)
+    # 0.0001 1e-05 0.0001
+    # import pdb; pdb.set_trace()
 
     optimizer = torch.optim.AdamW(param_dicts, lr=args.lr,
                                   weight_decay=args.weight_decay)

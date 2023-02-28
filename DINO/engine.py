@@ -11,6 +11,8 @@ from typing import Iterable
 from DINO.util.utils import slprint, to_device
 
 import torch
+from torchmetrics.detection import MAP as MeanAveragePrecision
+from torchvision.ops import box_convert
 
 import DINO.util.misc as utils
 from DINO.datasets.coco_eval import CocoEvaluator
@@ -39,7 +41,8 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
 
     _cnt = 0
     for samples, targets in metric_logger.log_every(data_loader, print_freq, header, logger=logger):
-
+        # if _cnt >= 10:
+        #     break
         samples = samples.to(device)
         targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
 
@@ -143,6 +146,7 @@ def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, out
     if not useCats:
         print("useCats: {} !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!".format(useCats))
     coco_evaluator = CocoEvaluator(base_ds, iou_types, useCats=useCats)
+    map_metric = MeanAveragePrecision() # box_format='xyxy'
     # coco_evaluator.coco_eval[iou_types[0]].params.iouThrs = [0, 0.1, 0.5, 0.75]
 
     panoptic_evaluator = None
@@ -183,7 +187,8 @@ def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, out
         if 'class_error' in loss_dict_reduced:
             metric_logger.update(class_error=loss_dict_reduced['class_error'])
 
-        orig_target_sizes = torch.stack([t["orig_size"] for t in targets], dim=0)
+        # orig_target_sizes = torch.stack([t["orig_size"] for t in targets], dim=0)
+        orig_target_sizes = torch.stack([t["size"] for t in targets], dim=0)
         results = postprocessors['bbox'](outputs, orig_target_sizes)
         # [scores: [100], labels: [100], boxes: [100, 4]] x B
         if 'segm' in postprocessors.keys():
@@ -193,6 +198,20 @@ def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, out
         # import ipdb; ipdb.set_trace()
         if coco_evaluator is not None:
             coco_evaluator.update(res)
+            
+            target_bbox = targets.copy()
+            for j, tbox in enumerate(target_bbox):
+                shape = tbox["size"]
+                boxes = tbox["boxes"]
+                boxes = box_convert(
+                    boxes, in_fmt="cxcywh", out_fmt="xyxy"
+                )
+                boxes[:, ::2] = boxes[:, ::2] * shape[1]
+                boxes[:, 1::2] = boxes[:, 1::2] * shape[0]
+                target_bbox[j]["boxes"] = boxes
+
+            # import pdb; pdb.set_trace()
+            map_metric.update(results, target_bbox)
 
         if panoptic_evaluator is not None:
             res_pano = postprocessors["panoptic"](outputs, target_sizes, orig_target_sizes)
@@ -277,6 +296,8 @@ def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, out
     if coco_evaluator is not None:
         coco_evaluator.accumulate()
         coco_evaluator.summarize()
+        map_dict = map_metric.compute()
+        print('map_dict', map_dict)
         
     panoptic_res = None
     if panoptic_evaluator is not None:

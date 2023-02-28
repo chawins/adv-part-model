@@ -236,6 +236,17 @@ def get_args_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--group-parts", action="store_true", help="Group part imagenet classes"
     )
+    parser.add_argument(
+        "--num-select",
+        default=300,
+        type=int,
+        help="Number of detection boxes to select from queries",
+    )
+    parser.add_argument(
+        "--nms-iou-threshold",
+        default=-1,
+        type=float
+    )
 
     parser.add_argument("--config_file", "-c", type=str, required=False)
     parser.add_argument(

@@ -28,7 +28,6 @@ from torchmetrics import IoU as IoU   # Use this for older version of torchmetri
 # from torchmetrics.detection.mean_ap import MeanAveragePrecision
 from torchmetrics.detection import MAP as MeanAveragePrecision
 from torchvision.datasets import CocoDetection
-from torchvision.ops import box_convert
 from torchvision.utils import save_image
 
 # from DINO.datasets.coco_eval import CocoEvaluator
@@ -56,7 +55,7 @@ from part_model.utils import (
 )
 from part_model.utils.argparse import get_args_parser
 from part_model.utils.dataloader_visualizer import debug_dino_dataloader
-from part_model.utils.image import plot_img_bbox
+from part_model.utils.image import unnormalize_bbox_targets, get_bbox_from_masks, get_masks_from_bbox, plot_img_bbox
 from part_model.utils.loss import get_train_criterion
 
 BEST_ACC = 0
@@ -112,7 +111,8 @@ def main() -> None:
         logfile.write(str(args) + "\n")
         logfile.flush()
         if args.wandb:
-            wandb_id = os.path.split(args.output_dir)[-1]
+            # wandb_id = os.path.split(args.output_dir)[-1]
+            wandb_id = '_'.join(args.output_dir.split('/'))
             wandb.init(
                 project="part-model", id=wandb_id, config=args, resume="allow"
             )
@@ -195,12 +195,12 @@ def main() -> None:
                     print("=> Saving new best checkpoint...")
                     save_on_master(save_dict, args.output_dir, is_best=True)
                     if 'seg-only' in args.experiment and args.obj_det_arch == 'dino':
-                        print('best map', BEST_ACC)
                         BEST_ACC = (
                             max(clean_acc1, BEST_ACC)
                             if acc1 is None
                             else max(acc1, BEST_ACC)
                         )
+                        print('best map', BEST_ACC)
                         # if adv_loss1 is None:
                         #     BEST_LOSS = min(BEST_LOSS, clean_loss1)
                         # else:
@@ -424,27 +424,13 @@ def _validate(val_loader, model, criterion, attack, val_dataset=None):
     compute_acc = get_compute_acc(args)
     compute_iou = IoU(args.seg_labels).cuda(args.gpu)
 
-
-    
-    
-    # coco_eval = COCOeval(coco_gt, iouType='bbox')
-    # coco_eval.useCats = useCats
-
-
     if (args.obj_det_arch == 'dino' and seg_only) or args.calculate_map:
-    # if True:
-        # if isinstance(val_dataset, CocoDetection):
-        #     base_dataset = val_dataset.coco
-        #     useCats = False
-        #     coco_evaluator = CocoEvaluator(base_dataset, iou_types=['bbox'], useCats=useCats)
+        map_metric = MeanAveragePrecision() # box_format='xyxy'
 
-
-        compute_acc = lambda x, y: torch.tensor(0) # dummy
-        map_metric = MeanAveragePrecision(dist_sync_on_step=True) # box_format='xyxy'
+        # TODO: set num_select for segmenter model
         postprocessors = {
             "bbox": PostProcess(
-                # num_select=args.num_select,
-                num_select=10,
+                num_select=args.num_select,
                 nms_iou_threshold=args.nms_iou_threshold,
             ).cuda(args.gpu)
         }
@@ -513,59 +499,20 @@ def _validate(val_loader, model, criterion, attack, val_dataset=None):
                     loss = criterion(outputs, targets)
 
                 if seg_only or args.calculate_map:
-                    # orig_target_sizes = torch.stack([t["orig_size"] for t in target_bbox], dim=0)
                     orig_target_sizes = torch.stack([t["size"] for t in target_bbox], dim=0)
-                    # target_sizes = torch.ones((batch_size, 2)).to(images.device)
-                    results = postprocessors["bbox"](
+                    pred_bbox = postprocessors["bbox"](
                         dino_outputs, orig_target_sizes
-                    )
+                    ) 
+                    
+                    outputs = get_masks_from_bbox(pred_bbox, orig_target_sizes, args.seg_labels)
+                    target_bbox = unnormalize_bbox_targets(target_bbox)
+                    map_metric.update(pred_bbox, target_bbox)
+                    pixel_acc = pixel_accuracy(outputs, targets)
+                    pacc.update(pixel_acc.item(), batch_size)
 
-                    # orig_target_sizes = torch.stack([t["orig_size"] for t in targets], dim=0)
-                    # results = postprocessors['bbox'](outputs, orig_target_sizes)
-                    # [scores: [100], labels: [100], boxes: [100, 4]] x B
-                    # if 'segm' in postprocessors.keys():
-                    #     target_sizes = torch.stack([t["size"] for t in targets], dim=0)
-                    #     results = postprocessors['segm'](results, outputs, orig_target_sizes, target_sizes)
-                    # print('results', results)
-                    # import pdb; pdb.set_trace()
-                    # res = {target['image_id'].item(): output for target, output in zip(target_bbox, results)}
-                    # # import ipdb; ipdb.set_trace()
-                    # if coco_evaluator is not None:
-                    #     coco_evaluator.update(target_bbox, res)
-
-                    #     import pdb; pdb.set_trace()
-                    #     coco_eval_bbox = coco_evaluator.coco_eval['bbox']
-                    #     gts = coco_eval_bbox.cocoGt.loadAnns(coco_eval_bbox.cocoGt.getAnnIds(imgIds=0))
-                    #     coco_eval_bbox.cocoGt.__dict__.keys() # dict_keys(['dataset', 'anns', 'cats', 'imgs', 'imgToAnns', 'catToImgs'])
-                    #     type(coco_eval_bbox.cocoGt.anns)
-                    #     len(coco_eval_bbox.cocoGt.anns)
-                    #     # {'id': 2, 'image_id': 0, 'category_id': 26, 'bbox': [412.33, 126.54, 20.41, 30.38], 'segmentation': [[412.33, 152.18, 415.65, 127.49, 428.94, 126.54, 432.74, 130.82, 430.84, 155.03, 426.09, 156.93, 415.65, 155.98]], 'iscrowd': 0, 'area': 620.06, 'ignore': 0, '_ignore': 1}
-                    #     coco_eval_bbox.cocoGt.anns[0]
-
-                    #     ids = []
-                    #     for gt in coco_eval_bbox._gts:
-                    #         img_id, cat_id = gt
-                    #         ids.append(img_id)
-                    #     print('processed ids')
-                    #     import pdb; pdb.set_trace()
-
-
-                    # convert target boxes format from cxcywh to xyxy
-                    for j, tbox in enumerate(target_bbox):
-                        shape = tbox["size"]
-                        boxes = tbox["boxes"]
-                        boxes = box_convert(
-                            boxes, in_fmt="cxcywh", out_fmt="xyxy"
-                        )
-                        boxes[:, ::2] = boxes[:, ::2] * shape[1]
-                        boxes[:, 1::2] = boxes[:, 1::2] * shape[0]
-                        target_bbox[j]["boxes"] = boxes
-
-                    map_metric.update(results, target_bbox)
-
-                    if args.debug:
+                    if args.debug:  
                         plot_img_bbox(images, target_bbox)
-                        plot_img_bbox(images, results)
+                        plot_img_bbox(images, pred_bbox)
                         import pdb; pdb.set_trace()
 
             else:
@@ -586,9 +533,19 @@ def _validate(val_loader, model, criterion, attack, val_dataset=None):
 
                 if target_segs is None or "normal" in args.experiment or seg_only:
                     outputs = model(images)
+                    if args.calculate_map:
+                        pred_bbox = get_bbox_from_masks(outputs)
+                        target_bbox = unnormalize_bbox_targets(target_bbox)
+                        map_metric.update(pred_bbox, target_bbox)
+
                     if args.debug:
+                        save_image(images, "test.png")
+                        save_image((targets.unsqueeze(dim=1).cpu() * 1.0), "test_masks.png")
                         save_image(COLORMAP[outputs.argmax(1).cpu()].permute(0, 3, 1, 2), "test_preds.png")
+                        save_image((outputs.argmax(dim=1).unsqueeze(dim=1).cpu() * 1.0), "test_preds.png")
                         plot_img_bbox(images, target_bbox)
+                        plot_img_bbox(images, pred_bbox)
+
                 elif "groundtruth" in args.experiment:
                     outputs = model(images, segs=target_segs)
                     loss = criterion(outputs, targets)
@@ -632,37 +589,17 @@ def _validate(val_loader, model, criterion, attack, val_dataset=None):
     if pacc.count > 0:
         pacc.synchronize()
         print(f"Pixelwise accuracy: {pacc.avg:.4f}")
-    if seg_only or args.calculate_map:
-    # if True:
-        # if coco_evaluator is not None:
-        #     coco_evaluator.synchronize_between_processes()
+    
+    if seg_only and args.obj_det_arch != "dino":   
+        iou.synchronize()
+        print(f"IoU: {iou.avg:.4f}")
 
-        # # accumulate predictions from all images
-        # if coco_evaluator is not None:
-        #     coco_evaluator.accumulate()
-        #     coco_evaluator.summarize()
-
-        #     stats_coco_eval_bbox = coco_evaluator.coco_eval['bbox'].stats.tolist()
-        #     print()
-        #     print('stats_coco_eval_bbox', stats_coco_eval_bbox)
-        #     print()
-        #     map_dict = map_metric.compute()
-        #     print()
-        #     print('map_dict', map_dict)
-        #     print()
-        #     metrics_dict["map"] = map_dict["map"].item()
-        #     qqq
-        
-        if args.obj_det_arch == "dino":
-            print(" * mAP metric")
-            # map_dict = {}
-            # map_dict['map'] = torch.tensor(0)
-            map_dict = map_metric.compute()
-            print(map_dict)
-            metrics_dict["map"] = map_dict["map"].item()
-        else:
-            iou.synchronize()
-            print(f"IoU: {iou.avg:.4f}")
+    if args.calculate_map:
+        print(" * mAP metric")
+        # map_dict = {'map': torch.tensor(0)}
+        map_dict = map_metric.compute()
+        print(map_dict)
+        metrics_dict["map"] = map_dict["map"].item()
         
     metrics_dict["acc1"] = top1.avg
     metrics_dict["loss"] = losses.avg
