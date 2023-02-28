@@ -103,7 +103,6 @@ def load_checkpoint(
         scaler.load_state_dict(checkpoint["scaler"])
     logger.info("=> Loaded resume checkpoint (epoch %d)", checkpoint["epoch"])
 
-
 def build_classifier(args):
 
     assert args.dataset in DATASET_DICT
@@ -389,11 +388,14 @@ def build_segmentation(args):
 
 def build_detector(args):
     model = dino.DinoModel(args)
-    for param in model.parameters():
-        param.requires_grad = True
-
     model = wrap_distributed(args, model)
 
+    n_det = sum(p.numel() for p in model.parameters()) / 1e6
+    nt_det = (
+        sum(p.numel() for p in model.parameters() if p.requires_grad) / 1e6
+    )
+    logger.info("=> Model params (train/total): %.2fM/%.2fM", nt_det, n_det)
+    
     backbone_params, non_backbone_params = [], []
     for name, param in model.named_parameters():
         if not param.requires_grad:
@@ -425,37 +427,26 @@ def build_detector(args):
 
     scaler = amp.GradScaler(enabled=not args.full_precision)
 
-    # Optionally resume from a checkpoint
-    if not (args.evaluate or args.resume or args.resume_if_exist):
-        logger.info("=> Model is randomly initialized.")
-        return model, optimizer, scaler
+    if args.resume or args.evaluate:
+        if os.path.isfile(args.resume):
+            logger.info("=> loading resume checkpoint %s...", args.resume)
+            if args.gpu is None:
+                checkpoint = torch.load(args.resume)
+            else:
+                # Map model to be loaded to specified single gpu.
+                loc = f"cuda:{args.gpu}"
+                checkpoint = torch.load(args.resume, map_location=loc)
+            model.load_state_dict(checkpoint["state_dict"])
 
-    if args.evaluate:
-        model_path = f"{args.output_dir}/checkpoint_best.pt"
-        resume_opt_state = False
-    else:
-        model_path = f"{args.output_dir}/checkpoint_last.pt"
-        resume_opt_state = True
-        if not args.resume_if_exist or not os.path.isfile(model_path):
-            model_path = args.resume
-            resume_opt_state = False
-
-    if os.path.isfile(model_path):
-        load_checkpoint(
-            args,
-            model,
-            model_path=model_path,
-            resume_opt_state=resume_opt_state,
-            optimizer=optimizer,
-            scaler=scaler,
-        )
-    elif args.resume:
-        raise FileNotFoundError(f"=> No checkpoint found at {model_path}.")
-    else:
-        logger.info(
-            "=> resume_if_exist is True, but no checkpoint found at %s",
-            model_path,
-        )
+            if not args.load_weight_only:
+                args.start_epoch = checkpoint["epoch"]
+                optimizer.load_state_dict(checkpoint["optimizer"])
+                scaler.load_state_dict(checkpoint["scaler"])
+            logger.info(
+                "=> loaded resume checkpoint (epoch %d)", checkpoint["epoch"]
+            )
+        else:
+            logger.info("=> no checkpoint found at %s", args.resume)
 
     return model, optimizer, scaler
 
