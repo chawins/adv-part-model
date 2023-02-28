@@ -167,6 +167,10 @@ Validation and Test set generation in Shape-vs-Texture and Common Corruptions be
 
 ---
 
+This software and/or data was deposited in the BAIR Open Research Commons repository on Feb 28, 2023.
+
+---
+
 ## TODOs
 
 - Upload model weights on a permanent link.
@@ -175,7 +179,7 @@ Validation and Test set generation in Shape-vs-Texture and Common Corruptions be
 
 ---
 
-## Contributes
+## Contributions
 
 - For questions and bug reports, please feel free to create an issue or reach out to us directly.
 - Contributions are absolutely welcome.
