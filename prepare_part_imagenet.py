@@ -32,6 +32,24 @@ CLASSES = {
     "Bottle": 2,
 }
 
+filename_to_part_imagenet_label = {}
+
+# change part label ids based on alphabetical order of metaclasses
+dino_class_to_seg_class = {
+    0:30, 1:31, 2:32, 3:33, # Quadruped
+    4:9, 5:10, 6:11, 7:12, 8:13, # Biped
+    9:26, 10:27, 11:28, 12:29, # Fish
+    13:14, 14:15, 15:16, 16:17, 17:18, # Bird
+    18:38, 19:39, # Snake
+    20:34, 21:35, 22:36, 23:37, # Reptile
+    24:23, 25:24, 26:25, # Car
+    27:5, 28:6, 29:7, 30:8, # Bicycle
+    31:19, 32:20, # Boat
+    33:0, 34:1, 35:2, 36:3, 37:4, # Aeroplane
+    38:21, 39:22 # Bottle
+}
+assert set(dino_class_to_seg_class.keys()) == set(range(40))
+assert set(dino_class_to_seg_class.values()) == set(range(40))
 
 def powerset(iterable):
     "powerset([1,2,3]) --> () (1,) (2,) (3,) (1,2) (1,3) (2,3) (1,2,3)"
@@ -92,8 +110,6 @@ def get_seg_masks(path, all_image_names, use_box_seg=False):
             img_ids.extend(coco.getImgIds(catIds=ids))
         img_ids = set(img_ids)
 
-        # import pdb
-        # pdb.set_trace()
 
         imgs = coco.loadImgs(img_ids)
         seg_masks, img_paths = [], []
@@ -101,6 +117,7 @@ def get_seg_masks(path, all_image_names, use_box_seg=False):
             img = imgs[i]
             ann_ids = coco.getAnnIds(imgIds=img_id)
             anns = coco.loadAnns(ann_ids)
+            image_filename = img['file_name'].split('.')[0]
             if img["file_name"].split(".")[0] not in all_image_names:
                 print(f'{img["file_name"].split(".")[0]} file missing!')
                 continue
@@ -108,6 +125,10 @@ def get_seg_masks(path, all_image_names, use_box_seg=False):
                 f'{img["file_name"].split("_")[0]}/{img["file_name"].split(".")[0]}'
             )
             img_paths.append(img_path)
+
+            # filename_to_part_imagenet_label[img["file_name"]] = label
+            filename_to_part_imagenet_label[image_filename] = label
+            # import pdb; pdb.set_trace()
 
             # Turn annotation to mask
             seg_mask = np.zeros((img["height"], img["width"]), dtype=np.int8)
@@ -160,8 +181,6 @@ def save_images_partition(partition, data_dict, idx, label, use_box_seg=False):
     # Write segmentation as tif file
     for i in idx:
         name = f'{img_paths[i].split("/")[1]}.tif'
-        # import pdb
-        # pdb.set_trace()
         save_pil_image(seg_masks[i], os.path.join(label_path, name))
 
 # Load annotations from the annotation folder of PASCAL-Part dataset:
@@ -198,7 +217,8 @@ if __name__ == "__main__":
             data_dict[k].extend(part_dict[k])
     print(f'Total number of samples {len(data_dict["seg_masks"])}.')
 
-    
+    # import pdb; pdb.set_trace()
+
     all_indices = {}
     all_indices['train'] = []
     all_indices['val'] = []
@@ -237,10 +257,10 @@ if __name__ == "__main__":
                 label,
                 use_box_seg=args.use_box_seg,
             )
-
-
-
-    # save bounding box annotations
+    
+    # save bounding box annotations    
+    ann_file_path = os.path.join(args.data_dir, "PartBoxSegmentations")
+    os.makedirs(ann_file_path, exist_ok=True)
     ann_data = {}
     ann_data['images'] = []
     ann_data['annotations'] = []
@@ -250,12 +270,11 @@ if __name__ == "__main__":
     new_image_id = 0
     new_annotation_id = 0
     for partition in ['train', 'val', 'test']:
-        ann_file_path = os.path.join(args.data_dir, f"{partition}.json")
-
-        with open(ann_file_path) as f:
+        orig_ann_file_path = os.path.join(args.data_dir, f"{partition}.json")
+        with open(orig_ann_file_path) as f:
             partition_data = json.load(f)
         
-        for image in partition_data['images']:            
+        for image in partition_data['images']: 
             original_image_id = image['id']
             for ann_orig in partition_data['annotations']:
                 if ann_orig['image_id'] == original_image_id:
@@ -264,7 +283,7 @@ if __name__ == "__main__":
                     ann['id'] = new_annotation_id
                     ann_data['annotations'].append(ann)
                     new_annotation_id += 1
-            
+
             # assign image new id
             image['id'] = new_image_id
             ann_data['images'].append(image)
@@ -277,10 +296,18 @@ if __name__ == "__main__":
     img_paths = data_dict["img_paths"]
     # reshufling the images and saving the new annotations in COCO format
     for partition in ['train', 'val', 'test']:
+        seg_masks_path = os.path.join(args.data_dir, "PartBoxSegmentations", args.name, partition)
         partition_ann_data = {}
         partition_ann_data['images'] = []
         partition_ann_data['annotations'] = []
-        partition_ann_data['categories'] = ann_data['categories']
+        partition_ann_data['categories'] = []
+
+        for ann_orig in ann_data['categories']:
+            label = ann_orig['id']
+            ann = copy.deepcopy(ann_orig)
+            new_label = dino_class_to_seg_class[label]
+            ann['id'] = new_label
+            partition_ann_data['categories'].append(ann)
 
         partition_indices = all_indices[partition]
 
@@ -293,26 +320,57 @@ if __name__ == "__main__":
         prev_image_ids_to_new_image_ids = {}
         new_image_id = 0
         new_annotation_id = 0
+        
         for image in ann_data['images']:
+            image_filename = image['file_name'].split('.')[0]
+            
             if image['file_name'] in partition_filenames:
                 original_image_id = image['id']
+                seg_mask = np.zeros((image["height"], image["width"]), dtype=np.int8)
                 for ann_orig in ann_data['annotations']:
+                    if ann_orig["area"] == 0:
+                        continue
                     if ann_orig['image_id'] == original_image_id:
+                        part_mask = np.zeros((image["height"], image["width"]), dtype=np.int8)
+                        label = ann_orig['category_id']
+                        new_label = dino_class_to_seg_class[label] 
                         ann = copy.deepcopy(ann_orig)
                         ann['image_id'] = new_image_id
                         ann['id'] = new_annotation_id
+                        ann['category_id'] = new_label
                         partition_ann_data['annotations'].append(ann)
                         new_annotation_id += 1
+
+                        xmin, ymin, width, height = ann['bbox']
+                        xmax = xmin + width
+                        ymax = ymin + height
+                        xmin = max(0, int(xmin))
+                        ymin = max(0, int(ymin))
+                        xmax = min(image["width"], int(xmax))
+                        ymax = min(image["height"], int(ymax))
+                        part_mask[ymin : ymax + 1, xmin : xmax + 1] = 1
+                        seg_mask = part_mask * (new_label + 1) + (1 - part_mask) * seg_mask # add one bacause of background class 0
             
                 # assign image new id
                 image['id'] = new_image_id
-                
                 imagenet_id, part_imagenet_id = image['file_name'].split('_')
                 image['file_name'] = os.path.join(imagenet_id, image['file_name'])
                 partition_ann_data['images'].append(image)
                 new_image_id += 1
-                        
+
+                # save segmentation mask
+                try:
+                    part_imagenet_class_label = filename_to_part_imagenet_label[image_filename]
+                except:
+                    import pdb; pdb.set_trace()
+                label_path = os.path.join(seg_masks_path, part_imagenet_class_label)
+                os.makedirs(label_path, exist_ok=True)
+                name = f'{image_filename}.tif'
+                image_path = os.path.join(label_path, name)
+                pil_img = PIL.Image.fromarray(seg_mask)
+                pil_img.save(image_path)
+                
         # save json to file
-        ann_file_path = os.path.join(args.data_dir, "PartBoxSegmentations", f"{partition}.json")
-        with open(ann_file_path, 'w') as f:
+        orig_ann_file_path = os.path.join(ann_file_path, f"{partition}.json")
+        with open(orig_ann_file_path, 'w') as f:
             json.dump(partition_ann_data, f)

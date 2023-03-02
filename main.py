@@ -152,11 +152,11 @@ def main() -> None:
 
                 # TODO: clean/unify
                 if 'seg-only' in args.experiment and args.obj_det_arch == 'dino':
-                    clean_acc1, acc1 = val_stats["map"], None
-                    is_best = clean_acc1 > BEST_ACC
-                    # clean_loss1, acc1 = val_stats["loss"], None
-                    # adv_loss1 = None
-                    # is_best = clean_loss1 < BEST_LOSS
+                    # clean_acc1, acc1 = val_stats["map"], None
+                    # is_best = clean_acc1 > BEST_ACC
+                    clean_loss1, acc1 = val_stats["loss"], None
+                    adv_loss1 = None
+                    is_best = clean_loss1 < BEST_LOSS
                 else:
                     clean_acc1, acc1 = val_stats["acc1"], None
                     is_best = clean_acc1 > BEST_ACC
@@ -167,15 +167,15 @@ def main() -> None:
                     )
                     # TODO: clean/unify
                     if 'seg-only' in args.experiment and args.obj_det_arch == 'dino':
-                        acc1 = adv_val_stats["map"]
-                        val_stats["adv_acc1"] = acc1
-                        val_stats["adv_loss"] = adv_val_stats["loss"]
-                        is_best = clean_acc1 >= acc1 > BEST_ACC
-
-                        # adv_loss1 = val_stats["loss"]
+                        # acc1 = adv_val_stats["map"]
                         # val_stats["adv_acc1"] = acc1
                         # val_stats["adv_loss"] = adv_val_stats["loss"]
-                        # is_best = clean_loss1 <= adv_loss1 < BEST_LOSS
+                        # is_best = clean_acc1 >= acc1 > BEST_ACC
+
+                        adv_loss1 = val_stats["loss"]
+                        val_stats["adv_acc1"] = acc1
+                        val_stats["adv_loss"] = adv_val_stats["loss"]
+                        is_best = clean_loss1 <= adv_loss1 < BEST_LOSS
                     else:
                         acc1 = adv_val_stats["acc1"]
                         val_stats["adv_acc1"] = acc1
@@ -195,17 +195,17 @@ def main() -> None:
                     print("=> Saving new best checkpoint...")
                     save_on_master(save_dict, args.output_dir, is_best=True)
                     if 'seg-only' in args.experiment and args.obj_det_arch == 'dino':
-                        BEST_ACC = (
-                            max(clean_acc1, BEST_ACC)
-                            if acc1 is None
-                            else max(acc1, BEST_ACC)
-                        )
-                        print('best map', BEST_ACC)
-                        # if adv_loss1 is None:
-                        #     BEST_LOSS = min(BEST_LOSS, clean_loss1)
-                        # else:
-                        #     BEST_LOSS = min(BEST_LOSS, adv_loss1)
-                        # print('BEST_LOSS', BEST_LOSS)
+                        # BEST_ACC = (
+                        #     max(clean_acc1, BEST_ACC)
+                        #     if acc1 is None
+                        #     else max(acc1, BEST_ACC)
+                        # )
+                        # print('best map', BEST_ACC)
+                        if adv_loss1 is None:
+                            BEST_LOSS = min(BEST_LOSS, clean_loss1)
+                        else:
+                            BEST_LOSS = min(BEST_LOSS, adv_loss1)
+                        print('BEST_LOSS', BEST_LOSS)
                     else:
                         BEST_ACC = (
                             max(clean_acc1, BEST_ACC)
@@ -426,8 +426,6 @@ def _validate(val_loader, model, criterion, attack, val_dataset=None):
 
     if (args.obj_det_arch == 'dino' and seg_only) or args.calculate_map:
         map_metric = MeanAveragePrecision() # box_format='xyxy'
-
-        # TODO: set num_select for segmenter model
         postprocessors = {
             "bbox": PostProcess(
                 num_select=args.num_select,
@@ -503,16 +501,19 @@ def _validate(val_loader, model, criterion, attack, val_dataset=None):
                     pred_bbox = postprocessors["bbox"](
                         dino_outputs, orig_target_sizes
                     ) 
-                    
+
                     outputs = get_masks_from_bbox(pred_bbox, orig_target_sizes, args.seg_labels)
                     target_bbox = unnormalize_bbox_targets(target_bbox)
                     map_metric.update(pred_bbox, target_bbox)
                     pixel_acc = pixel_accuracy(outputs, targets)
                     pacc.update(pixel_acc.item(), batch_size)
-
+                
                     if args.debug:  
                         plot_img_bbox(images, target_bbox)
                         plot_img_bbox(images, pred_bbox)
+                        save_image(COLORMAP[outputs.argmax(1).cpu()].permute(0, 3, 1, 2), "test_preds.png")
+                        save_image(COLORMAP[targets.cpu()].permute(0, 3, 1, 2), "test_masks.png")
+                        plot_img_bbox(COLORMAP[targets.cpu()].permute(0, 3, 1, 2), target_bbox)
                         import pdb; pdb.set_trace()
 
             else:
@@ -530,7 +531,6 @@ def _validate(val_loader, model, criterion, attack, val_dataset=None):
                         target_segs = target_segs.repeat(
                             (ratio,) + (1,) * (len(target_segs.shape) - 1)
                         )
-
                 if target_segs is None or "normal" in args.experiment or seg_only:
                     outputs = model(images)
                     if args.calculate_map:
@@ -540,12 +540,15 @@ def _validate(val_loader, model, criterion, attack, val_dataset=None):
 
                     if args.debug:
                         save_image(images, "test.png")
+                        save_image(COLORMAP[targets.cpu()].permute(0, 3, 1, 2), "test_masks.png")
                         save_image((targets.unsqueeze(dim=1).cpu() * 1.0), "test_masks.png")
                         save_image(COLORMAP[outputs.argmax(1).cpu()].permute(0, 3, 1, 2), "test_preds.png")
                         save_image((outputs.argmax(dim=1).unsqueeze(dim=1).cpu() * 1.0), "test_preds.png")
                         plot_img_bbox(images, target_bbox)
                         plot_img_bbox(images, pred_bbox)
-
+                        pred_masks = (outputs.argmax(dim=1).unsqueeze(dim=1).cpu() * 1.0)
+                        pred_masks = pred_masks.repeat(1, 3, 1, 1)
+                        plot_img_bbox(pred_masks, pred_bbox)
                 elif "groundtruth" in args.experiment:
                     outputs = model(images, segs=target_segs)
                     loss = criterion(outputs, targets)
@@ -556,7 +559,7 @@ def _validate(val_loader, model, criterion, attack, val_dataset=None):
                     pixel_acc = pixel_accuracy(masks, target_segs)
                     pacc.update(pixel_acc.item(), batch_size)
                 loss = criterion(outputs, targets)
-
+                
         # DEBUG
         if args.debug:
             save_image(
@@ -570,9 +573,10 @@ def _validate(val_loader, model, criterion, attack, val_dataset=None):
         acc1 = compute_acc(outputs, targets)
         losses.update(loss.item(), batch_size)
         top1.update(acc1.item(), batch_size)
-        if seg_only and args.obj_det_arch != "dino":
+        
+        # deprecated: computation works but is slow
+        if False and seg_only and args.obj_det_arch != "dino":
             iou.update(compute_iou(outputs, targets).item(), images.size(0))
-
         # measure elapsed time
         batch_time.update(time.time() - end)
         end = time.time()
@@ -590,7 +594,8 @@ def _validate(val_loader, model, criterion, attack, val_dataset=None):
         pacc.synchronize()
         print(f"Pixelwise accuracy: {pacc.avg:.4f}")
     
-    if seg_only and args.obj_det_arch != "dino":   
+    # deprecated: computation works but is slow
+    if False and seg_only and args.obj_det_arch != "dino":   
         iou.synchronize()
         print(f"IoU: {iou.avg:.4f}")
 

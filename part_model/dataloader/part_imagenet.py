@@ -82,9 +82,6 @@ class PartImageNetSegDataset(torchvision.datasets.CocoDetection):
         img_folder = os.path.join(root, "JPEGImages")
         super(PartImageNetSegDataset, self).__init__(img_folder, ann_path)
 
-        # TODO: is this used?
-        self.prepare = ConvertCocoPolysToMask(False)
-
         self._root: str = root
         self._split: str = split
         self._seg_path: str = os.path.join(seg_path, split)
@@ -93,18 +90,20 @@ class PartImageNetSegDataset(torchvision.datasets.CocoDetection):
         self._seg_type: str | None = seg_type
         self._use_atta: bool = use_atta
 
+        self.prepare = ConvertCocoPolysToMask(False)
+
         self.classes: list[str] = self._list_classes()
         self.num_classes: int = len(self.classes)
         self.num_seg_labels: int = sum(self.CLASSES[c] for c in self.classes)
 
         # Load data from specified path
-        self.images, self.labels, self.masks = self._get_data()
-        # Randomly shuffle data
-        idx = np.arange(len(self.images))
-        with np_temp_seed(seed):
-            np.random.shuffle(idx)
-        # Randomly drop seg masks if specified for semi-supervised training
-        self.seg_drop_idx = idx[: int((1 - seg_fraction) * len(self.images))]
+        # self.images, self.labels, self.masks = self._get_data()
+        # TODO: Randomly shuffle data (currently deprecated)
+        # idx = np.arange(len(self.images))
+        # with np_temp_seed(seed):
+        #     np.random.shuffle(idx)
+        # # Randomly drop seg masks if specified for semi-supervised training
+        # self.seg_drop_idx = idx[: int((1 - seg_fraction) * len(self.images))]
 
         # Create matrix that maps part segmentation to object segmentation
         part_to_object = [0]
@@ -131,7 +130,8 @@ class PartImageNetSegDataset(torchvision.datasets.CocoDetection):
             supercategory = ann["supercategory"]
             if supercategory in self.classes:
                 self.category_id_to_supercategory[category_id] = self.classes.index(supercategory)
-
+        # print('self.category_id_to_supercategory', self.category_id_to_supercategory)
+        # import pdb; pdb.set_trace()
         self.num_seg_classes = len(self.category_id_to_supercategory)
         
         self.imageid_to_label = {}
@@ -197,10 +197,11 @@ class PartImageNetSegDataset(torchvision.datasets.CocoDetection):
                 seg_mask_target = self.part_to_object[seg_mask_target]
             elif self._seg_type == "fg":
                 seg_mask_target = (seg_mask_target > 0).long()
-            if index in self.seg_drop_idx:
-                # Drop segmentation mask by setting all pixels to -1 to ignore
-                # later at loss computation
-                seg_mask_target.mul_(0).add_(-1)
+            # TODO: currently deprecated
+            # if index in self.seg_drop_idx:
+            #     # Drop segmentation mask by setting all pixels to -1 to ignore
+            #     # later at loss computation
+            #     seg_mask_target.mul_(0).add_(-1)
         else:
             seg_mask_target = None
         return_items.append(seg_mask_target)
@@ -252,10 +253,6 @@ class PartImageNetSegDataset(torchvision.datasets.CocoDetection):
             d for d in dirs if os.path.isdir(os.path.join(self._seg_path, d))
         ]
         return sorted(dirs)
-
-    # def __len__(self):
-    #     return len(self.images)
-
 
 def get_loader_sampler(args, transform, split: str):
     seg_type: str = get_seg_type(args)

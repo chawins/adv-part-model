@@ -5,6 +5,9 @@ import torch
 import torch.nn.functional as F
 from torchvision.utils import save_image, draw_bounding_boxes
 from torchvision.ops import box_convert, masks_to_boxes
+from skimage.measure import label, regionprops
+
+from partimagenet_hparams import partimagenet_id2name
 
 def get_seg_type(args):
     seg_type = args.experiment.split("-")[0]
@@ -130,7 +133,7 @@ def unnormalize_bbox_targets(target_bbox):
     return target_bbox
 
 
-def get_bbox_from_masks(outputs):
+def get_bbox_from_masks(outputs, use_connected_components=True):
     # values, pred_masks = torch.max(outputs, dim=1)
     pred_masks = outputs.argmax(dim=1)
     probs = F.softmax(outputs, dim=1)
@@ -139,27 +142,45 @@ def get_bbox_from_masks(outputs):
     for bi in range(batch_size):
         img_bbox_preds = {}
         img_mask = pred_masks[bi]
-        img_mask = pred_masks[bi]
         pred_labels = torch.unique(img_mask, sorted=True)
         # remove background
         if 0 in pred_labels: 
             pred_labels = pred_labels[1:]
-        label_mask = img_mask == pred_labels[:, None, None]
-
-        img_boxes = masks_to_boxes(label_mask)
-        img_bbox_preds['boxes'] = img_boxes
-
+        
+        img_bbox_preds['boxes'] = []
         img_bbox_preds['scores'] = []
         img_bbox_preds['labels'] = []
-        for lbl in pred_labels:
-            img_bbox_preds['scores'].append(probs[:, lbl, :, :].mean().item())
-            img_bbox_preds['labels'].append(lbl.item())  
+
+        if use_connected_components:
+            for _, part_label in enumerate(pred_labels):
+                part_label_mask = (img_mask == part_label) * 1
+                part_label_mask = np.uint8(part_label_mask.cpu())
+            
+                lbl_0, _ = label(part_label_mask, return_num=True, connectivity=1)
+                props = regionprops(lbl_0)
+
+                for _, prop in enumerate(props):
+                    y1, x1, y2, x2 = prop.bbox
+                    img_bbox_preds['boxes'].append([x1, y1, x2, y2])
+                    img_bbox_preds['labels'].append(part_label-1) # subtract one because of background class in seg masks (no background bbox)
+                    bbox_prob = probs[bi, part_label, prop.coords[:, 0], prop.coords[:, 1]].mean().item()
+                    img_bbox_preds['scores'].append(bbox_prob)
+                    
+            img_bbox_preds['boxes'] = torch.Tensor(img_bbox_preds['boxes']).cuda()
+        else:
+            label_mask = img_mask == pred_labels[:, None, None]
+            img_boxes = masks_to_boxes(label_mask) 
+            img_bbox_preds['boxes'] = img_boxes
+            for lbl in pred_labels:
+                lbl = lbl.item()-1 # subtract one because of background class in seg masks (no background bbox)
+                img_bbox_preds['scores'].append(probs[:, lbl, :, :].mean().item())
+                img_bbox_preds['labels'].append(lbl)  
 
         img_bbox_preds['scores'] = torch.Tensor(img_bbox_preds['scores']).cuda()
         img_bbox_preds['labels'] = torch.LongTensor(img_bbox_preds['labels']).cuda()
-        # import pdb; pdb.set_trace()
         bbox_preds.append(img_bbox_preds)
     return bbox_preds
+
 
 def get_masks_from_bbox(pred_bbox, target_sizes, seg_labels):
     batch_size = len(pred_bbox)
@@ -167,17 +188,18 @@ def get_masks_from_bbox(pred_bbox, target_sizes, seg_labels):
     for bi in range(batch_size):
         seg_mask = torch.zeros((seg_labels, target_sizes[bi][0], target_sizes[bi][1]))
         for score, label, bbox in zip(pred_bbox[bi]['scores'], pred_bbox[bi]['labels'], pred_bbox[bi]['boxes']):
-            xmin, xmax, ymin, ymax = bbox
+            if label > 39:
+                continue
+            xmin, ymin, xmax, ymax = bbox
             xmin = max(0, int(xmin))
             ymin = max(0, int(ymin))
             xmax = min(target_sizes[bi][0], int(xmax))
             ymax = min(target_sizes[bi][1], int(ymax))
-            seg_mask[label, ymin : ymax + 1, xmin : xmax + 1] += score.item()
+            seg_mask[label.item()+1, ymin : ymax + 1, xmin : xmax + 1] += score.item() # add one because of background class in seg masks
         batch_seg_masks.append(seg_mask)
     batch_seg_masks = torch.stack(batch_seg_masks, dim=0).cuda()
     batch_seg_masks = F.softmax(batch_seg_masks, dim=1)
     return batch_seg_masks
-
 
 def plot_img_bbox(images, target_bbox):
     batch_size = images.shape[0]
@@ -185,7 +207,7 @@ def plot_img_bbox(images, target_bbox):
     for bi in range(batch_size):
         img_uint8 = (images[bi].cpu() * 255).byte()
         boxes = target_bbox[bi]["boxes"]
-        labels = [str(int(l)) for l in target_bbox[bi]["labels"]]
+        labels = [partimagenet_id2name[int(l)] for l in target_bbox[bi]["labels"]]
         
         if boxes.shape[0] > 0:
             img_with_boxes = draw_bounding_boxes(
