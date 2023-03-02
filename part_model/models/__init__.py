@@ -394,7 +394,7 @@ def build_detector(args):
     nt_det = (
         sum(p.numel() for p in model.parameters() if p.requires_grad) / 1e6
     )
-    logger.info("=> Model params (train/total): %.2fM/%.2fM", nt_det, n_det)
+    print("Model params (train/total): %.2fM/%.2fM", nt_det, n_det)
     
     backbone_params, non_backbone_params = [], []
     for name, param in model.named_parameters():
