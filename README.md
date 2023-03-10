@@ -34,10 +34,24 @@ conda env create -f environment.yml
 # OR install dependencies manually with latest packages
 # Install pytorch 1.10 (or later)
 conda install -y pytorch torchvision torchaudio cudatoolkit=11.3 -c pytorch
-conda install -y h5py 
-conda install -y -c conda-forge ruamel.yaml scikit-image timm torchmetrics matplotlib addict yapf pycocotools
+conda install -y h5py scipy pandas scikit-learn pip seaborn
 conda install -y -c anaconda cython
-pip install -U kornia wandb segmentation-models-pytorch imagecorruptions foolbox
+pip install -U timm kornia albumentations tensorboard wandb cmake onnx \
+  ruamel.yaml segmentation-models-pytorch imagecorruptions foolbox matplotlib \
+  scikit-image torchmetrics termcolor jaxtyping addict yapf \
+  opencv-python==4.5.5.64
+pip install -U 'git+https://github.com/fra31/auto-attack'
+
+# These instructions are needed for setting up DINO
+mkdir ~/temp/ && cd ~/temp/ \
+    && git clone https://github.com/IDEA-Research/DINO.git \
+    && cd DINO/models/dino/ops \
+    && python setup.py build install
+cd ~/temp/ && git clone https://github.com/thomasbrandon/mish-cuda \
+    && cd mish-cuda \
+    && rm -rf build \
+    && mv external/CUDAApplyUtils.cuh csrc/ \
+    && python setup.py build install
 ```
 
 ### Prepare Part-ImageNet Dataset
