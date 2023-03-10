@@ -1,5 +1,10 @@
 # Part-Based Models Improve Adversarial Robustness
 
+Chawin Sitawarin<sup>1</sup>, Kornrapat Pongmala<sup>1</sup>, Yizheng Chen<sup>1</sup>, Nicholas Carlini<sup>2</sup>, David Wagner<sup>1</sup>  
+<sup>1</sup>UC Berkeley <sup>2</sup>Google
+
+Published in ICLR 2023 (poster): [paper](https://openreview.net/forum?id=bAMTaeqluh4)
+
 ## Abstract
 
 We show that combining human prior knowledge with end-to-end learning can improve the robustness of deep neural networks by introducing a part-based model for object classification.
@@ -189,8 +194,19 @@ Validation and Test set generation in Shape-vs-Texture and Common Corruptions be
 
 ---
 
-## Contributes
+## Contributions
 
 - For questions and bug reports, please feel free to create an issue or reach out to us directly.
 - Contributions are absolutely welcome.
 - Contact: `chawins@berkely.edu`, `kornrapatp@berkeley.edu`.
+
+---
+
+## Acknowledgement
+
+We would like to thank Vikash Sehwag and Jacob Steinhardt for their feedback on the paper.
+We also thank the anonymous ICLR reviewers for their helpful comments and suggestions.
+This research was supported by the Hewlett Foundation through the Center for Long-Term Cybersecurity (CLTC), by the Berkeley Deep Drive project, and by generous gifts from Open Philanthropy and Google Cloud Research Credits program under Award GCP19980904.
+Jacob Steinhardt also generously lent us the computing resources used in this research.
+
+This software and/or data was deposited in the BAIR Open Research Commons repository on Feb 28, 2023.
