@@ -115,7 +115,7 @@ rm -rf VOCdevkit/ trainval.tar.gz VOCtrainval_03-May-2010.tar
 
 - Download and prepare the datasets according to the instructions above.
 - Run scripts to prepare the datasets for our classification task: `sh scripts/prepare_data.sh`.
-- Download weight files from [https://anonfiles.com/1aiaP056y6](https://anonfiles.com/1aiaP056y6).
+- Download weight files from this [link](https://anonfiles.com/1aiaP056y6).
 
 ### Model Naming
 
